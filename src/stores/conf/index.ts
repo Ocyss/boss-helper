@@ -93,7 +93,10 @@ export const useConf = defineStore('conf', () => {
     try {
       await counter.storageSet(formDataKey, v)
       logger.debug('formData保存', v)
-      ElMessage.success('保存成功')
+      ElMessage.success('保存成功, 3s 之后自动刷新')
+      setTimeout(() => {
+        window.location.reload()
+      }, 3000)
     }
     catch (error: any) {
       ElMessage.error(`保存失败: ${error.message}`)
@@ -128,7 +131,7 @@ export const useConf = defineStore('conf', () => {
   function confDelete() {
     deepmerge(formData, defaultFormData, { clone: false })
     logger.debug('formData已清空')
-    ElMessage.success('清空成功')
+    ElMessage.success('配置清空成功, 不会自动保存, 请手动保存或重载恢复')
   }
 
   return {

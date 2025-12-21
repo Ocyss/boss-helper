@@ -5,6 +5,7 @@ import type {
   PipelineCacheItem,
   ProcessorType,
 } from '@/types/pipelineCache'
+import { ElMessage } from 'element-plus'
 import { ref } from 'vue'
 import { counter } from '@/message'
 import { jsonClone } from '@/utils/deepmerge'
@@ -240,5 +241,6 @@ export class PipelineCacheManager {
   async clearCache(): Promise<void> {
     this.cache.value.data = {}
     await this.saveCache()
+    ElMessage.success('缓存已清空')
   }
 }

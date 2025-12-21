@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import Alert from '@/components/Alert'
 import formItem from '@/components/form/formItem.vue'
 import formSelect from '@/components/form/formSelect.vue'
+import { getCacheManager } from '@/composables/useApplying'
 import { useCommon } from '@/composables/useCommon'
 import { formInfoData, useConf } from '@/stores/conf'
 import { amapGeocode } from '@/utils/amap'
@@ -297,10 +298,13 @@ const SalaryRangeComponent = defineComponent({
       </el-collapse-item>
     </el-collapse>
 
-    <div style="margin-top: 20px; display: flex">
+    <div style="margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap;">
       <ElCheckbox v-bind="formInfoData.notification" v-model="conf.formData.notification.value" border />
-
-      <ElFormItem :label="formInfoData.deliveryLimit.label" style="margin-left: 30px">
+      <ElCheckbox v-bind="formInfoData.useCache" v-model="conf.formData.useCache.value" border />
+      <ElButton v-if="conf.formData.useCache.value" type="warning" @click="() => getCacheManager().clearCache()">
+        清空缓存
+      </ElButton>
+      <ElFormItem :label="formInfoData.deliveryLimit.label">
         <el-input-number
           v-bind="formInfoData.deliveryLimit" v-model="conf.formData.deliveryLimit.value" :min="1" :max="1000"
           :step="10"
@@ -309,10 +313,10 @@ const SalaryRangeComponent = defineComponent({
     </div>
   </ElForm>
   <div style="margin-top: 15px">
-    <ElButton type="primary" data-help="保存配置，用于后续直接使用当前配置。" @click="conf.confSaving">
+    <ElButton type="success" data-help="保存配置，会自动刷新页面。" @click="conf.confSaving">
       保存配置
     </ElButton>
-    <ElButton type="primary" data-help="重新加载本地配置" @click="conf.confReload">
+    <ElButton type="warning" data-help="重新加载本地配置" @click="conf.confReload">
       重载配置
     </ElButton>
     <ElButton type="primary" data-help="互联网就是要分享" @click="conf.confExport">
@@ -321,7 +325,7 @@ const SalaryRangeComponent = defineComponent({
     <ElButton type="primary" data-help="互联网就是要分享" @click="conf.confImport">
       导入配置
     </ElButton>
-    <ElButton type="primary" data-help="清空配置,不会帮你保存,可以重载恢复" @click="conf.confDelete">
+    <ElButton type="danger" data-help="清空配置,不会帮你保存,可以重载恢复" @click="conf.confDelete">
       删除配置
     </ElButton>
   </div>

@@ -34,6 +34,7 @@ export interface FormData {
   sameHrFilter: FormDataCheckbox
   goldHunterFilter: FormDataCheckbox
   notification: FormDataCheckbox
+  useCache: FormDataCheckbox
   aiGreeting: FormDataAi
   aiFiltering: FormDataAi & { score: number }
   aiReply: FormDataAi

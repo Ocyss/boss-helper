@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { defineStore } from 'pinia'
 
 import { ref } from 'vue'
-import { cachePipelineResult, createHandle, sendPublishReq } from '@/composables/useApplying'
+import { cachePipelineResult, checkJobCache, createHandle, sendPublishReq } from '@/composables/useApplying'
 import { useCommon } from '@/composables/useCommon'
 import { useStatistics } from '@/composables/useStatistics'
 import { useConf } from '@/stores/conf'

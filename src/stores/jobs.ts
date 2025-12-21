@@ -1,3 +1,4 @@
+import type { FormData } from '@/types/formData'
 import { ref } from 'vue'
 import { checkJobCache } from '@/composables/useApplying'
 import { useHookVueData } from '@/composables/useVue'
@@ -21,13 +22,15 @@ export class JobList {
   _list = ref<Array<MyJobListData>>([])
   _map = reactive<Record<EncryptJobId, MyJobListData>>({})
 
+  _use_cache = ref<boolean>(true)
+
   private hookJobDetail = useHookVueData('#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main', 'jobDetail', this._vue_jobDetail)
   private hookClickJobCardAction = useHookVueFn('#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main', 'clickJobCardAction')
   private clickJobCardAction = async (_: bossZpJobItemData) => {
   }
 
   private hookJobList = useHookVueData('#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main', 'jobList', this._vue_jobList, (v) => {
-    logger.info('初始化岗位列表', v)
+    logger.debug('初始化岗位列表', v)
 
     const jobSet = this._list.value.reduce((acc, item) => {
       acc.set(item.encryptJobId, item)
@@ -42,14 +45,13 @@ export class JobList {
         val = jobSet.get(item.encryptJobId)!
       }
       else {
-        // 检查缓存
-        const cacheCheck = checkJobCache(item.encryptJobId)
+        const cacheCheck = this._use_cache.value ? checkJobCache(item.encryptJobId) : null
 
         val = {
           ...item,
           status: {
-            status: cacheCheck.hasCache ? cacheCheck.cacheResult!.status : 'pending',
-            msg: cacheCheck.hasCache ? `${cacheCheck.cacheResult!.message} (缓存)` : '未开始',
+            status: cacheCheck ? cacheCheck.status : 'pending',
+            msg: cacheCheck ? `${cacheCheck.message} (缓存)` : '未开始',
             setStatus: (status: JobStatus, msg?: string) => {
               this._map[item.encryptJobId].status.status = status
               this._map[item.encryptJobId].status.msg = msg ?? ''
@@ -119,7 +121,8 @@ export class JobList {
     })
   })
 
-  async initJobList() {
+  async initJobList(formData: FormData) {
+    this._use_cache.value = formData.useCache.value
     await this.hookJobDetail()
     this.clickJobCardAction = await this.hookClickJobCardAction()
     await this.hookJobList()

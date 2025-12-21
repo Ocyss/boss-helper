@@ -85,7 +85,7 @@ onMounted(async () => {
   void model.initModel()
   void signedKey.initSignedKey()
   try {
-    await jobList.initJobList()
+    await jobList.initJobList(conf.formData)
   }
   catch (e) {
     logger.error('初始化职位列表失败', { error: e })
