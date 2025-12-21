@@ -126,11 +126,16 @@ const SalaryRangeComponent = defineComponent({
       </el-link>
     </template>
   </Alert>
+  <Alert
+    id="config-alert-3" style="margin-bottom: 10px"
+    type="success"
+    description="所有配置选项皆有帮助提示，不懂用法请进入帮助模式进行查看，若是对帮助说明有疑问请反馈最好能给出改进意见。"
+  />
   <ElForm inline label-position="left" label-width="auto" :model="conf.formData" :disabled="deliverLock">
     <el-collapse accordion>
       <el-collapse-item title="筛选配置" name="1">
         <Alert
-          id="filter-config-alert-enable" title="复选框打钩才会启用，别忘记打钩启用哦" type="success" show-icon
+          id="filter-config-alert-enable" title="复选框打钩才会启用，别忘记打钩启用哦。保存也别忘了" type="success" show-icon
           style="margin: 10px 0;"
         />
         <Alert
@@ -217,13 +222,15 @@ const SalaryRangeComponent = defineComponent({
         </el-space>
       </el-collapse-item>
       <el-collapse-item title="地址配置" name="4">
-        <Alert id="config-amap-1" style="margin-bottom: 10px" show-icon type="info">
+        <Alert id="config-amap-2" style="margin-bottom: 10px" show-icon type="info">
           <template #title>
             使用高德地图前 推荐结合工作地址包含使用, 需自行申请key,
             <br>
             <el-link href="https://lbs.amap.com/dev/" target="_blank" type="warning">
               https://lbs.amap.com/dev/
             </el-link>
+            创建应用 -> 添加key -> Web服务
+            <br>
             每日免费配额足够使用
           </template>
         </Alert>
@@ -247,9 +254,13 @@ const SalaryRangeComponent = defineComponent({
         <ElFormItem v-bind="formInfoData.amap.origins">
           <ElInput v-model.lazy="conf.formData.amap.origins" :disabled="amapGeocodeLoading">
             <template #append>
-              <ElButton type="primary" :loading="amapGeocodeLoading" @click="amapGeocodeHandler()">
-                🤖
-              </ElButton>
+              <el-tooltip
+                content="根据完整地址获取经纬度" placement="top"
+              >
+                <ElButton type="primary" :loading="amapGeocodeLoading" @click="amapGeocodeHandler()">
+                  🤖
+                </ElButton>
+              </el-tooltip>
             </template>
           </ElInput>
         </ElFormItem>

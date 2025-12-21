@@ -1,6 +1,7 @@
 <script lang="ts" setup>
+import type { ComponentPublicInstance } from 'vue'
 import type { EncryptJobId } from '@/stores/jobs'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { jobList } from '@/stores/jobs'
 import { useDeliver } from '../hooks/useDeliver'
 
@@ -55,6 +56,7 @@ watch(() => deliver.currentData, () => {
     <div ref="cards" class="card-grid" @wheel.stop="scroll">
       <JobCard v-for="job in jobList.list" :ref="(ref) => { jobSetRef[job.encryptJobId] = ref }" :key="job.encryptJobId" :job="job" hover />
     </div>
+    <div class="card-grid-overlay" />
     <ElSwitch
       v-model="autoScroll"
       inline-prompt
@@ -72,6 +74,13 @@ watch(() => deliver.currentData, () => {
 <style lang="scss" scoped>
 // https://css-tricks.com/
 // https://uiverse.io/Subaashbala/polite-newt-9
+
+.boss-helper-card {
+  position: relative;
+  --x: 0px;
+  --y: 0px;
+  --r: 0px;
+}
 
 .card-grid {
   display: grid;
@@ -106,6 +115,21 @@ watch(() => deliver.currentData, () => {
       #262626
     );
   }
+}
+
+.card-grid-overlay {
+  display: none;
+    position: absolute;
+    inset: 0;
+    will-change: mask-image, -webkit-mask-image, backdrop-filter;
+    transform: translateZ(0);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    background-color: #ffffff20;
+    pointer-events: none;
+    -webkit-mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), transparent 100%, black 100%);
+    mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), transparent 100%, black 100%);
+    transition: -webkit-mask-image 0.2s ease;
 }
 
 html.dark {

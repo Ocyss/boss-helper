@@ -13,6 +13,7 @@ import { logger } from '@/utils/logger'
 import { useDeliver } from '../hooks/useDeliver'
 import { usePager } from '../hooks/usePager'
 import aboutVue from './about.vue'
+import appearanceVue from './appearance.vue'
 import cardVue from './card.vue'
 import configVue from './config.vue'
 import logsVue from './logs.vue'
@@ -167,7 +168,7 @@ function openStore() {
 <template>
   <el-config-provider namespace="ehp">
     <h2 style="display: flex; align-items: center">
-      Boos-Helper
+      Helper
       <el-badge
         :is-dot="isDot"
         :offset="[-2, 7]"
@@ -179,10 +180,10 @@ function openStore() {
         </el-tag>
       </el-badge>
       <el-text v-if="todayData.total > 0" style="margin-right: 15px;">
-        今日: {{ todayData.success }}/{{ conf.formData.deliveryLimit.value }}
+        今日投递: {{ todayData.success }}/{{ conf.formData.deliveryLimit.value }}
       </el-text>
       <el-text v-if="deliver.total > 0">
-        当前页面: {{ deliver.current + 1 }}/{{ deliver.total }}
+        当前页面处理: {{ deliver.current + 1 }}/{{ deliver.total }}
       </el-text>
     </h2>
     <div
@@ -223,8 +224,11 @@ function openStore() {
         ref="searchRef"
         label="筛选"
       />
-      <ElTabPane label="配置" data-help="好好看，好好学">
+      <ElTabPane label="配置" Alertdata-help="好好看，好好学">
         <configVue />
+      </ElTabPane>
+      <ElTabPane label="外观" data-help="既是好看，也是伪装">
+        <appearanceVue />
       </ElTabPane>
       <ElTabPane v-if="signedKey.signedKey" label="AI" data-help="AI时代，脚本怎么能落伍!">
         <serviceVue />

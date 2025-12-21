@@ -28,7 +28,7 @@
       </div>
     </div>
     <div data-help="记得来个Star或者好评吧" style="margin-top: 10px">
-      该脚本分为浏览器扩展和油猴脚本，油猴脚本已开源
+      该脚本分为浏览器扩展和油猴脚本，两版本皆已开源
       <br>
       Github地址:
       <ElLink href="https://github.com/ocyss/boos-helper" target="_blank">

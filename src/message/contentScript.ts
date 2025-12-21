@@ -62,6 +62,11 @@ export class ContentCounter implements BackgroundCounter {
     return true
   }
 
+  async storageRm(key: string) {
+    await storage.removeItem(genKey(key))
+    return true
+  }
+
   async contentScriptTest(type: 'success' | 'error') {
     if (type === 'error') {
       throw new Error(`test error date: ${Date.now()}`)

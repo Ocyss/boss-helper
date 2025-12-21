@@ -63,7 +63,7 @@ export const formInfoData: FormInfoData = {
   },
   useCache: {
     'label': '启用缓存',
-    'data-help': '开启后会缓存投递记录，避免重复投递，提高效率。但是缓存功能并不积极维护，可能会有bug，或者意外情况，可尝试清空缓存或者禁用',
+    'data-help': '开启后会缓存投递记录，避免重复投递，提高效率。但是缓存功能并不积极维护。可能会有bug，或者意外情况，如遇到可尝试清空缓存或者禁用',
   },
   deliveryLimit: {
     'label': '投递上限',

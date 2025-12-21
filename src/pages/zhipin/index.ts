@@ -31,7 +31,7 @@ async function mountVue() {
       width: 85%;
       max-width: 870px;
       min-width: 320px;
-      margin: 40px auto;
+      margin: 40px auto 90px auto;
     `
     jobSearchWrapper.insertBefore(jobWarpEl, jobSearchWrapper.firstElementChild)
     jobWarpEl.appendChild(jobEl)

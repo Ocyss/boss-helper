@@ -1,6 +1,7 @@
+import type { StorageLikeAsync } from '@vueuse/core'
 import type { Adapter, Message, OnMessage, SendMessage } from 'comctx'
-import type { ContentCounter } from './contentScript'
 
+import type { ContentCounter } from './contentScript'
 import { defineProxy } from 'comctx'
 
 export type * from './background'
@@ -23,3 +24,15 @@ export default class InjectAdapter implements Adapter {
 }
 
 export const counter = injectCounter(new InjectAdapter())
+
+export const ExtStorage: StorageLikeAsync = {
+  async getItem(key) {
+    return counter.storageGet(key)
+  },
+  async setItem(key, value) {
+    await counter.storageSet(key, value)
+  },
+  async removeItem(key) {
+    await counter.storageRm(key)
+  },
+}
