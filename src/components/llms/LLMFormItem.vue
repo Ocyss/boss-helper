@@ -2,7 +2,7 @@
 import type { formElm, llmInfoVal } from '@/composables/useModel/type'
 import { ElAlert, ElFormItem, ElIcon, ElInput, ElInputNumber, ElSelectV2, ElSlider, ElSwitch, ElText, ElTooltip } from 'element-plus'
 
-import info from '@/components/icon/info.vue'
+import Info from '@/components/icon/Info.vue'
 
 const props = defineProps<{
   value: llmInfoVal<unknown, { required: boolean }>
@@ -44,7 +44,7 @@ const { el, defaultConf } = getComponent(props.value.type)
       show-icon
       :style="`margin: 10px 0px 20px ${(props.depth || 0) * 10}px;`"
     />
-    <l-form-item
+    <LLMFormItem
       v-for="(x, k) in value.value"
       :key="k"
       v-model="fromVal[k]"
@@ -68,7 +68,7 @@ const { el, defaultConf } = getComponent(props.value.type)
         raw-content
       >
         <ElIcon style="margin-left: 8px">
-          <info />
+          <Info />
         </ElIcon>
       </ElTooltip>
     </template>

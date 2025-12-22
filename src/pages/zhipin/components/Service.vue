@@ -32,7 +32,7 @@ import { useSignedKey } from '@/stores/signedKey'
 import { useUser } from '@/stores/user'
 import { jsonClone } from '@/utils/deepmerge'
 import { logger } from '@/utils/logger'
-import aiVue from './ai.vue'
+import Ai from './Ai.vue'
 
 const signedKey = useSignedKey()
 const user = useUser()
@@ -527,7 +527,7 @@ onMounted(() => {
       teleported
       @close="showPreview = false"
     />
-    <aiVue />
+    <Ai />
   </ElForm>
 
   <ElDialog

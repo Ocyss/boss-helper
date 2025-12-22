@@ -8,7 +8,7 @@ import { llmIcon, useModel } from '@/composables/useModel'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 
-import createLLM from './createLLM.vue'
+import CreateLLM from './CreateLLM.vue'
 
 const show = defineModel<boolean>({ required: true })
 const modelStore = useModel()
@@ -139,7 +139,7 @@ function importllm() {
         </template>
       </ElTableColumn>
     </ElTable>
-    <createLLM
+    <CreateLLM
       v-if="createBoxShow"
       v-model="createBoxShow"
       :model="createModelData"

@@ -19,14 +19,14 @@ import {
 } from 'element-plus'
 
 import Alert from '@/components/Alert'
-import formItem from '@/components/form/formItem.vue'
-import formSelect from '@/components/form/formSelect.vue'
+import formItem from '@/components/form/FormItem.vue'
+import formSelect from '@/components/form/FormSelect.vue'
 import { getCacheManager } from '@/composables/useApplying'
 import { useCommon } from '@/composables/useCommon'
 import { formInfoData, useConf } from '@/stores/conf'
 import { amapGeocode } from '@/utils/amap'
 import { logger } from '@/utils/logger'
-import aiVue from './ai.vue'
+import Ai from './Ai.vue'
 
 const conf = useConf()
 
@@ -328,7 +328,7 @@ const SalaryRangeComponent = defineComponent({
         </ElFormItem>
       </ElCollapseItem>
       <ElCollapseItem title="AI配置" name="2">
-        <aiVue />
+        <Ai />
       </ElCollapseItem>
       <ElCollapseItem title="延迟配置" name="3">
         <ElFormItem v-for="(item, key) in formInfoData.delay" :key :label="item.label" :data-help="item['data-help']">

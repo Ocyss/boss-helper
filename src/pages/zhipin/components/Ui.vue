@@ -24,13 +24,14 @@ import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 import { useDeliver } from '../hooks/useDeliver'
 import { usePager } from '../hooks/usePager'
-import aboutVue from './about.vue'
-import appearanceVue from './appearance.vue'
-import cardVue from './card.vue'
-import configVue from './config.vue'
-import logsVue from './logs.vue'
-import serviceVue from './service.vue'
-import statisticsVue from './statistics.vue'
+
+import About from './About.vue'
+import Appearance from './Appearance.vue'
+import Card from './Card.vue'
+import Config from './Config.vue'
+import Logs from './Logs.vue'
+import Service from './Service.vue'
+import Statistics from './Statistics.vue'
 
 const user = useUser()
 const model = useModel()
@@ -230,30 +231,30 @@ function openStore() {
     </ElTooltip>
     <ElTabs ref="tabsRef" data-help="鼠标移到对应元素查看提示">
       <ElTabPane label="统计" data-help="失败是成功她妈">
-        <statisticsVue />
+        <Statistics />
       </ElTabPane>
       <ElTabPane
         ref="searchRef"
         label="筛选"
       />
       <ElTabPane label="配置" Alertdata-help="好好看，好好学">
-        <configVue />
+        <Config />
       </ElTabPane>
       <ElTabPane label="外观" data-help="既是好看，也是伪装">
-        <appearanceVue />
+        <Appearance />
       </ElTabPane>
       <ElTabPane v-if="signedKey.signedKey" label="AI" data-help="AI时代，脚本怎么能落伍!">
-        <serviceVue />
+        <Service />
       </ElTabPane>
       <ElTabPane label="日志" data-help="反正你也不看">
-        <logsVue />
+        <Logs />
       </ElTabPane>
       <ElTabPane
         label="关于&赞赏"
         class="hp-about-box"
         data-help="项目是写不完美的,但总要去追求完美"
       >
-        <aboutVue />
+        <About />
       </ElTabPane>
       <ElTabPane v-if="signedKey.netConf && signedKey.netConf.feedback">
         <template #label>
@@ -278,7 +279,7 @@ function openStore() {
       </ElTabPane>
     </ElTabs>
     <Teleport to="#boss-helper-job-warp,.page-job-inner .page-job-content">
-      <cardVue />
+      <Card />
     </Teleport>
   <!-- <Teleport to=".page-job-wrapper">
     <chatVue

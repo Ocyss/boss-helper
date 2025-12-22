@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { FormDataAi } from '@/types/formData'
 import { ElButton, ElButtonGroup } from 'element-plus'
-import settingsVue from '@/components/icon/settings.vue'
+import settingsVue from '@/components/icon/Settings.vue'
 
 defineProps<{
   label: string

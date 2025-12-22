@@ -9,6 +9,7 @@ export default defineConfig({
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}',
   modules: ['@wxt-dev/module-vue'],
   imports: false,
+
   manifest: {
     default_locale: 'zh_CN',
     name: '__MSG_extName__',

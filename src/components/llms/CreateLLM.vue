@@ -16,7 +16,7 @@ import { computed, ref } from 'vue'
 import { llms, useModel } from '@/composables/useModel'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { logger } from '@/utils/logger'
-import LForm from './lForm.vue'
+import LLMForm from './LLMForm.vue'
 
 const props = defineProps<{
   model?: modelData
@@ -222,7 +222,7 @@ function create() {
         </template>
       </ElSegmented> -->
       <ElForm label-width="auto" size="large" label-position="left">
-        <LForm :key="formLLM" v-model="llmFormData" :data="llms[formLLM]" />
+        <LLMForm :key="formLLM" v-model="llmFormData" :data="llms[formLLM]" />
       </ElForm>
     </ElScrollbar>
     <template #footer>
