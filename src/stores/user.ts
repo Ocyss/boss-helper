@@ -99,7 +99,8 @@ export function useUser() {
     }
     catch (err) {
       logger.error('获取账户数据失败', err)
-      ElMessage.error(`获取账户数据失败: ${err instanceof Error ? err.message : String(err)}`)
+      // 仅影响账户切换, 暂时不用提醒
+      // ElMessage.error(`获取账户数据失败, 可尝试刷新插件: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

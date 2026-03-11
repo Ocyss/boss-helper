@@ -67,7 +67,7 @@ export const formInfoData: FormInfoData = {
   },
   deliveryLimit: {
     'label': '投递上限',
-    'data-help': '达到上限后会自动暂停，默认100次',
+    'data-help': '达到上限后会自动暂停，默认100次, 当前boss上限为150',
   },
   aiGreeting: {
     'label': 'AI招呼语',

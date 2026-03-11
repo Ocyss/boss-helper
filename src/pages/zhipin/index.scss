@@ -2,9 +2,6 @@
 
 #wrap {
   min-width: unset !important;
-  .inner {
-    width: unset;
-  }
   .page-job-wrapper {
     padding-top: 0 !important;
     width: 100%;
@@ -252,7 +249,8 @@ html.dark {
   padding-top: 50px !important;
   .c-expect-select .expect-list .expect-item:not(.active),
   .c-expect-select .part-time-expect:not(.active),
-  .c-expect-select .synthesis:not(.active) {
+  .c-expect-select .synthesis:not(.active),
+  .text-content:not(.active) {
     color: #0f0f0f !important;
     &:hover {
       color: #0d9ea3 !important;
@@ -268,6 +266,8 @@ html.dark {
   }
   .c-search-input, .c-expect-select{
     width: 100% !important;
+    z-index: 1000 !important;
+    overflow: visible !important;
   }
   .c-expect-select .expect-list{
     max-width: unset !important;

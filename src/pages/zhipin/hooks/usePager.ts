@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import { useHookVueData, useHookVueFn } from '@/composables/useVue'
+import { logger } from '@/utils/logger'
 
-const page = ref({ page: 1, pageSize: 30 })
+const page = ref({ page: 1, pageSize: 15 })
 const pageChange = ref((_v: number) => {})
 
 const initPage = useHookVueData('#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main', 'pageVo', page)
@@ -10,18 +11,23 @@ const initChange = useHookVueFn('#wrap .page-job-wrapper', 'pageChangeAction')
 const initSearch = useHookVueFn('#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main', ['searchJobAction', 'onSearch'])
 
 function next() {
-  if (page.value.page >= 10) {
-    return false
+  try{
+    pageChange.value(page.value.page + 1)
+  }catch(err){
+    logger.error("翻页: 下一页错误",err)
+    throw err
   }
-  pageChange.value(page.value.page + 1)
+  
   return true
 }
 
 function prev() {
-  if (page.value.page <= 1) {
-    return false
+  try{
+    pageChange.value(page.value.page - 1)
+  }catch(err){
+    logger.error("翻页: 上一页错误",err)
+    throw err
   }
-  pageChange.value(page.value.page - 1)
   return true
 }
 

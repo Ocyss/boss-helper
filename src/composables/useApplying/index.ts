@@ -93,7 +93,7 @@ export async function createHandle(): Promise<{
         async (args, ctx) => {
           ctx.amap ??= {}
           try {
-            ctx.amap.geocode = await amapGeocode(args.data.card?.address ?? '')
+            ctx.amap.geocode = await amapGeocode(args.data.card?.address ?? args.data.card?.jobInfo.address ?? '') // TODO: 直接使用经纬度
             if (!ctx.amap.geocode?.location) {
               throw new JobAddressError('未获取到地址经纬度')
             }

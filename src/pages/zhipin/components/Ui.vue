@@ -301,7 +301,7 @@ function openStore() {
 <style lang="scss">
 #boss-helper-job {
   margin-bottom: 8px;
-  * {
+  *:not(.ehp-tab-pane *) {
     user-select: none;
   }
 }

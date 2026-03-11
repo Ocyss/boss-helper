@@ -345,7 +345,7 @@ const SalaryRangeComponent = defineComponent({
       </ElButton>
       <ElFormItem :label="formInfoData.deliveryLimit.label">
         <ElInputNumber
-          v-bind="formInfoData.deliveryLimit" v-model="conf.formData.deliveryLimit.value" :min="1" :max="1000"
+          v-bind="formInfoData.deliveryLimit" v-model="conf.formData.deliveryLimit.value" :min="1" :max="155"
           :step="10"
         />
       </ElFormItem>

@@ -35,7 +35,7 @@ export function handles() {
   const model = useModel()
   const conf = useConf()
   const statistics = useStatistics()
-
+  const now = Date.now()
   const communicated: StepFactory = () => {
     return async ({ data }) => {
       if (data.contact) {
@@ -413,8 +413,18 @@ export function handles() {
     return async (_, ctx) => {
       try {
         const activeText = ctx.listData.card?.activeTimeDesc
-        if (activeText == null || activeText.includes('月') || activeText.includes('年'))
-          throw new ActivityError(`不活跃,当前活跃度 [${activeText}]`)
+        const activeTime = ctx.listData.card?.brandComInfo?.activeTime
+        // 暂时先用文本匹配吧, activeTime备用(没确认是否准确)
+        if (!activeText && !activeTime){
+           throw new ActivityError(`无活跃内容,如果全失败请反馈`)
+        }else if (!activeText && activeTime){
+          if (now-activeTime>=7*24*60*60*1000){
+            throw new ActivityError(`不活跃 [${new Date(activeTime).toLocaleString()}]`)
+          }
+        }else if (!activeText){
+          throw new ActivityError(`无活跃信息,如果全失败请反馈`)
+        }else if (activeText.includes('月') || activeText.includes('年'))
+          throw new ActivityError(`不活跃, [${activeText}]`)
       }
       catch (e) {
         statistics.todayData.activityFilter++
