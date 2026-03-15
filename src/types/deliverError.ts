@@ -1,48 +1,130 @@
-export const errMap = new Map<string, boolean>()
+export class BoosHelperError extends Error {
+  state: 'warning' | 'danger'
+  error_type: 'boss-helper'
 
-function createCustomError(name: string, state = 'warning' as 'warning' | 'danger') {
-  errMap.set(name, true)
-  return class CustomError extends Error {
-    static message: any
-    state: 'warning' | 'danger'
-    constructor(message: string, options?: ErrorOptions) {
-      super(message, options)
-      this.name = name
-      this.state = state
-      Object.setPrototypeOf(this, CustomError.prototype)
-    }
+  constructor(message: string, state: 'warning' | 'danger' = 'warning', options?: ErrorOptions) {
+    super(message, options)
+    this.state = state
+    this.error_type = 'boss-helper'
+    Object.setPrototypeOf(this, new.target.prototype)
   }
 }
 
-export const RepeatError = createCustomError('重复沟通')
-export type RepeatError = InstanceType<typeof RepeatError>
-export const JobTitleError = createCustomError('岗位名筛选')
-export type JobTitleError = InstanceType<typeof JobTitleError>
-export const CompanyNameError = createCustomError('公司名筛选')
-export type CompanyNameError = InstanceType<typeof CompanyNameError>
-export const SalaryError = createCustomError('薪资筛选')
-export type SalaryError = InstanceType<typeof SalaryError>
-export const CompanySizeError = createCustomError('公司规模筛选')
-export type CompanySizeError = InstanceType<typeof CompanySizeError>
-export const JobDescriptionError = createCustomError('工作内容筛选')
-export type JobDescriptionError = InstanceType<typeof JobDescriptionError>
-export const HrPositionError = createCustomError('Hr职位筛选')
-export type HrPositionError = InstanceType<typeof HrPositionError>
-export const JobAddressError = createCustomError('工作地址筛选')
-export type JobAddressError = InstanceType<typeof JobAddressError>
-export const AIFilteringError = createCustomError('AI筛选')
-export type AIFilteringError = InstanceType<typeof AIFilteringError>
-export const FriendStatusError = createCustomError('好友状态')
-export type FriendStatusError = InstanceType<typeof FriendStatusError>
-export const ActivityError = createCustomError('活跃度过滤')
-export type ActivityError = InstanceType<typeof ActivityError>
-export const GoldHunterError = createCustomError('猎头过滤')
-export type GoldHunterError = InstanceType<typeof GoldHunterError>
-export const UnknownError = createCustomError('未知错误', 'danger')
-export type UnknownError = InstanceType<typeof UnknownError>
-export const PublishError = createCustomError('投递出错', 'danger')
-export type PublishError = InstanceType<typeof PublishError>
-export const GreetError = createCustomError('打招呼出错', 'danger')
-export type GreetError = InstanceType<typeof GreetError>
-export const LimitError = createCustomError('达到限制', 'danger')
-export type LimitError = InstanceType<typeof LimitError>
+export class RepeatError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '重复沟通'
+  }
+}
+
+export class JobTitleError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '岗位名筛选'
+  }
+}
+
+export class CompanyNameError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '公司名筛选'
+  }
+}
+
+export class SalaryError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '薪资筛选'
+  }
+}
+
+export class CompanySizeError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '公司规模筛选'
+  }
+}
+
+export class JobDescriptionError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '工作内容筛选'
+  }
+}
+
+export class HrPositionError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = 'Hr职位筛选'
+  }
+}
+
+export class JobAddressError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '工作地址筛选'
+  }
+}
+
+export class AIFilteringError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = 'AI筛选'
+  }
+}
+
+export class FriendStatusError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '好友状态'
+  }
+}
+
+export class ActivityError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '活跃度过滤'
+  }
+}
+
+export class GoldHunterError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'warning', options)
+    this.name = '猎头过滤'
+  }
+}
+
+export class UnknownError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'danger', options)
+    this.name = '未知错误'
+  }
+}
+
+export class PublishError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'danger', options)
+    this.name = '投递出错'
+  }
+}
+
+export class GreetError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'danger', options)
+    this.name = '打招呼出错'
+  }
+}
+
+export class LimitError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'danger', options)
+    this.name = '达到限制'
+  }
+}
+
+export class RateLimitError extends BoosHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'danger', options)
+    this.name = '操作频繁'
+  }
+}

@@ -15,9 +15,9 @@ import {
 } from 'element-plus'
 import { onMounted, ref } from 'vue'
 
-import logVue from '@/components/conf/log.vue'
-import storeVue from '@/components/conf/store.vue'
-import userVue from '@/components/conf/user.vue'
+import logVue from '@/components/conf/Log.vue'
+import storeVue from '@/components/conf/Store.vue'
+import userVue from '@/components/conf/User.vue'
 import { store } from '@/components/icon/store'
 import { counter } from '@/message'
 import type { NetConf } from '@/stores/signedKey'
@@ -120,8 +120,10 @@ Github开源地址: <a href="https://github.com/ocyss/boos-helper" target="_blan
             :key="k"
             :disabled="v.disabled"
             @click="
-              confKey = k
-              confBox = true
+              () => {
+                confKey = k
+                confBox = true
+              }
             "
           >
             {{ v.name }}

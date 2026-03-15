@@ -10,7 +10,7 @@ import type { MyJobListData } from '@/stores/jobs'
 import { jobList } from '@/stores/jobs'
 import type { logData, logErr } from '@/stores/log'
 import { useLog } from '@/stores/log'
-import { errMap, LimitError, UnknownError } from '@/types/deliverError'
+import { BoosHelperError, LimitError, RateLimitError, UnknownError } from '@/types/deliverError'
 import { delay, getCurDay, notification } from '@/utils'
 import { logger } from '@/utils/logger'
 
@@ -92,7 +92,7 @@ export const useDeliver = defineStore('zhipin/deliver', () => {
             })
           }
         } catch (e: any) {
-          if (!errMap.has(e?.name as string)) {
+          if (!(e instanceof BoosHelperError)) {
             // eslint-disable-next-line no-ex-assign
             e = new UnknownError(`预期外:${e.message}`, { cause: e })
           }
@@ -104,20 +104,25 @@ export const useDeliver = defineStore('zhipin/deliver', () => {
           logger.warn('投递过滤', ctx)
           ctx.state = '过滤'
           ctx.err = e.message ?? ''
+
           if (e instanceof LimitError) {
             const msg = `投递到达boss上限 ${e.message}，已暂停投递`
             conf.formData.notification.value && (await notification(msg))
-            ElMessage.info()
+            ElMessage.error(msg)
             common.deliverStop = true
             return
+          } else if (e instanceof RateLimitError) {
+            conf.formData.delay.deliveryInterval += 3
+            const msg = `触发boss速率限制,操作频繁, 建议增加投递间隔. 已临时增加3s间隔`
+            conf.formData.notification.value && (await notification(msg))
+            ElMessage.error(msg)
+            await delay(30)
           }
         }
       } catch (e) {
         data.status.setStatus('error', '未知报错')
         logger.error('未知报错', e, data)
-        if (conf.formData.notification.value) {
-          await notification('未知报错')
-        }
+        conf.formData.notification.value && (await notification('未知报错'))
         ElMessage.error('未知报错')
       } finally {
         // 缓存Pipeline处理结果

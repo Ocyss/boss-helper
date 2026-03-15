@@ -602,8 +602,10 @@ onMounted(() => {
         <ElButton
           type="primary"
           @click="
-            buyDialogVisible = false
-            buyDialogLoading = false
+            () => {
+              buyDialogVisible = false
+              buyDialogLoading = false
+            }
           "
         >
           取消

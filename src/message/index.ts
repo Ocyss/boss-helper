@@ -4,8 +4,9 @@ import { defineProxy } from 'comctx'
 
 import type { ContentCounter } from './contentScript'
 
-export type * from './background'
-export type * from './contentScript'
+export type { CookieInfo } from './background'
+// export type * from './background'
+// export type * from './contentScript'
 
 export const [, injectCounter] = defineProxy(() => ({}) as ContentCounter, {
   namespace: '__boss-helper-content__',

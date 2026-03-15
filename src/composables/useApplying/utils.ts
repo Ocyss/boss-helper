@@ -1,7 +1,13 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-import { GreetError, LimitError, PublishError } from '@/types/deliverError'
+import {
+  GreetError,
+  BoosHelperError,
+  LimitError,
+  PublishError,
+  RateLimitError,
+} from '@/types/deliverError'
 import type { FormDataRange } from '@/types/formData'
 import { logger } from '@/utils/logger'
 import { parseGptJson } from '@/utils/parse'
@@ -72,6 +78,8 @@ export async function sendPublishReq(
       headers: { Zp_token: token },
     })
 
+    res.data.code !== 0 && logger.error(`投递失败`, res)
+
     if (res.data.code === 1) {
       const content = String(
         res.data?.zpData?.bizData?.chatRemindDialog?.content || res.data.message || '未知错误',
@@ -95,14 +103,17 @@ export async function sendPublishReq(
         }
       } else if (content.includes('您今天已与150位BOSS沟通')) {
         throw new LimitError(content)
+      } else if (content.includes('操作过于频繁')) {
+        throw new RateLimitError(content)
       }
+
       throw new PublishError(content)
     } else if (res.data.code !== 0) {
       throw new PublishError(`未知错误状态:${res.data.message}`)
     }
     return res.data
   } catch (e: any) {
-    if (e instanceof PublishError) {
+    if (e instanceof BoosHelperError) {
       throw e
     }
     return sendPublishReq(data, e?.message as string, retries - 1)

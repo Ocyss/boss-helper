@@ -1,11 +1,11 @@
-import { watchThrottled } from '@vueuse/core'
+import { reactiveComputed, watchThrottled } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { defineStore } from 'pinia'
 import { reactive, ref, toRaw } from 'vue'
 
 import { counter } from '@/message'
 import { useUser } from '@/stores/user'
-import type { FormData } from '@/types/formData'
+import type { ConfigLevel, FormData } from '@/types/formData'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
@@ -123,11 +123,52 @@ export const useConf = defineStore('conf', () => {
     ElMessage.success('导入成功, 切记要手动保存哦')
   }
 
+  function confRecommend() {
+    deepmerge(
+      formData,
+      [
+        'deliveryLimit',
+        'activityFilter',
+        'friendStatus',
+        'sameCompanyFilter',
+        'sameHrFilter',
+        'goldHunterFilter',
+        'notification',
+        'useCache',
+        'delay',
+      ].reduce(
+        (result, key) => {
+          result[key] = defaultFormData[key as keyof FormData]
+          return result
+        },
+        {} as Record<string, any>,
+      ),
+    )
+    logger.debug('formData推荐配置已应用')
+    ElMessage.success('推荐配置已应用, 不会自动保存, 请手动保存或重载恢复')
+  }
+
   function confDelete() {
-    deepmerge(formData, defaultFormData, { clone: false })
+    deepmerge(formData, defaultFormData)
     logger.debug('formData已清空')
     ElMessage.success('配置清空成功, 不会自动保存, 请手动保存或重载恢复')
   }
+
+  const order: Record<ConfigLevel, number> = {
+    beginner: 1,
+    intermediate: 2,
+    advanced: 3,
+    expert: 4,
+  }
+
+  const config_level = reactiveComputed(() => {
+    const val = order[formData.config_level]
+    return {
+      intermediate: order['intermediate'] <= val,
+      advanced: order['advanced'] <= val,
+      expert: order['expert'] <= val,
+    }
+  })
 
   return {
     confInit: init,
@@ -136,10 +177,12 @@ export const useConf = defineStore('conf', () => {
     confExport,
     confImport,
     confDelete,
+    confRecommend,
     formDataKey,
     defaultFormData,
     formData,
     isLoaded,
+    config_level,
   }
 })
 

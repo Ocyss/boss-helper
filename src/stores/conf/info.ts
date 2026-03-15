@@ -1,6 +1,27 @@
 import type { FormData, FormInfoData } from '@/types/formData'
 
 export const formInfoData: FormInfoData = {
+  config_level: {
+    options: [
+      {
+        value: 'beginner',
+        label: '新手',
+      },
+      {
+        value: 'intermediate',
+        label: '初学者',
+      },
+      {
+        value: 'advanced',
+        label: '中级',
+      },
+      {
+        value: 'expert',
+        label: '高级',
+      },
+    ],
+    'data-help': '为不同人群展示不同的配置项, 减少上手难度跟配置过多而产生的恐惧',
+  },
   company: {
     label: '公司名',
     'data-help': '公司名排除或包含在集合中，模糊匹配，可用于只投或不投某个公司/子公司。',
@@ -72,7 +93,7 @@ export const formInfoData: FormInfoData = {
       '开启后会缓存投递记录，避免重复投递，提高效率。但是缓存功能并不积极维护。可能会有bug，或者意外情况，如遇到可尝试清空缓存或者禁用',
   },
   deliveryLimit: {
-    label: '投递上限',
+    label: '投递数量',
     'data-help': '达到上限后会自动暂停，默认100次, 当前boss上限为150',
   },
   aiGreeting: {
@@ -272,6 +293,7 @@ export const formInfoData: FormInfoData = {
 }
 
 export const defaultFormData: FormData = {
+  config_level: 'beginner',
   company: {
     include: false,
     value: [],
@@ -320,10 +342,10 @@ export const defaultFormData: FormData = {
     enable: false,
   },
   deliveryLimit: {
-    value: 100,
+    value: 120,
   },
   greetingVariable: {
-    value: true,
+    value: false,
   },
   activityFilter: {
     value: true,
@@ -374,7 +396,7 @@ export const defaultFormData: FormData = {
   },
   delay: {
     deliveryStarts: 3,
-    deliveryInterval: 2,
+    deliveryInterval: 5,
     deliveryPageNext: 60,
     messageSending: 5,
   },

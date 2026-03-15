@@ -4,7 +4,7 @@ import { ref } from 'vue'
 
 import formSwitch from '@/components/form/FormSwitch.vue'
 import configLLM from '@/components/llms/ConfigLLM.vue'
-import selectLLM from '@/components/llms/selectLLM.vue'
+import selectLLM from '@/components/llms/SelectLLM.vue'
 import { useCommon } from '@/composables/useCommon'
 import { formInfoData, useConf } from '@/stores/conf'
 import type { FormDataAi } from '@/types/formData'
@@ -32,8 +32,10 @@ function change(v: Partial<FormDataAi>) {
       :data="conf.formData.aiGreeting"
       :lock="deliverLock"
       @show="
-        aiBox = 'aiGreeting'
-        aiBoxShow = true
+        () => {
+          aiBox = 'aiGreeting'
+          aiBoxShow = true
+        }
       "
       @change="change"
     />
@@ -43,8 +45,10 @@ function change(v: Partial<FormDataAi>) {
       :data="conf.formData.aiFiltering"
       :lock="deliverLock"
       @show="
-        aiBox = 'aiFiltering'
-        aiBoxShow = true
+        () => {
+          aiBox = 'aiFiltering'
+          aiBoxShow = true
+        }
       "
       @change="change"
     />
@@ -54,8 +58,10 @@ function change(v: Partial<FormDataAi>) {
       :data="conf.formData.aiReply"
       disabled
       @show="
-        aiBox = 'aiReply'
-        aiBoxShow = true
+        () => {
+          aiBox = 'aiReply'
+          aiBoxShow = true
+        }
       "
       @change="change"
     />

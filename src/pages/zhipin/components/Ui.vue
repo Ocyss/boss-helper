@@ -26,7 +26,6 @@ import { logger } from '@/utils/logger'
 import { useDeliver } from '../hooks/useDeliver'
 import { usePager } from '../hooks/usePager'
 import About from './About.vue'
-import Appearance from './Appearance.vue'
 import Card from './Card.vue'
 import Config from './Config.vue'
 import Logs from './Logs.vue'
@@ -226,9 +225,6 @@ function openStore() {
       <ElTabPane label="配置" Alertdata-help="好好看，好好学">
         <Config />
       </ElTabPane>
-      <ElTabPane label="外观" data-help="既是好看，也是伪装">
-        <Appearance />
-      </ElTabPane>
       <ElTabPane v-if="signedKey.signedKey" label="AI" data-help="AI时代，脚本怎么能落伍!">
         <Service />
       </ElTabPane>
@@ -257,6 +253,9 @@ function openStore() {
         <template #label>
           <ElCheckbox v-model="helpVisible" label="帮助" size="large" @click.stop="" />
         </template>
+        我去, 给你发现小彩蛋了哇! 不过这里啥都没有, 但还是要谢谢你来查看帮助. 虽然点歪了一些些...
+        <br />
+        文案不理解的可以提供建议进行调整
       </ElTabPane>
     </ElTabs>
     <Teleport to="#boss-helper-job-warp,.page-job-inner .page-job-content">

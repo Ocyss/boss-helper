@@ -15,6 +15,7 @@ import {
 } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 
+import Alert from '@/components/Alert'
 import { useCommon } from '@/composables/useCommon'
 import { useStatistics } from '@/composables/useStatistics'
 import { useConf } from '@/stores/conf'
@@ -79,13 +80,15 @@ function stopDeliver() {
 async function startBatch() {
   common.deliverLock = true
   common.deliverStop = false
+  let stepMsg = '投递结束'
   try {
     logger.debug('start batch', page)
     let oldLen = 0
     let oldFirstJobId = ''
-    while (page.value.page <= 10 && !common.deliverStop) {
+    while (!common.deliverStop) {
       await delay(conf.formData.delay.deliveryStarts)
       if (jobList._list.value.length === 0) {
+        stepMsg = '投递结束, job列表为空'
         break
       }
       const currentFirstJobId = jobList._list.value[0]?.encryptJobId ?? ''
@@ -95,6 +98,7 @@ async function startBatch() {
         oldLen === jobList._list.value.length &&
         oldFirstJobId === currentFirstJobId
       ) {
+        stepMsg = '投递结束, 未能获取更多岗位(job列表无变化)'
         break
       }
       oldLen = jobList._list.value.length
@@ -105,18 +109,17 @@ async function startBatch() {
       }
       await delay(conf.formData.delay.deliveryPageNext)
       if (!next()) {
+        stepMsg = '投递结束, 无法继续下一页'
         break
       }
     }
   } catch (e) {
     logger.error('获取失败', e)
-    ElMessage.error(`获取失败! - ${e}`)
+    stepMsg = `获取失败! - ${e}`
   } finally {
     logger.debug('日志信息', log.data)
-    if (conf.formData.notification.value) {
-      await notification('投递结束')
-    }
-    ElMessage.info('投递结束')
+    conf.formData.notification.value && (await notification(stepMsg))
+    ElMessage.info(stepMsg)
     common.deliverLock = false
   }
 }
@@ -143,12 +146,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <ElAlert
+  <Alert
+    id="config-statistics"
     style="margin-bottom: 10px"
-    title="数据并不完全准确，投递上限根据自身情况调整，过高的上限也许会适得其反"
+    title="数据并不完全准确，投递上限根据自身情况调整, 建议 120-140, boss限制最高150"
     type="warning"
   />
-  <ElRow :gutter="20">
+  <ElRow v-if="conf.config_level.intermediate" :gutter="20">
     <ElCol :span="5">
       <ElStatistic
         data-help="统计当天脚本扫描过的所有岗位"

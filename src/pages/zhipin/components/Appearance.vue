@@ -110,7 +110,7 @@ watch(
       id="appearance-alert-1"
       style="margin-bottom: 10px"
       type="success"
-      description="此处提供一些便捷的外观调整功能。目前出于开发阶段, 暂无帮助文档，自行探索"
+      description="此处提供一些便捷的外观调整功能。目前出于开发阶段, 暂无帮助文档，自行探索. 自动保存"
     />
     <ElCheckbox v-model="conf.hideHeader" label="隐藏头" border />
     <ElCheckbox v-model="conf.changeIcon" label="更换图标" border />

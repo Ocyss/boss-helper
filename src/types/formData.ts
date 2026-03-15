@@ -16,8 +16,11 @@ export interface Statistics {
   goldHunterFilter: number
   repeat: number
 }
+const ConfigLevels = ['beginner', 'intermediate', 'advanced', 'expert'] as const
+export type ConfigLevel = (typeof ConfigLevels)[number]
 
 export interface FormData {
+  config_level: ConfigLevel
   company: FormDataSelect
   jobTitle: FormDataSelect
   jobContent: FormDataSelect
@@ -58,12 +61,13 @@ export interface FormData {
 export type FormInfoData = {
   [key in keyof Omit<
     FormData,
-    'aiGreeting' | 'aiFiltering' | 'delay' | 'userId' | 'version' | 'amap'
+    'config_level' | 'aiGreeting' | 'aiFiltering' | 'delay' | 'userId' | 'version' | 'amap'
   >]: {
     label: string
     'data-help'?: string
   }
 } & {
+  config_level: { options: Array<{ value: ConfigLevel; label: string }>; 'data-help'?: string }
   aiGreeting: FormInfoAi
   aiFiltering: FormInfoAi
   delay: ConfInfoDelay

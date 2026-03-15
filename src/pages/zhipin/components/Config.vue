@@ -1,6 +1,5 @@
-<script lang="tsx" setup>
-import type { PropType } from '#imports'
-import { defineComponent, ref } from '#imports'
+<script lang="ts" setup>
+import { reactiveComputed } from '@vueuse/core'
 import {
   ElAlert,
   ElButton,
@@ -16,17 +15,24 @@ import {
   ElPopover,
   ElSpace,
   ElTooltip,
+  ElSelect,
+  ElOption,
 } from 'element-plus'
 
+import { ref } from '#imports'
 import Alert from '@/components/Alert'
 import formItem from '@/components/form/FormItem.vue'
 import formSelect from '@/components/form/FormSelect.vue'
+import SalaryRangeComponent from '@/components/form/SalaryRange.vue'
 import { getCacheManager } from '@/composables/useApplying'
 import { useCommon } from '@/composables/useCommon'
 import { formInfoData, useConf } from '@/stores/conf'
+import { ConfigLevel } from '@/types/formData'
 import { amapGeocode } from '@/utils/amap'
 import { logger } from '@/utils/logger'
+
 import Ai from './Ai.vue'
+import Appearance from './Appearance.vue'
 
 const conf = useConf()
 
@@ -38,100 +44,39 @@ async function amapGeocodeHandler() {
     const res = await amapGeocode(conf.formData.amap.origins)
     if (res) {
       conf.formData.amap.origins = res.location
-    }
-    else {
+    } else {
       ElMessage.error('获取地址失败')
     }
-  }
-  catch (error) {
+  } catch (error) {
     ElMessage.error('获取地址失败')
     logger.error(error)
-  }
-  finally {
+  } finally {
     amapGeocodeLoading.value = false
   }
 }
 
 function syncSalaryRange() {
-  conf.formData.salaryRange.advancedValue.M[0] = Math.round(conf.formData.salaryRange.value[0] * 1000)
-  conf.formData.salaryRange.advancedValue.M[1] = Math.round(conf.formData.salaryRange.value[1] * 1000)
+  conf.formData.salaryRange.advancedValue.M[0] = Math.round(
+    conf.formData.salaryRange.value[0] * 1000,
+  )
+  conf.formData.salaryRange.advancedValue.M[1] = Math.round(
+    conf.formData.salaryRange.value[1] * 1000,
+  )
 
-  conf.formData.salaryRange.advancedValue.D[0] = Math.round(conf.formData.salaryRange.advancedValue.M[0] / 21.75)
-  conf.formData.salaryRange.advancedValue.D[1] = Math.round(conf.formData.salaryRange.advancedValue.M[1] / 21.75)
+  conf.formData.salaryRange.advancedValue.D[0] = Math.round(
+    conf.formData.salaryRange.advancedValue.M[0] / 21.75,
+  )
+  conf.formData.salaryRange.advancedValue.D[1] = Math.round(
+    conf.formData.salaryRange.advancedValue.M[1] / 21.75,
+  )
 
-  conf.formData.salaryRange.advancedValue.H[0] = Math.round(conf.formData.salaryRange.advancedValue.D[0] / 8)
-  conf.formData.salaryRange.advancedValue.H[1] = Math.round(conf.formData.salaryRange.advancedValue.D[1] / 8)
+  conf.formData.salaryRange.advancedValue.H[0] = Math.round(
+    conf.formData.salaryRange.advancedValue.D[0] / 8,
+  )
+  conf.formData.salaryRange.advancedValue.H[1] = Math.round(
+    conf.formData.salaryRange.advancedValue.D[1] / 8,
+  )
 }
-
-const SalaryRangeComponent = defineComponent({
-  props: {
-    value: {
-      type: Object as PropType<[number, number, boolean]>,
-      required: true,
-    },
-
-    unit: {
-      type: String,
-      required: true,
-    },
-
-    show: {
-      type: Boolean,
-      required: true,
-    },
-
-    step: {
-      type: Number,
-    },
-
-    width: {
-      type: String,
-    },
-
-    controls: {
-      type: Boolean,
-      default: true,
-    },
-  },
-
-  setup(props) {
-    const handleToggle = () => {
-      // eslint-disable-next-line vue/no-mutating-props
-      props.value[2] = !props.value[2]
-    }
-    return () => (
-      <div style="display: flex;flex: 1;justify-content: space-between;align-items: center;">
-        <ElInputNumber
-          v-model={props.value[0]}
-          style={`width: ${props.width || '105px'};`}
-          controls={props.controls}
-          controls-position="right"
-          min={0}
-          step={props.step}
-        />
-        <span>-</span>
-        <ElInputNumber
-          v-model={props.value[1]}
-          style={`width: ${props.width || '105px'};`}
-          controls={props.controls}
-          controls-position="right"
-          min={0}
-          step={props.step}
-        />
-        <span>{props.unit}</span>
-        {props.show
-        && (
-          <ElButton
-            onClick={handleToggle}
-            size="small"
-          >
-            {props.value[2] ? '严格' : '宽松'}
-          </ElButton>
-        )}
-      </div>
-    )
-  },
-})
 </script>
 
 <template>
@@ -220,6 +165,7 @@ const SalaryRangeComponent = defineComponent({
             />
           </form-item>
           <form-item
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.hrPosition"
             v-model:enable="conf.formData.hrPosition.enable"
             v-model:include="conf.formData.hrPosition.include"
@@ -231,6 +177,7 @@ const SalaryRangeComponent = defineComponent({
             />
           </form-item>
           <form-item
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.jobAddress"
             v-model:enable="conf.formData.jobAddress.enable"
             :disabled="deliverLock"
@@ -244,6 +191,7 @@ const SalaryRangeComponent = defineComponent({
             />
           </form-item>
           <form-item
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.salaryRange"
             v-model:enable="conf.formData.salaryRange.enable"
           >
@@ -253,7 +201,12 @@ const SalaryRangeComponent = defineComponent({
               unit="K"
               :show="false"
             />
-            <ElPopover placement="top" :width="400" trigger="click">
+            <ElPopover
+              v-if="conf.config_level.advanced"
+              placement="top"
+              :width="400"
+              trigger="click"
+            >
               <template #reference>
                 <ElButton style="margin-left: 5px"> 高级 </ElButton>
               </template>
@@ -304,6 +257,7 @@ const SalaryRangeComponent = defineComponent({
             </ElPopover>
           </form-item>
           <form-item
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.companySizeRange"
             v-model:enable="conf.formData.companySizeRange.enable"
           >
@@ -317,6 +271,7 @@ const SalaryRangeComponent = defineComponent({
           </form-item>
 
           <form-item
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.customGreeting"
             v-model:enable="conf.formData.customGreeting.enable"
           >
@@ -326,11 +281,13 @@ const SalaryRangeComponent = defineComponent({
         </ElSpace>
         <ElSpace wrap>
           <ElCheckbox
+            v-if="conf.config_level.expert"
             v-bind="formInfoData.greetingVariable"
             v-model="conf.formData.greetingVariable.value"
             border
           />
           <ElCheckbox
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.activityFilter"
             v-model="conf.formData.activityFilter.value"
             border
@@ -346,18 +303,21 @@ const SalaryRangeComponent = defineComponent({
             border
           />
           <ElCheckbox
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.sameCompanyFilter"
             v-model="conf.formData.sameCompanyFilter.value"
             border
           />
           <ElCheckbox
+            v-if="conf.config_level.intermediate"
             v-bind="formInfoData.sameHrFilter"
             v-model="conf.formData.sameHrFilter.value"
             border
           />
         </ElSpace>
       </ElCollapseItem>
-      <ElCollapseItem title="地址配置" name="4">
+      <ElCollapseItem title="外观配置" name="5"> <Appearance /></ElCollapseItem>
+      <ElCollapseItem v-if="conf.config_level.advanced" title="地址配置" name="4">
         <Alert id="config-amap-2" style="margin-bottom: 10px" show-icon type="info">
           <template #title>
             使用高德地图前 推荐结合工作地址包含使用, 需自行申请key,
@@ -476,10 +436,10 @@ const SalaryRangeComponent = defineComponent({
           </ElInputNumber>
         </ElFormItem>
       </ElCollapseItem>
-      <ElCollapseItem title="AI配置" name="2">
+      <ElCollapseItem v-if="conf.config_level.advanced" title="AI配置" name="2">
         <Ai />
       </ElCollapseItem>
-      <ElCollapseItem title="延迟配置" name="3">
+      <ElCollapseItem v-if="conf.config_level.intermediate" title="延迟配置" name="3">
         <ElFormItem
           v-for="(item, key) in formInfoData.delay"
           :key
@@ -497,12 +457,26 @@ const SalaryRangeComponent = defineComponent({
     </ElCollapse>
 
     <div style="margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap">
+      <ElFormItem label="配置级别" :data-help="formInfoData.config_level['data-help']">
+        <ElSelect v-model="conf.formData.config_level" style="width: 120px">
+          <ElOption
+            v-for="item in formInfoData.config_level.options"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          /> </ElSelect
+      ></ElFormItem>
       <ElCheckbox
         v-bind="formInfoData.notification"
         v-model="conf.formData.notification.value"
         border
       />
-      <ElCheckbox v-bind="formInfoData.useCache" v-model="conf.formData.useCache.value" border />
+      <ElCheckbox
+        v-if="conf.config_level.expert || conf.formData.useCache.value"
+        v-bind="formInfoData.useCache"
+        v-model="conf.formData.useCache.value"
+        border
+      />
       <ElButton
         v-if="conf.formData.useCache.value"
         type="warning"
@@ -510,7 +484,7 @@ const SalaryRangeComponent = defineComponent({
       >
         清空缓存
       </ElButton>
-      <ElFormItem :label="formInfoData.deliveryLimit.label">
+      <ElFormItem v-if="conf.config_level.intermediate" :label="formInfoData.deliveryLimit.label">
         <ElInputNumber
           v-bind="formInfoData.deliveryLimit"
           v-model="conf.formData.deliveryLimit.value"
@@ -528,14 +502,36 @@ const SalaryRangeComponent = defineComponent({
     <ElButton type="warning" data-help="重新加载本地配置" @click="conf.confReload">
       重载配置
     </ElButton>
-    <ElButton type="primary" data-help="互联网就是要分享" @click="conf.confExport">
+    <ElButton
+      type="primary"
+      data-help="不同版本的参数可能会调整, 更新之后一键应用, 不会覆盖主要筛选条件"
+      @click="conf.confRecommend"
+    >
+      使用推荐配置
+    </ElButton>
+    <ElButton
+      v-if="conf.config_level.intermediate"
+      type="primary"
+      data-help="互联网就是要分享"
+      @click="conf.confExport"
+    >
       导出配置
     </ElButton>
-    <ElButton type="primary" data-help="互联网就是要分享" @click="conf.confImport">
+    <ElButton
+      v-if="conf.config_level.intermediate"
+      type="primary"
+      data-help="互联网就是要分享"
+      @click="conf.confImport"
+    >
       导入配置
     </ElButton>
-    <ElButton type="danger" data-help="清空配置,不会帮你保存,可以重载恢复" @click="conf.confDelete">
-      删除配置
+    <ElButton
+      v-if="conf.config_level.advanced"
+      type="danger"
+      data-help="清空配置,不会帮你保存,可以重载恢复"
+      @click="conf.confDelete"
+    >
+      清空配置
     </ElButton>
   </div>
 </template>

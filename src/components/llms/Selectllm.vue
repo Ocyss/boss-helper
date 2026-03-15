@@ -1,8 +1,5 @@
-<script lang="tsx" setup>
+<script lang="ts" setup>
 import type { CheckboxValueType } from 'element-plus'
-import type { prompt } from '@/composables/useModel/type'
-import type { MyJobListData } from '@/stores/jobs'
-import type { FormInfoAi } from '@/types/formData'
 import {
   ElButton,
   ElDialog,
@@ -21,17 +18,21 @@ import {
   ElTable,
   ElTableColumn,
   ElText,
-
 } from 'element-plus'
-import { reactive, ref } from 'vue'
+import { h, reactive, ref } from 'vue'
+
 import JobCard from '@/components/JobCard.vue'
 import { parseFiltering } from '@/composables/useApplying/utils'
 import { llmIcon, useModel } from '@/composables/useModel'
+import type { prompt } from '@/composables/useModel/type'
 import { formInfoData, useConf } from '@/stores/conf'
+import type { MyJobListData } from '@/stores/jobs'
 import { jobList } from '@/stores/jobs'
 import { useSignedKey } from '@/stores/signedKey'
 import { useUser } from '@/stores/user'
+import type { FormInfoAi } from '@/types/formData'
 import { logger } from '@/utils/logger'
+
 import Alert from '../Alert'
 
 const props = defineProps<{
@@ -44,7 +45,11 @@ const model = useModel()
 
 const show = defineModel<boolean>({ required: true })
 const currentModel = ref(conf.formData[props.data].model)
-const singleMode = ref(conf.formData[props.data].vip || signedKey.signedKey != null ? 'vip' as const : !Array.isArray(conf.formData[props.data].prompt))
+const singleMode = ref(
+  conf.formData[props.data].vip || signedKey.signedKey != null
+    ? ('vip' as const)
+    : !Array.isArray(conf.formData[props.data].prompt),
+)
 
 const score = ref(props.data === 'aiFiltering' ? (conf.formData[props.data].score ?? 10) : 10)
 
@@ -58,21 +63,18 @@ const role = ['system', 'user', 'assistant'].map((item) => {
 let _message = conf.formData[props.data].prompt
 
 if (Array.isArray(_message)) {
-  _message = [..._message].map(item => ({ ...item }))
+  _message = [..._message].map((item) => ({ ...item }))
 }
 
 const message = ref<string | prompt>(_message)
 
 function inputExample() {
-  message.value = (formInfoData[props.data] as FormInfoAi).example[
-    singleMode.value ? 0 : 1
-  ]
+  message.value = (formInfoData[props.data] as FormInfoAi).example[singleMode.value ? 0 : 1]
 }
 function changeMode(v: boolean | string | number | undefined) {
   if (v) {
     message.value = ''
-  }
-  else {
+  } else {
     message.value = [
       { role: 'user', content: '' },
       { role: 'assistant', content: '' },
@@ -83,7 +85,7 @@ function changeMode(v: boolean | string | number | undefined) {
 
 function removeMessage(item: prompt[number]) {
   if (Array.isArray(message.value)) {
-    message.value = message.value.filter(v => v !== item)
+    message.value = message.value.filter((v) => v !== item)
   }
 }
 
@@ -115,9 +117,8 @@ const testDataContent = reactive<Record<string, TestContent[]>>({})
 function handleExpandChange(row: TestData) {
   logger.info('handleExpandChange', row)
   if (expandTestRowKeys.value.includes(row.key)) {
-    expandTestRowKeys.value = expandTestRowKeys.value.filter(v => v !== row.key)
-  }
-  else {
+    expandTestRowKeys.value = expandTestRowKeys.value.filter((v) => v !== row.key)
+  } else {
     expandTestRowKeys.value.push(row.key)
   }
 }
@@ -134,11 +135,11 @@ async function addTestJob(n: number) {
   try {
     let count = 0
     for (const item of jobList._list.value) {
-      if (testData.some(v => v.job.encryptJobId === item.encryptJobId)) {
+      if (testData.some((v) => v.job.encryptJobId === item.encryptJobId)) {
         continue
       }
       if (item.card == null) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise((resolve) => setTimeout(resolve, 1000))
         await item.getCard()
       }
       testData.push({ key: item.encryptJobId, job: item, checked: false, loading: false })
@@ -148,8 +149,7 @@ async function addTestJob(n: number) {
         break
       }
     }
-  }
-  finally {
+  } finally {
     testJobLoading.value = false
   }
 }
@@ -161,9 +161,7 @@ async function testJob() {
   }
   testJobLoading.value = true
   testJobStop.value = false
-  const md = model.modelData.find(
-    v => currentModel.value === v.key,
-  )
+  const md = model.modelData.find((v) => currentModel.value === v.key)
   if (singleMode.value !== 'vip' && (!currentModel.value || !md)) {
     ElMessage.warning('请在上级弹窗右上角选择模型')
     return
@@ -176,14 +174,17 @@ async function testJob() {
       }
       try {
         item.loading = true
-        let { content, prompt, reasoning_content } = await gpt.message({
-          data: {
-            data: item.job,
-            card: item.job.card!,
+        let { content, prompt, reasoning_content } = await gpt.message(
+          {
+            data: {
+              data: item.job,
+              card: item.job.card!,
+            },
+            test: true,
+            json: props.data === 'aiFiltering',
           },
-          test: true,
-          json: props.data === 'aiFiltering',
-        }, props.data)
+          props.data,
+        )
         if (props.data === 'aiFiltering' && content) {
           const { message } = parseFiltering(content)
           content = message ?? content
@@ -194,12 +195,10 @@ async function testJob() {
           reasoning_content,
           content,
         })
-      }
-      catch (err: any) {
+      } catch (err: any) {
         logger.error(err)
         ElMessage.error(err.message)
-      }
-      finally {
+      } finally {
         item.loading = false
       }
     }
@@ -208,12 +207,10 @@ async function testJob() {
       const batch = testData.slice(i, i + 4)
       await Promise.all(batch.map(handle))
     }
-  }
-  catch (err: any) {
+  } catch (err: any) {
     logger.error(err)
     ElMessage.error(err.message)
-  }
-  finally {
+  } finally {
     testJobLoading.value = false
     testJobStop.value = true
   }
@@ -226,8 +223,7 @@ async function savePrompt() {
       return
     }
     conf.formData[props.data].model = currentModel.value
-  }
-  else {
+  } else {
     conf.formData[props.data].vip = true
   }
   conf.formData[props.data].prompt = message.value
@@ -245,16 +241,13 @@ async function copyOnlineResume() {
   await ElMessageBox({
     title: '在线简历',
     message: () => {
-      return (
-        <ElInput
-          style="width: 100%"
-          model-value={resume}
-          readonly={true}
-          autosize={{ minRows: 4, maxRows: 8 }}
-          type="textarea"
-        >
-        </ElInput>
-      )
+      return h(ElInput, {
+        style: 'width: 100%',
+        modelValue: resume,
+        readonly: true,
+        autosize: { minRows: 4, maxRows: 8 },
+        type: 'textarea',
+      })
     },
     customStyle: {
       width: '100%',
@@ -262,11 +255,11 @@ async function copyOnlineResume() {
     showCancelButton: true,
     confirmButtonText: '复制到剪切板',
     cancelButtonText: '取消',
-  }).then(() => {
-    return navigator.clipboard.writeText(resume)
-  }).catch(() => {
-
   })
+    .then(() => {
+      return navigator.clipboard.writeText(resume)
+    })
+    .catch(() => {})
 }
 </script>
 
@@ -375,7 +368,7 @@ async function copyOnlineResume() {
       type="textarea"
     />
     <ElForm v-else v-model="message as string" label-width="auto" class="demo-dynamic">
-      <ElFormItem v-for="(item, index) in (message as prompt)" :key="index">
+      <ElFormItem v-for="(item, index) in message as prompt" :key="index">
         <template #label>
           <ElSelectV2 v-model="item.role" :options="role" style="width: 140px" />
         </template>
