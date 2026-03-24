@@ -36,6 +36,7 @@ const dark = ref(false)
 
 counter.storageGet('theme-dark', false).then((res) => {
   dark.value = res
+  document.documentElement.classList.toggle('dark', dark.value)
 })
 
 async function themeChange() {
@@ -128,7 +129,7 @@ Github开源地址: <a href="https://github.com/ocyss/boos-helper" target="_blan
           >
             {{ v.name }}
           </ElDropdownItem>
-          <ElDropdownItem disabled @click="themeChange">
+          <ElDropdownItem @click="themeChange">
             暗黑模式（{{ dark ? '开' : '关' }}）
           </ElDropdownItem>
           <ElDropdownItem @click="storeShow = true"> 版本信息 </ElDropdownItem>
@@ -201,6 +202,20 @@ Github开源地址: <a href="https://github.com/ocyss/boos-helper" target="_blan
       background-color: #bbf8fa;
       border-color: #2fffd9;
     }
+  }
+}
+html.dark {
+  .store-item-a .store-item {
+    background-color: #3a3a3a;
+    border-color: #5a5a5a;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+
+  .store-item-a:hover .store-item {
+    background-color: #2f4b4c;
+    border-color: #36c9cb;
   }
 }
 </style>
