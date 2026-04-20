@@ -1,25 +1,119 @@
 import { ElMessage } from 'element-plus'
 
+import {
+  BOSS_HELPER_CHAT_BRIDGE_SEND,
+  BOSS_HELPER_CHAT_BRIDGE_SOURCE,
+  type BossHelperChatMessageArgs,
+  type BossHelperChatSendRequest,
+  isBossHelperChatSendResult,
+} from './chatBridge'
+import { mqtt } from './mqtt'
 import type { TechwolfChatProtocol } from './type'
 import { AwesomeMessage } from './type'
 
-interface MessageArgs {
-  form_uid: string
-  to_uid: string
-  to_name: string // encryptBossId  擦,boss的id不是岗位的
-  content?: string
-  image?: string // url
+type MessageArgs = BossHelperChatMessageArgs
+
+let packetMessageId = 0
+
+function nextPacketMessageId() {
+  packetMessageId = (packetMessageId % 0xffff) + 1
+  return packetMessageId
+}
+
+interface SocketLike {
+  readyState: number
+  send: (data: ArrayBuffer) => void
+}
+
+function isOpenWebSocket(socket: unknown): socket is SocketLike {
+  return (
+    typeof socket === 'object' &&
+    socket != null &&
+    'readyState' in socket &&
+    'send' in socket &&
+    socket.readyState === WebSocket.OPEN &&
+    typeof socket.send === 'function'
+  )
+}
+
+function getSocket(target: Window | null | undefined) {
+  try {
+    return target?.socket
+  } catch {
+    return undefined
+  }
+}
+
+function resolveChatSocket() {
+  const candidates = [getSocket(window), getSocket(window.top), getSocket(window.parent)]
+
+  return candidates.find(isOpenWebSocket)
+}
+
+function normalizeError(error: unknown) {
+  if (error instanceof Error) {
+    return error
+  }
+
+  return new Error(typeof error === 'string' ? error : '打招呼发送失败')
+}
+
+async function sendThroughMainWorldBridge(args: MessageArgs) {
+  const requestId = `boss-helper-chat-${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('主世界聊天桥接超时'))
+    }, 25000)
+
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('message', handler)
+    }
+
+    const handler = (event: MessageEvent<unknown>) => {
+      if (event.source !== window || !isBossHelperChatSendResult(event.data)) {
+        return
+      }
+
+      if (event.data.requestId !== requestId) {
+        return
+      }
+
+      cleanup()
+
+      if (event.data.success) {
+        resolve()
+        return
+      }
+
+      reject(new Error(event.data.error ?? '主世界聊天发送失败'))
+    }
+
+    window.addEventListener('message', handler)
+
+    const request: BossHelperChatSendRequest = {
+      source: BOSS_HELPER_CHAT_BRIDGE_SOURCE,
+      type: BOSS_HELPER_CHAT_BRIDGE_SEND,
+      requestId,
+      payload: args,
+    }
+    window.postMessage(request, '*')
+  })
 }
 
 export class Message {
-  msg: Uint8Array
+  payload: Uint8Array
+  packet: Uint8Array
   hex: string
   args: MessageArgs
 
   constructor(args: MessageArgs) {
     this.args = args
-    const r = new Date().getTime()
-    const d = r + 68256432452609
+
+    const now = Date.now()
+    const mid = now + 68256432452609
     const data: TechwolfChatProtocol = {
       messages: [
         {
@@ -30,60 +124,74 @@ export class Message {
           to: {
             uid: args.to_uid,
             name: args.to_name,
-            source: 0,
+            source: args.friend_source ?? 0,
           },
           type: 1,
-          mid: d.toString(),
-          time: r.toString(),
+          mid: mid.toString(),
+          time: now.toString(),
           body: {
             type: 1,
             templateId: 1,
             text: args.content,
-            // image: {},
           },
-          cmid: d.toString(),
+          cmid: mid.toString(),
         },
       ],
       type: 1,
     }
 
-    this.msg = AwesomeMessage.encode(data).finish().slice()
-    this.hex = [...this.msg].map((b) => b.toString(16).padStart(2, '0')).join('')
+    this.payload = AwesomeMessage.encode(data).finish().slice()
+    this.packet = mqtt.encode({
+      messageId: nextPacketMessageId(),
+      payload: this.payload,
+    })
+    this.hex = [...this.packet].map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
   toArrayBuffer(): ArrayBuffer {
-    return this.msg.buffer.slice(0, this.msg.byteLength) as ArrayBuffer
+    return this.packet.buffer.slice(
+      this.packet.byteOffset,
+      this.packet.byteOffset + this.packet.byteLength,
+    ) as ArrayBuffer
   }
 
-  send() {
-    if ('GeekChatCore' in window && window.GeekChatCore != null) {
-      const client = window.GeekChatCore.getInstance().getClient().client
-      client.send(this)
-    } else if ('ChatWebsocket' in window && window.ChatWebsocket != null) {
-      window.ChatWebsocket.send(this)
+  toPayloadArrayBuffer(): ArrayBuffer {
+    return this.payload.buffer.slice(
+      this.payload.byteOffset,
+      this.payload.byteOffset + this.payload.byteLength,
+    ) as ArrayBuffer
+  }
+
+  async send() {
+    let lastError: Error | null = null
+
+    try {
+      await sendThroughMainWorldBridge(this.args)
+      return
+    } catch (error) {
+      lastError = normalizeError(error)
     }
-    // else if (window.EventBus != null) { // 2025-12-22 失效，疑似boss bug。暂时禁用
-    //   window.EventBus.publish('CHAT_SEND_TEXT', {
-    //     uid: this.args.to_uid,
-    //     encryptUid: this.args.to_name,
-    //     message: this.args.content,
-    //     msg: this.args.content,
-    //   }, () => {
-    //     logger.debug('消息发送成功', this)
-    //   }, () => {
-    //     logger.error('消息发送失败', this)
-    //   })
-    // }
-    // else if (window.__q_chatSend != null) { // 扩展限制，不能远程加载，暂不考虑实现
-    //   // 当无渠道时，从网络加载临时补丁
-    //   window.__q_chatSend.call(this).then(() => {
-    //     logger.debug('消息发送成功', this)
-    //   }, () => {
-    //     logger.debug('消息发送失败', this)
-    //   })
-    // }
-    else {
-      ElMessage.error('无可用发送渠道，请等待作者修复。可暂时关闭招呼语功能')
+
+    try {
+      if ('ChatWebsocket' in window && window.ChatWebsocket != null) {
+        window.ChatWebsocket.send({
+          toArrayBuffer: () => this.toPayloadArrayBuffer(),
+        })
+        return
+      }
+
+      const socket = resolveChatSocket()
+
+      if (socket != null) {
+        socket.send(this.toArrayBuffer())
+        return
+      }
+    } catch (error) {
+      lastError = normalizeError(error)
     }
+
+    const error = lastError ?? new Error('未找到可用聊天连接')
+    ElMessage.error(error.message)
+    throw error
   }
 }

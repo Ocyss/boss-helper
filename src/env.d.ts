@@ -1,9 +1,10 @@
 interface Window {
-  socket: WebSocket
+  socket?: WebSocket
   ChatWebsocket?: {
     send: (e: { toArrayBuffer: () => ArrayBuffer }) => void
   }
   GeekChatCore?: any
+  __BOSS_HELPER_CHAT_SOCKET_HOOKED__?: boolean
   EventBus?: {
     publish: (e: string, ...data: any[]) => void
     subscribe: (e: string, t: (...data: any[]) => void) => void
