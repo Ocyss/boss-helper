@@ -4,7 +4,7 @@ import { ref } from 'vue'
 
 import formSwitch from '@/components/form/FormSwitch.vue'
 import configLLM from '@/components/llms/ConfigLLM.vue'
-import selectLLM from '@/components/llms/SelectLLM.vue'
+import selectLLM from '@/components/llms/Selectllm.vue'
 import { useCommon } from '@/composables/useCommon'
 import { formInfoData, useConf } from '@/stores/conf'
 import type { FormDataAi } from '@/types/formData'

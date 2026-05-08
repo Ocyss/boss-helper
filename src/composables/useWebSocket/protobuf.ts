@@ -1,5 +1,7 @@
 import { ElMessage } from 'element-plus'
 
+import { logger } from '@/utils/logger'
+
 import type { TechwolfChatProtocol } from './type'
 import { AwesomeMessage } from './type'
 
@@ -55,12 +57,40 @@ export class Message {
     return this.msg.buffer.slice(0, this.msg.byteLength) as ArrayBuffer
   }
 
+  private getSendChannel() {
+    if (window.ChatWebsocket != null && typeof window.ChatWebsocket.send === 'function') {
+      return {
+        type: 'ChatWebsocket',
+        send: () => window.ChatWebsocket!.send(this),
+      } as const
+    }
+
+    const geekChat = window.GeekChatCore?.getInstance?.()
+    const socketClient = geekChat?.socketConnect?.client
+    if (socketClient != null && typeof socketClient.send === 'function') {
+      return {
+        type: 'GeekChatCore.socketConnect.client',
+        send: () => socketClient.send(this),
+      } as const
+    }
+
+    const legacyClient = geekChat?.getClient?.()?.client
+    if (legacyClient != null && typeof legacyClient.send === 'function') {
+      return {
+        type: 'GeekChatCore.getClient().client',
+        send: () => legacyClient.send(this),
+      } as const
+    }
+
+    return null
+  }
+
   send() {
-    if ('GeekChatCore' in window && window.GeekChatCore != null) {
-      const client = window.GeekChatCore.getInstance().getClient().client
-      client.send(this)
-    } else if ('ChatWebsocket' in window && window.ChatWebsocket != null) {
-      window.ChatWebsocket.send(this)
+    const channel = this.getSendChannel()
+    if (channel != null) {
+      logger.debug('使用消息发送通道', channel.type)
+      channel.send()
+      return
     }
     // else if (window.EventBus != null) { // 2025-12-22 失效，疑似boss bug。暂时禁用
     //   window.EventBus.publish('CHAT_SEND_TEXT', {
@@ -82,8 +112,14 @@ export class Message {
     //     logger.debug('消息发送失败', this)
     //   })
     // }
-    else {
-      ElMessage.error('无可用发送渠道，请等待作者修复。可暂时关闭招呼语功能')
-    }
+
+    const error = new Error('当前页面没有可用发送渠道，请切到聊天页后重试。')
+    logger.error('无可用消息发送渠道', {
+      hasGeekChatCore: window.GeekChatCore != null,
+      hasChatWebsocket: window.ChatWebsocket != null,
+      geekChatInstanceKeys: Object.keys(window.GeekChatCore?.getInstance?.() ?? {}),
+    })
+    ElMessage.error(error.message)
+    throw error
   }
 }

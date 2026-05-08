@@ -4,8 +4,8 @@ import { miTem } from 'mitem'
 import { useChat } from '@/composables/useChat'
 import { useModel } from '@/composables/useModel'
 import { useStatistics } from '@/composables/useStatistics'
-import { Message } from '@/composables/useWebSocket'
 import { counter } from '@/message'
+import { CHAT_SEND_MESSAGE, type ChatSendRuntimeResult } from '@/message/chat'
 import { useConf } from '@/stores/conf'
 import type { logData } from '@/stores/log'
 import { useUser } from '@/stores/user'
@@ -464,14 +464,21 @@ export function handles() {
 
           ctx.message = msg
 
-          const buf = new Message({
+          const payload = {
             form_uid: uid.toString(),
             to_uid: ctx.bossData.data.bossId.toString(),
             to_name: ctx.bossData.data.encryptBossId, // encryptUserId
             content: msg,
-          })
-
-          buf.send()
+          }
+          const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+          const result = (await counter.chatSend({
+            type: CHAT_SEND_MESSAGE,
+            requestId,
+            payload,
+          })) as ChatSendRuntimeResult | undefined
+          if (result?.ok !== true) {
+            throw new Error(result?.error ?? '聊天页未返回成功结果')
+          }
         } catch (e) {
           throw new GreetError(errorHandle(e))
         }
@@ -494,8 +501,9 @@ export function handles() {
   const aiGreeting: StepFactory = () => {
     const curModel = model.modelData.find((v) => conf.formData.aiGreeting.model === v.key)
     if (!curModel && !conf.formData.aiGreeting.vip) {
-      ElMessage.warning('没有找到招呼语的模型')
-      return
+      const error = new GreetError('AI招呼已开启，但没有找到可用模型')
+      ElMessage.warning(error.message)
+      throw error
     }
     const gpt = model.getModel(
       curModel,
@@ -533,19 +541,27 @@ export function handles() {
           )
           ctx.aiGreetingQ = prompt
           if (content == null) {
-            return
+            throw new GreetError('AI招呼未生成有效内容')
           }
           ctx.message = content
           ctx.aiGreetingA = content
           ctx.aiGreetingR = reasoning_content
           // chatInput.end(content)
-          const buf = new Message({
+          const payload = {
             form_uid: uid.toString(),
             to_uid: ctx.bossData.data.bossId.toString(),
             to_name: ctx.bossData.data.encryptBossId, // encryptUserId
             content,
-          })
-          buf.send()
+          }
+          const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+          const result = (await counter.chatSend({
+            type: CHAT_SEND_MESSAGE,
+            requestId,
+            payload,
+          })) as ChatSendRuntimeResult | undefined
+          if (result?.ok !== true) {
+            throw new Error(result?.error ?? '聊天页未返回成功结果')
+          }
         } catch (e) {
           // chatInput.end('Err~')
           throw new GreetError(errorHandle(e))

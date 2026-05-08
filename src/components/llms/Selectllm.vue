@@ -21,7 +21,7 @@ import {
 } from 'element-plus'
 import { h, reactive, ref } from 'vue'
 
-import JobCard from '@/components/JobCard.vue'
+import JobCard from '@/components/Jobcard.vue'
 import { parseFiltering } from '@/composables/useApplying/utils'
 import { llmIcon, useModel } from '@/composables/useModel'
 import type { prompt } from '@/composables/useModel/type'

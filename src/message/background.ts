@@ -157,6 +157,33 @@ export class BackgroundCounter {
     }
     return Date.now()
   }
+
+  async chatSend<T>(payload: T) {
+    let tabs = await browser.tabs.query({ url: 'https://www.zhipin.com/web/geek/chat*' })
+    let tab = tabs.find((item) => item.id != null)
+    if (tab?.id == null) {
+      tab = await browser.tabs.create({
+        url: 'https://www.zhipin.com/web/geek/chat',
+        active: false,
+      })
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+    }
+    if (tab?.id == null) {
+      throw new Error('聊天页标签创建失败')
+    }
+    let result: any
+    try {
+      result = await browser.tabs.sendMessage(tab.id, payload)
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      result = await browser.tabs.sendMessage(tab.id, payload)
+    }
+    if (result?.ok === false && result?.error?.includes('超时')) {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      return browser.tabs.sendMessage(tab.id, payload)
+    }
+    return result
+  }
 }
 
 interface MessageMeta {

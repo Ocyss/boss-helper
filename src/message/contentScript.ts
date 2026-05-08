@@ -53,6 +53,10 @@ export class ContentCounter implements BackgroundCounter {
     return this.background.backgroundTest(...args)
   }
 
+  async chatSend(...args: Parameters<BackgroundCounter['chatSend']>) {
+    return this.background.chatSend(...args)
+  }
+
   async storageGet<T>(key: string, defaultValue: T): Promise<T>
   async storageGet<T>(key: string): Promise<T | null>
   async storageGet<T>(key: string, defaultValue?: T): Promise<T | null> {

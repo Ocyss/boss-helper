@@ -2,6 +2,20 @@ interface Window {
   socket: WebSocket
   ChatWebsocket?: {
     send: (e: { toArrayBuffer: () => ArrayBuffer }) => void
+    sendFailMsgs?: any[]
+    status$?: {
+      value?: unknown
+      observers?: unknown[]
+    }
+    deliver$?: {
+      observers?: unknown[]
+    }
+    message$?: {
+      observers?: unknown[]
+    }
+    iq$?: {
+      observers?: unknown[]
+    }
   }
   GeekChatCore?: any
   EventBus?: {

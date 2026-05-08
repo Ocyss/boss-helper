@@ -1,6 +1,5 @@
 import type { Column } from 'element-plus'
 import { ElButton, ElCheckbox, ElCheckboxGroup, ElIcon, ElPopover, ElTag } from 'element-plus'
-import type { HeaderCellRendererParams } from 'element-plus/es/components/table-v2/src/types.mjs'
 import { computed, reactive, ref } from 'vue'
 
 import type {
@@ -57,6 +56,8 @@ interface log {
   message?: string // 显示消息
   data?: logData
 }
+
+type HeaderCellRendererParams = Parameters<NonNullable<Column<log>['headerCellRenderer']>>[0]
 
 const dialogData = reactive<{ show: boolean; data?: log }>({ show: false })
 
@@ -115,7 +116,7 @@ const columns: Column<log>[] = [
     cellRenderer: ({ rowData }) => (
       <ElTag type={rowData.state ?? 'primary'}>{rowData.state_name}</ElTag>
     ),
-    headerCellRenderer: (props: HeaderCellRendererParams<log>) => {
+    headerCellRenderer: (props: HeaderCellRendererParams) => {
       return (
         <div class="flex items-center justify-center">
           <span class="mr-2 text-xs">{props.column.title}</span>
