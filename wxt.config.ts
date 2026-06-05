@@ -46,6 +46,14 @@ export default defineConfig({
   hooks: {
     'build:manifestGenerated': (wxt, manifest) => {
       manifest.content_scripts ??= []
+      for (const script of manifest.content_scripts) {
+        if (!script.js) continue
+        script.js.sort((a, b) => {
+          if (a === 'content-scripts/content.js') return -1
+          if (b === 'content-scripts/content.js') return 1
+          return 0
+        })
+      }
       manifest.content_scripts.push({
         // Build extension once to see where your CSS get's written to
         css: ['/assets/main-world.css'],

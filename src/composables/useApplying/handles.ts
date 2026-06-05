@@ -468,6 +468,8 @@ export function handles() {
             form_uid: uid.toString(),
             to_uid: ctx.bossData.data.bossId.toString(),
             to_name: ctx.bossData.data.encryptBossId, // encryptUserId
+            boss_name: ctx.bossData.data.name || ctx.listData.card?.bossName || '',
+            job_name: ctx.listData.card?.jobName || ctx.listData.jobName || '',
             content: msg,
           })
 
@@ -492,10 +494,22 @@ export function handles() {
   }
 
   const aiGreeting: StepFactory = () => {
-    const curModel = model.modelData.find((v) => conf.formData.aiGreeting.model === v.key)
+    let curModel = model.modelData.find((v) => conf.formData.aiGreeting.model === v.key)
     if (!curModel && !conf.formData.aiGreeting.vip) {
-      ElMessage.warning('没有找到招呼语的模型')
-      return
+      const availableModels = model.modelData.filter((v) => v?.data && !v?.vip)
+      if (availableModels.length === 1) {
+        curModel = availableModels[0]
+        ElMessage.warning(`未匹配到招呼语模型，已自动使用唯一模型: ${curModel.name ?? curModel.key}`)
+      } else {
+        window.__bossHelperAiRuntime?.({
+          stage: 'model-missing',
+          selected: conf.formData.aiGreeting.model || '',
+          modelCount: model.modelData.length,
+          promptLength: String(conf.formData.aiGreeting.prompt || '').length,
+        })
+        ElMessage.warning('没有找到招呼语的模型')
+        return
+      }
     }
     const gpt = model.getModel(
       curModel,
@@ -543,6 +557,8 @@ export function handles() {
             form_uid: uid.toString(),
             to_uid: ctx.bossData.data.bossId.toString(),
             to_name: ctx.bossData.data.encryptBossId, // encryptUserId
+            boss_name: ctx.bossData.data.name || ctx.listData.card?.bossName || '',
+            job_name: ctx.listData.card?.jobName || ctx.listData.jobName || '',
             content,
           })
           buf.send()
@@ -555,13 +571,14 @@ export function handles() {
   }
 
   const greeting: StepFactory = () => {
-    if (conf.formData.aiGreeting.enable) {
-      // AI招呼语
-      return aiGreeting()
-    } else if (conf.formData.customGreeting.enable) {
-      // 自定义招呼语
-      return customGreeting()
-    }
+    return [
+      conf.formData.aiGreeting.enable
+        ? aiGreeting()
+        : conf.formData.customGreeting.enable
+          ? customGreeting()
+          : undefined,
+      window.__bossHelperDefaultGreetingAfter?.(),
+    ]
   }
 
   function amapHandler(

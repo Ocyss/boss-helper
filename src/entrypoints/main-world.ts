@@ -6,6 +6,7 @@ import { defineUnlistedScript } from '#imports'
 import App from '@/App.vue'
 import { getRootVue } from '@/composables/useVue'
 import { loader } from '@/utils'
+import { installGreetingFallback } from '@/utils/greetingFallback'
 import { logger } from '@/utils/logger'
 
 async function main(router: any) {
@@ -69,6 +70,7 @@ async function start() {
 }
 
 export default defineUnlistedScript(() => {
+  installGreetingFallback()
   start().catch((e) => {
     logger.error(e)
   })

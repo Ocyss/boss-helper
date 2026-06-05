@@ -14,4 +14,4 @@ export type Step =
       fn?: Handler
       after?: Handler
     }
-export type StepFactory = () => Step
+export type StepFactory = () => Step | Pipeline
