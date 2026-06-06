@@ -61,7 +61,7 @@
 在页面里找到类似下面名字的文件：
 
 ```text
-boss-helper-ai-greeting-chrome-mv3-custom-0.4.4-stable.2.zip
+boss-helper-ai-greeting-chrome-mv3-custom-0.4.4-stable.3.zip
 ```
 
 下载这个 zip 文件，然后解压。

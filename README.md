@@ -29,7 +29,7 @@
 
 - 上游项目：[Ocyss/boss-helper](https://github.com/Ocyss/boss-helper)
 - 基线版本：`0.4.4`
-- 当前稳定标签：`custom-0.4.4-stable.2`
+- 当前稳定标签：`custom-0.4.4-stable.3`
 - 当前主要验证环境：Chrome MV3 未打包扩展，加载目录为 `.output/chrome-mv3`
 
 ## 主要功能
