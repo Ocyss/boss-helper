@@ -44,6 +44,18 @@ function edit(d: modelData) {
   createBoxShow.value = true
 }
 
+function delRow(row: unknown) {
+  del(row as modelData)
+}
+
+function copyRow(row: unknown) {
+  copy(row as modelData)
+}
+
+function editRow(row: unknown) {
+  edit(row as modelData)
+}
+
 function newllm() {
   createModelData.value = undefined
   createBoxShow.value = true
@@ -115,13 +127,13 @@ function importllm() {
       <ElTableColumn label="管理">
         <template #default="scope">
           <div v-if="scope.row.vip == null" style="width: 200px">
-            <ElButton link type="primary" size="small" @click="() => del(scope.row)">
+            <ElButton link type="primary" size="small" @click="() => delRow(scope.row)">
               删除
             </ElButton>
-            <ElButton link type="primary" size="small" @click="() => copy(scope.row)">
+            <ElButton link type="primary" size="small" @click="() => copyRow(scope.row)">
               复制
             </ElButton>
-            <ElButton link type="primary" size="small" @click="() => edit(scope.row)">
+            <ElButton link type="primary" size="small" @click="() => editRow(scope.row)">
               编辑
             </ElButton>
           </div>

@@ -21,7 +21,7 @@ const user = useUser()
 
 const show = defineModel<boolean>({ required: true })
 
-const currentRow = ref<CookieInfo | undefined>()
+const currentRow = ref<CookieInfo | null>(null)
 const loading = ref(false)
 
 async function handleCreate() {
@@ -88,8 +88,12 @@ async function handleChange() {
   }
 }
 
-function handleCurrentChange(val: CookieInfo | undefined) {
+function handleCurrentChange(val: CookieInfo | null) {
   currentRow.value = val
+}
+
+function handleDelete(row: unknown) {
+  user.deleteUser(row as CookieInfo)
 }
 </script>
 
@@ -154,7 +158,7 @@ function handleCurrentChange(val: CookieInfo | undefined) {
       <ElTableColumn fixed="right" label="操作">
         <template #default="scope">
           <ElButton link type="primary" size="small" disabled> 导出 </ElButton>
-          <ElButton link type="primary" size="small" @click="() => user.deleteUser(scope.row)">
+          <ElButton link type="primary" size="small" @click="() => handleDelete(scope.row)">
             删除
           </ElButton>
         </template>
