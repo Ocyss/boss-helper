@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import type { Action } from 'element-plus'
 import {
   ElAvatar,
   ElButton,
@@ -65,44 +64,38 @@ function updateNetConf() {
   netConf.value = window.__q_netConf?.()
 }
 
+const usageNoticeHtml = `
+<p><strong>欢迎使用 boss-helper-ai-greeting。</strong></p>
+<p>这是基于 <a href="https://github.com/Ocyss/boss-helper" target="_blank">Ocyss/boss-helper</a> 的个人 fork 版本，重点增强了 AI 招呼语、聊天页话术发送面板和兜底队列能力。</p>
+<ol>
+  <li>本项目仅供学习交流，禁止用于商业用途；自动化投递存在账号风控、权重降低或封号风险，请先小范围测试。</li>
+  <li>如果使用自定义/AI 招呼语，必须先关闭 BOSS 直聘自带默认招呼语，避免重复发送或影响发送结果。</li>
+  <li>岗位页的「筛选」用于筛岗位列表；工具里的「配置」用于判断单个职位是否符合你的要求，这是两层漏斗。</li>
+  <li>聊天页话术发送面板不会自动发送，需要你确认后手动点击「开始发送」。队列匹配不到目标 Boss 时会暂停，不会降级乱发。</li>
+  <li>API Key、Cookie、手机号、简历等隐私信息不要公开提交；遇到问题可以通过 GitHub Issues 或邮件反馈。</li>
+</ol>
+<p>小白说明文档：<a href="https://github.com/ZhuYiwen020118/boss-helper-ai-greeting/blob/user-migration-from-0.4.4/docs/BEGINNER_GUIDE.md" target="_blank">BEGINNER_GUIDE.md</a></p>
+<p>项目仓库：<a href="https://github.com/ZhuYiwen020118/boss-helper-ai-greeting" target="_blank">ZhuYiwen020118/boss-helper-ai-greeting</a></p>
+<p>反馈邮箱：<a href="mailto:25435825@life.hkbu.edu.hk">25435825@life.hkbu.edu.hk</a></p>
+`
+
 onMounted(async () => {
   logger.info('BossHelper挂载成功')
   ElMessage('BossHelper挂载成功!')
 
-  const protocol = 'boss-protocol'
-  const protocol_val = '2025/06/14'
+  const protocol = 'boss-helper-ai-greeting-protocol'
+  const protocol_val = '2026/06/06'
   const protocol_date = await counter.storageGet<string>(protocol)
   if (protocol_date !== protocol_val) {
-    ElMessageBox.alert(
-      `1. 使用前先好好了解项目，阅读每一个标签和帮助,
-2.暂时不维护文档，如果帮助还无法理解可以提交反馈, 优化文案
-3. 遇到bug即时反馈，不再维护交流群，遇到问题飞书表格或者GitHub反馈
-4. 帮助复选框 能随时进入和退出帮助模式, 配置内容较多, 好好观看
-5. 配置最前面需要打钩启用，启用后需要保存配置
-6. 配置项 包含/排除 能点击切换模式
-7. 投递在达到上限，或者页面无法滚动时会结束投递，反馈相关问题检查是否滚动到底了，无法刷出新岗位!
-
-本项目仅供学习交流，禁止用于商业用途
-使用该脚本有一定风险(如黑号,封号,权重降低等)，本项目不承担任何责任
-<img style="width: 200px; height: 200px;" src="https://qiu-config.oss-cn-beijing.aliyuncs.com/reward.png" style="object-fit: cover;"/>
-Github开源地址: <a href="https://github.com/ocyss/boos-helper" target="_blank">https://github.com/ocyss/boos-helper</a>
-反馈结果会在对应记录中评论回复， 一般3-7天回复
-飞书反馈问卷(匿名): <a href="https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g" target="_blank">https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g</a>
-飞书问卷结果: <a href="https://gai06vrtbc0.feishu.cn/share/base/view/shrcnrg8D0cbLQc89d7Jj7AZgMc" target="_blank">https://gai06vrtbc0.feishu.cn/share/base/view/shrcnrg8D0cbLQc89d7Jj7AZgMc</a>`,
-      '注意事项',
-      {
-        autofocus: true,
-        confirmButtonText: '了解并同意!',
-        dangerouslyUseHTMLString: true,
-        customStyle:
-          '--el-messagebox-width: unset; white-space: pre-wrap; width: unset;max-width: unset;' as never,
-        callback: (action: Action) => {
-          if (action === 'confirm') {
-            counter.storageSet(protocol, protocol_val)
-          }
-        },
-      },
-    )
+    await counter.storageSet(protocol, protocol_val)
+    ElMessageBox.alert(usageNoticeHtml, 'boss-helper-ai-greeting 使用须知', {
+      autofocus: true,
+      confirmButtonText: '我已了解',
+      dangerouslyUseHTMLString: true,
+      customStyle:
+        '--el-messagebox-width: 760px; white-space: normal; max-width: calc(100vw - 32px);' as never,
+      callback: () => counter.storageSet(protocol, protocol_val),
+    })
   }
 })
 </script>

@@ -14,6 +14,7 @@ export default defineContentScript({
       const FALLBACK_QUEUE_KEY = 'boss_helper_pending_greetings_v1';
       const AI_RUNTIME_KEY = 'boss_helper_ai_runtime_v1';
       const CUSTOM_GREETING_CACHE_KEY = 'boss_helper_custom_greeting_cache_v1';
+      const AUTO_JUMP_KEY = 'boss_helper_auto_jump_v1';
       const FORM_DATA_KEY = 'web-geek-job-FormData';
       const MODEL_DATA_KEY = 'conf-model';
       const SIGNED_KEY = 'signedKey';
@@ -275,10 +276,6 @@ export default defineContentScript({
         }
       }
     
-      function takePendingGreeting() {
-        return activePendingGreetings()[0] || null;
-      }
-    
       function markPendingGreetingSent(item, chatKey) {
         const items = loadPendingGreetings();
         const target = items.find(row => row.id === item.id);
@@ -333,6 +330,17 @@ export default defineContentScript({
         return list ? Array.from(list.querySelectorAll('li')).filter(li => li.textContent.trim().length > 5) : [];
       }
     
+      function getChatScrollContainer() {
+        const list = document.querySelector('.user-list');
+        if (!list) return null;
+        let node = list;
+        while (node && node !== document.body) {
+          if (node.scrollHeight > node.clientHeight + 20) return node;
+          node = node.parentElement;
+        }
+        return list.scrollHeight > list.clientHeight + 20 ? list : null;
+      }
+    
       function getKey(li) {
         const nameBox = li.querySelector('.name-box');
         return nameBox ? nameBox.textContent.trim() : '';
@@ -357,6 +365,50 @@ export default defineContentScript({
         if (bossName && (key.includes(bossName) || text.includes(bossName))) return true;
         if (toName && (key.includes(toName) || text.includes(toName))) return true;
         return false;
+      }
+    
+      function findVisibleQueuedGreeting() {
+        const queuedItems = activePendingGreetings().slice().reverse();
+        if (!queuedItems.length) return null;
+    
+        for (const li of getChatList()) {
+          const key = getKey(li);
+          if (!key) continue;
+          const queued = queuedItems.find(item => matchesQueuedBoss(li, item));
+          if (queued) return { li, key, queued };
+        }
+    
+        return null;
+      }
+    
+      async function findQueuedGreetingInChatList() {
+        const queuedItems = activePendingGreetings().slice().reverse();
+        if (!queuedItems.length) return null;
+    
+        const container = getChatScrollContainer();
+        if (container && container.scrollTop > 2) {
+          container.scrollTop = 0;
+          container.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await sleep(650);
+        }
+    
+        const maxScanSteps = 45;
+        for (let step = 0; step < maxScanSteps; step++) {
+          const found = findVisibleQueuedGreeting();
+          if (found) return found;
+    
+          if (!container) break;
+    
+          const before = container.scrollTop;
+          const distance = Math.max(Math.floor(container.clientHeight * 0.85), 260);
+          container.scrollTop = before + distance;
+          container.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await sleep(650);
+    
+          if (container.scrollTop <= before + 2) break;
+        }
+    
+        return null;
       }
     
       function updateStatus() {
@@ -422,22 +474,21 @@ export default defineContentScript({
         let count = 0;
         while (running && count < 100) {
           count++;
-          const items = getChatList();
-          const queued = takePendingGreeting();
-          const configuredGreeting = queued ? '' : await getConfiguredGreeting();
+          const hasQueue = pendingCount() > 0;
+          const configuredGreeting = hasQueue ? '' : await getConfiguredGreeting();
           let found = null;
+          let queued = null;
     
-          if (queued) {
-            for (const li of items) {
-              const key = getKey(li);
-              if (!key || sent.has(key)) continue;
-              if (matchesQueuedBoss(li, queued)) {
-                found = { li, key };
-                break;
-              }
-            }
+          if (hasQueue) {
+            found = await findQueuedGreetingInChatList();
+            queued = found?.queued || null;
             if (!found) {
-              log(`队列暂停: 未在当前聊天列表找到 ${queued.boss_name || queued.to_name || '目标Boss'}，不会降级发送给其他人`);
+              const queuedItems = activePendingGreetings().slice().reverse();
+              const targets = queuedItems
+                .slice(0, 5)
+                .map(item => item.boss_name || item.to_name || '未知Boss')
+                .join('、');
+              log(`队列暂停: 已扫描聊天列表，仍未找到目标Boss（待发 ${queuedItems.length} 条${targets ? `，目标包括 ${targets}` : ''}），不会降级发送给其他人`);
               break;
             }
           } else {
@@ -445,7 +496,7 @@ export default defineContentScript({
               log('发送结束: 没有待发队列，也未在主 Helper 配置启用自定义招呼语');
               break;
             }
-            for (const li of items) {
+            for (const li of getChatList()) {
               const key = getKey(li);
               if (!key || sent.has(key) || alreadyChatted(li)) continue;
               found = { li, key };
@@ -458,7 +509,7 @@ export default defineContentScript({
             break;
           }
     
-          if (queued && alreadyChatted(found.li)) {
+          if (queued && (sent.has(found.key) || alreadyChatted(found.li))) {
             sent.add(found.key);
             markPendingGreetingSent(queued, found.key);
             save();
@@ -497,16 +548,60 @@ export default defineContentScript({
     
       let countdownTimer = null;
       let countdownSec = 0;
-      function cancelJump() {
+      let countdownSignature = '';
+      let countdownDone = 0;
+      let countdownTotal = 0;
+    
+      function localDateKey() {
+        const now = new Date();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${now.getFullYear()}-${month}-${day}`;
+      }
+    
+      function getAutoJumpSignature(total) {
+        return `${localDateKey()}|target:${total}`;
+      }
+    
+      function readAutoJumpState() {
+        const value = readJson(localStorage.getItem(AUTO_JUMP_KEY), {});
+        return value && typeof value === 'object' ? value : {};
+      }
+    
+      function getAutoJumpRecord(signature) {
+        return readAutoJumpState()?.[signature] || null;
+      }
+    
+      function saveAutoJumpRecord(signature, status, done, total) {
+        if (!signature) return;
+        const state = readAutoJumpState();
+        const today = localDateKey();
+        for (const key of Object.keys(state)) {
+          if (!key.startsWith(today + '|')) delete state[key];
+        }
+        state[signature] = {
+          status,
+          done,
+          total,
+          updatedAt: Date.now()
+        };
+        localStorage.setItem(AUTO_JUMP_KEY, JSON.stringify(state));
+      }
+    
+      function stopJumpCountdown() {
         if (countdownTimer) {
           clearInterval(countdownTimer);
           countdownTimer = null;
         }
         countdownSec = 0;
+      }
+    
+      function cancelJump() {
+        if (!countdownTimer) return;
+        saveAutoJumpRecord(countdownSignature, 'cancelled', countdownDone, countdownTotal);
+        stopJumpCountdown();
         const st = document.getElementById('bs-jump-status');
-        if (st && st.textContent.includes('跳转')) {
-          st.textContent = '自动监测中';
-        }
+        if (st) st.textContent = `已完成投递:${countdownDone}/${countdownTotal}，本次已取消自动跳转`;
       }
     
       function setupAutoJump() {
@@ -523,20 +618,38 @@ export default defineContentScript({
           const st = document.getElementById('bs-jump-status');
           if (!st) return;
     
-          if (done >= total && done > 0 && !countdownTimer) {
+          if (done >= total && done > 0) {
+            const signature = getAutoJumpSignature(total);
+            const record = getAutoJumpRecord(signature);
+    
+            if (record) {
+              if (countdownTimer && countdownSignature !== signature) stopJumpCountdown();
+              st.textContent = record.status === 'cancelled'
+                ? `已完成投递:${done}/${total}，本次已取消自动跳转`
+                : `已完成投递:${done}/${total}，本次已跳转过`;
+              return;
+            }
+    
+            if (countdownTimer && countdownSignature !== signature) stopJumpCountdown();
+            if (countdownTimer) return;
+    
+            countdownSignature = signature;
+            countdownDone = done;
+            countdownTotal = total;
             countdownSec = 5;
             st.textContent = `完成，${countdownSec}秒后跳转聊天页。点击页面可取消`;
             countdownTimer = setInterval(() => {
               countdownSec--;
               if (countdownSec <= 0) {
-                clearInterval(countdownTimer);
-                countdownTimer = null;
+                saveAutoJumpRecord(countdownSignature, 'jumped', countdownDone, countdownTotal);
+                stopJumpCountdown();
                 location.href = 'https://www.zhipin.com/web/geek/chat';
               } else {
                 st.textContent = `完成，${countdownSec}秒后跳转聊天页。点击页面可取消`;
               }
             }, 1000);
           } else if (done < total) {
+            stopJumpCountdown();
             st.textContent = `投递:${done}/${total}`;
           }
         }, 2000);

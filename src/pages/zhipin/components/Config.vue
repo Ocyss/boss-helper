@@ -88,15 +88,21 @@ function syncSalaryRange() {
     type="success"
     description="滚动到底部，差不多150个岗位左右，也会自动停止, 刷新或者变更期望重新获取新的岗位即可。"
   />
-  <Alert id="config-alert-2" style="margin-bottom: 10px" type="success" show-icon>
+  <Alert
+    id="config-alert-2"
+    class="critical-greeting-alert"
+    style="margin-bottom: 10px"
+    type="error"
+    show-icon
+  >
     <template #title>
-      使用自定义招呼语前 推荐禁用boss直聘自带招呼语
+      使用自定义/AI 招呼语前，必须关闭 BOSS 直聘自带默认招呼语，否则可能重复发送或影响发送结果
       <ElLink
         href="https://www.zhipin.com/web/geek/notify-set?type=greetSet"
         target="_blank"
-        type="warning"
+        type="danger"
       >
-        点我前往设置
+        前往关闭默认招呼语
       </ElLink>
     </template>
   </Alert>
@@ -539,5 +545,10 @@ function syncSalaryRange() {
 <style lang="scss" scoped>
 .ehp-space.config-input :deep(.ehp-space__item) {
   width: 48%;
+}
+
+.critical-greeting-alert :deep(.ehp-alert__title),
+.critical-greeting-alert :deep(.el-alert__title) {
+  font-weight: 700;
 }
 </style>
