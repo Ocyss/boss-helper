@@ -21,7 +21,7 @@
 
 - 上游项目：[Ocyss/boss-helper](https://github.com/Ocyss/boss-helper)
 - 基线版本：`0.4.4`
-- 当前稳定标签：`custom-0.4.4-stable.1`
+- 当前稳定标签：`custom-0.4.4-stable.2`
 - 当前主要验证环境：Chrome MV3 未打包扩展，加载目录为 `.output/chrome-mv3`
 
 ## 主要功能
@@ -52,20 +52,34 @@
 
 ## 安装和加载
 
-### 从源码构建
+### 推荐：下载已构建版本
+
+不熟悉命令行的用户，建议直接下载 GitHub Release 里的 Chrome MV3 压缩包：
+
+[下载最新发布版](https://github.com/ZhuYiwen020118/boss-helper-ai-greeting/releases/latest)
+
+下载名为 `boss-helper-ai-greeting-chrome-mv3-*.zip` 的文件后：
+
+1. 解压 zip。
+2. 打开 Chrome 的 `chrome://extensions/`。
+3. 打开右上角「开发者模式」。
+4. 点击「加载已解压的扩展程序」。
+5. 选择解压出来的那个文件夹，也就是里面直接能看到 `manifest.json` 的文件夹。
+
+### 开发者：从源码构建
 
 ```bash
 pnpm install
 pnpm build:chrome
 ```
 
-构建完成后，Chrome 扩展加载目录是：
+源码构建完成后，Chrome 扩展加载目录是：
 
 ```text
 .output/chrome-mv3
 ```
 
-### 在 Chrome 中加载
+### 开发者加载本地构建
 
 1. 打开 `chrome://extensions/`。
 2. 打开右上角「开发者模式」。

@@ -15,7 +15,7 @@
 | --- | --- |
 | Chrome | 谷歌浏览器。这个工具目前主要按 Chrome 扩展方式使用。 |
 | 扩展程序 | 安装在浏览器里的小工具，类似给浏览器加一个功能插件。 |
-| 未打包扩展 | 开发者模式下加载的扩展文件夹。你需要在 Chrome 里选择整个 `.output/chrome-mv3` 文件夹。 |
+| 未打包扩展 | 开发者模式下加载的扩展文件夹。普通用户下载发布版 zip，解压后选择里面有 `manifest.json` 的文件夹。 |
 | AI | 人工智能。这里主要用于判断岗位是否合适、帮你写招呼语。 |
 | LLM | 大语言模型。你可以简单理解成 DeepSeek、ChatGPT 这类会写文字的 AI。 |
 | API | 给软件调用 AI 的接口。你在网页上聊天是手动用 AI，API 是让这个工具自动请求 AI。 |
@@ -50,28 +50,51 @@
 
 ## 加载扩展
 
-如果你拿到的是已经构建好的扩展文件夹：
+### 普通用户：下载已构建版本
+
+普通用户不要下载源码，也不需要自己找 `.output` 文件夹。
+
+请打开 GitHub 发布页：
+
+[https://github.com/ZhuYiwen020118/boss-helper-ai-greeting/releases/latest](https://github.com/ZhuYiwen020118/boss-helper-ai-greeting/releases/latest)
+
+在页面里找到类似下面名字的文件：
+
+```text
+boss-helper-ai-greeting-chrome-mv3-custom-0.4.4-stable.2.zip
+```
+
+下载这个 zip 文件，然后解压。
+
+解压后，你会得到一个文件夹。打开这个文件夹，如果能看到 `manifest.json`，说明找对了。
+
+然后在 Chrome 里加载：
 
 1. 打开 Chrome。
 2. 地址栏输入 `chrome://extensions/`。
 3. 打开右上角「开发者模式」。
 4. 点击「加载已解压的扩展程序」。
-5. 选择整个 `.output/chrome-mv3` 文件夹。
+5. 选择刚才解压出来、里面直接能看到 `manifest.json` 的文件夹。
 
 注意：
 
 - 不要选择 Git 仓库根目录。
 - 不要选择单个 `.js` 或 `.json` 文件。
-- Chrome 要加载的是整个 `.output/chrome-mv3` 文件夹。
+- Chrome 要加载的是包含 `manifest.json` 的整个文件夹。
+- 如果你看到的是压缩包本身，先解压，不要直接选 zip。
 
-如果你只有源码，没有 `.output/chrome-mv3` 文件夹，需要先构建：
+### 开发者：从源码构建
+
+只有开发者才需要从源码构建。源码构建后才会出现 `.output/chrome-mv3` 文件夹：
 
 ```bash
 pnpm install
 pnpm build:chrome
 ```
 
-这一步偏技术。如果你不懂命令行，建议使用作者提供的已构建版本。
+构建完成后，在 Chrome 里选择 `.output/chrome-mv3` 文件夹加载。
+
+如果你不懂命令行，请使用上面的 Release zip，不要走源码构建流程。
 
 ## 打开 BOSS 直聘页面
 
@@ -844,7 +867,7 @@ https://www.zhipin.com/web/geek/chat
 
 - 没有用 Chrome。
 - 扩展没有启用。
-- 加载的不是 `.output/chrome-mv3` 文件夹。
+- 加载的不是包含 `manifest.json` 的解压后文件夹。
 - 当前页面不是 BOSS 直聘网页端。
 - 页面还没刷新。
 
