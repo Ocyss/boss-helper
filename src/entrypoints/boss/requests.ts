@@ -70,17 +70,17 @@ export async function sendPublishReq(
       headers: { Zp_token: token },
     }).then((r) => r.json())
 
-    res.data.code !== 0 && logger.error(`投递失败`, res)
-
-    if (res.data.code === 1) {
+    // BOSS API 返回扁平结构 { code, message, zpData }，非嵌套的 { data: { code, ... } }
+    // 注意: 之前代码写的是 res.data.code，与 API 返回结构不匹配，导致 TypeError 投递必失败
+    if (res.code !== 0) {
       const content = String(
-        res.data?.zpData?.bizData?.chatRemindDialog?.content || res.data.message || '未知错误',
+        res?.zpData?.bizData?.chatRemindDialog?.content || res.message || '未知错误',
       )
       // 命中限额弹窗 → 立刻发送确认请求
       if (content.includes('您今天已与120位BOSS沟通')) {
         try {
           const url = new URL('https://www.zhipin.com/wapi/zpCommon/actionLog/geek/chatremind.json')
-          url.searchParams.set('ba', res.data.zpData.bizData.chatRemindDialog.ba)
+          url.searchParams.set('ba', res.zpData.bizData.chatRemindDialog.ba)
           url.searchParams.set('action', 'addf-limit-popup-c')
           await fetch(url, {
             method: 'POST',
@@ -99,10 +99,8 @@ export async function sendPublishReq(
       }
 
       throw new PublishError(content)
-    } else if (res.data.code !== 0) {
-      throw new PublishError(`未知错误状态:${res.data.message}`)
     }
-    return res.data
+    return res
   } catch (e: any) {
     if (e instanceof BossHelperError) {
       throw e
@@ -115,12 +113,14 @@ export async function requestBossData(
   job: { encryptUserId: string; securityId: string },
   errorMsg?: string,
   retries = 3,
+  // 遇到"非好友关系"时的重试间隔（毫秒），投递后 BOSS 后端需要时间建立好友关系
+  // 之前没有此等待，3 次重试瞬间全失败，招呼语因此无法发送
+  delayMs = 2000,
 ): Promise<BossZpBossData> {
   if (retries === 0) {
     throw new GreetError(errorMsg ?? '重试多次失败')
   }
   const url = 'https://www.zhipin.com/wapi/zpchat/geek/getBossData'
-  // userInfo.value?.token 不相等！
   const token = window?.Cookie.get('bst')
   if (!token) {
     toast.add({
@@ -147,7 +147,9 @@ export async function requestBossData(
 
     if (res.code !== 0) {
       if (res.message === '非好友关系') {
-        return await requestBossData(job, '非好友关系', retries - 1)
+        // 投递后后端可能需要时间建立好友关系, 等待后重试
+        await new Promise((r) => setTimeout(r, delayMs))
+        return await requestBossData(job, '非好友关系', retries - 1, delayMs)
       }
       throw new GreetError(`状态错误:${res.message}`)
     }
@@ -156,6 +158,6 @@ export async function requestBossData(
     if (e instanceof GreetError) {
       throw e
     }
-    return requestBossData(job, e?.message as string, retries - 1)
+    return requestBossData(job, e?.message as string, retries - 1, delayMs)
   }
 }

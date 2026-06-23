@@ -1,16 +1,27 @@
+// =============================================================================
+// BossHelper 扩展主入口 - content script (MAIN world)
+// 运行在 BOSS 直聘页面的主世界（非 isolated world），
+// 负责注入插件 UI、拦截页面数据、管理投递工作流和招呼语发送
+// =============================================================================
+
 import { UserContent } from 'ai'
 import { ref } from 'vue'
 
 import { defineUnlistedScript } from '#imports'
 import { appearanceConf } from '@/composables/conf'
 import { createLazyObject, WorkflowData } from '@/composables/useApplying/type'
-import { HelperContext, JobData } from '@/composables/useHelper'
+import { HelperContext } from '@/composables/useHelper'
+import type { JobData } from '@/composables/useHelper'
 import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
+// 导入 protobuf Message 类，用于构造并发送 BOSS 聊天消息
+import { Message } from '@/composables/useWebSocket/protobuf'
 import { run } from '@/index'
 import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 
 import { BoosJobData, bossWorkflow } from './delivery'
+// 导入 BOSS 数据获取 API，用于发送招呼语前获取 HR 的聊天信息（bossId/encryptBossId/bossSource）
+import { requestBossData } from './requests'
 import { BossZpDetailData, BossZpJobItemData } from './types'
 
 function removeAd() {
@@ -202,8 +213,71 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     await this.workflow.executeAll(this._jobDataMap)
   }
 
+  /**
+   * 发送招呼语消息
+   * 投递简历后调用，通过 BOSS 直聘的聊天通道向 HR 发送消息。
+   * 流程: 获取岗位数据 → 调用 requestBossData 获取 HR 聊天信息 →
+   *       构造 protobuf Message → 通过 WebSocket/postMessage 发送
+   * 注意: 之前此方法只有 logger.info 日志，没有实际发送逻辑，
+   *       此处补全为真实的消息发送实现。
+   */
   async sendMessage(jobKey: string, msg: UserContent) {
-    logger.info('发送消息', { jobKey, msg })
+    // 校验消息内容不为空
+    const msgText = typeof msg === 'string' ? msg : ''
+    if (!msgText.trim()) {
+      logger.warn('发送消息: 内容为空', { jobKey })
+      return
+    }
+
+    // 从岗位数据 Map 中查找对应的岗位
+    const jobData = this._jobDataMap.get(jobKey)
+    if (!jobData) {
+      logger.error('发送消息: 未找到岗位数据', { jobKey })
+      return
+    }
+
+    // 获取 HR 的标识参数（用于构造聊天请求）
+    const encryptUserId = jobData.jobitem.encryptBossId
+    const securityId = jobData.jobitem.securityId
+    if (!encryptUserId || !securityId) {
+      logger.error('发送消息: 岗位缺少必要参数', { encryptUserId, securityId })
+      return
+    }
+
+    const toast = useToast()
+
+    try {
+      // 通过 BOSS API 获取 HR 的聊天信息（bossId, encryptBossId, bossSource）
+      // 投递简历后 BOSS 后端建立好友关系需要时间，requestBossData 内部有重试等待机制
+      const bossData = await requestBossData({ encryptUserId, securityId })
+      if (!bossData?.data) {
+        throw new Error('获取Boss数据失败')
+      }
+
+      // 获取当前求职者的用户 ID
+      const uid = this.uid ?? window._PAGE?.encryptUserId
+      if (!uid) throw new Error('未获取到当前用户ID')
+
+      // 构造 protobuf 消息，通过 BOSS 的聊天通道发送
+      const message = new Message({
+        form_uid: uid,
+        to_uid: String(bossData.data.bossId),
+        to_name: bossData.data.encryptBossId,
+        friend_source: bossData.data.bossSource,
+        content: msgText,
+      })
+
+      // send() 内部有三级回退: postMessage(GeekChatBridge) → window.ChatWebsocket → 原始WebSocket
+      await message.send()
+      logger.info('发送消息: 成功', { jobKey })
+    } catch (err: any) {
+      const errMsg = err?.message || String(err)
+      logger.error('发送消息失败', { jobKey, err: errMsg })
+      toast.add({
+        title: `招呼语发送失败: ${errMsg}`,
+        color: 'error',
+      })
+    }
   }
 
   async onMount(path?: string) {
@@ -365,4 +439,20 @@ export default defineUnlistedScript(async () => {
   )
 
   await run(bossHelpCtx)
+
+  // ===========================================================================
+  // 初始化 GeekChatCore 桥接
+  // 在 BOSS 页面加载 GeekChatCore SDK（geek-chat-core.umd.min.js），
+  // 用于通过 postMessage 跨隔离世界发送聊天消息。
+  // 作为 protobuf Message.send() 的一级回退方案。
+  // 注意: 之前从未调用 initGeekChatBridge()，导致 postMessage 发送方式始终超时，
+  //       此处补上初始化调用。
+  // ===========================================================================
+  try {
+    const { initGeekChatBridge } = await import('@/composables/useWebSocket/chatCore')
+    initGeekChatBridge()
+    logger.info('GeekChat桥接已初始化')
+  } catch (e) {
+    logger.warn('GeekChat桥接初始化失败', e)
+  }
 })

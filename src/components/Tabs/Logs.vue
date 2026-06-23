@@ -3,7 +3,8 @@ import { reactive, ref } from 'vue'
 
 import JobCard from '@/components/JobCard.vue'
 import { TableColumn } from '@nuxt/ui'
-import { useHelper,Log } from '@/composables/useHelper'
+import type { Log } from '@/composables/useHelper'
+import { useHelper } from '@/composables/useHelper'
 const helper = useHelper()
 
 // const { filterData, dialogData } = useLog()

@@ -1,6 +1,6 @@
 import { counter } from '@/message'
 import { renderTemplate } from '@/utils/ai'
-import { HelperContext } from '~/composables/useHelper'
+import type { HelperContext } from '~/composables/useHelper'
 
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
 import { defineTaskHandler, JobStatus, TaskContext, TaskResult } from './type'

@@ -1,3 +1,8 @@
+// =============================================================================
+// AI Prompt 编辑器组件
+// 用于编辑 AI 过滤/招呼语/回复 的 Prompt 模板，
+// 并支持通过已配置的 AI 模型进行实时测试
+// =============================================================================
 <script lang="ts" setup>
 import { h, reactive, ref } from 'vue'
 
@@ -6,13 +11,18 @@ import { formInfoData, defaultFormData, useConf } from '@/composables/conf'
 import { useModel } from '@/composables/useModel'
 
 //TODO import { parseFiltering } from '@/entrypoints/boss/requests'
-import { JobData, useHelper } from '@/composables/useHelper'
+import type { JobData } from '@/composables/useHelper'
+import { useHelper } from '@/composables/useHelper'
 import type { FormInfoAi, Prompt } from '@/types/formData'
 import { logger } from '@/utils/logger'
+// 导入 AI 模板渲染和 JSON 解析工具（后面测试功能中会用到）
+import { parseGptJson, renderTemplate } from '@/utils/ai'
 
 import Alert from '../Alert.vue'
 
-let parseFiltering = () => {}
+// AI 流式调用依赖
+import { streamText } from 'ai'
+import { openai } from '@/composables/useModel/openai'
 
 const props = defineProps<{
   data: 'aiGreeting' | 'aiFiltering' | 'aiReply'
@@ -101,6 +111,12 @@ async function addTestJob(n: number) {
   }
 }
 
+/**
+ * 执行 AI 模型测试
+ * 将当前编辑的 Prompt 模板（含 {{变量}}）渲染后发给 AI 模型，
+ * 流式读取返回结果并展示在测试面板中。
+ * 注意：之前重构时此函数体被完全注释导致点击无反应，已重新实现。
+ */
 async function testJob() {
   if (!testJobStop.value) {
     testJobStop.value = true
@@ -108,6 +124,7 @@ async function testJob() {
   }
   testJobLoading.value = true
   testJobStop.value = false
+  // 查找用户当前选中的 AI 模型配置
   const md = model.modelData.value.find((v) => currentModel.value === v.key)
   if (!currentModel.value || !md) {
     toast.add({
@@ -117,38 +134,75 @@ async function testJob() {
     return
   }
   try {
-    // const gpt = model.getModel(md!, message.value)
+    // 对每个待测试岗位，并发调用 AI，批次大小为 4
     const handle = async (item: TestData) => {
       if (testJobStop.value) {
         return
       }
       try {
-        // item.loading = true
-        // let { content, prompt, reasoning_content } = await gpt.doStream(
-        //   {
-        //     data: {
-        //       data: item.job,
-        //       card: item.job.card!,
-        //     },
-        //     test: true,
-        //     json: props.data === 'aiFiltering',
-        //   },
-        //   props.data,
-        // )
-        // if (props.data === 'aiFiltering' && content) {
-        //   const { message } = parseFiltering(content)
-        //   content = message ?? content
-        // }
-        // testDataContent[item.key].push({
-        //   time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-        //   prompt,
-        //   reasoning_content,
-        //   content,
-        // })
+        item.loading = true
+        if (!md?.data) return
+
+        // 通过 openai.createModel 创建语言模型实例
+        const llmModel = openai.createModel(md.data)
+
+        // 构造模板渲染上下文：岗位数据挂载在 jobData 下，与正式投递一致
+        const context = { jobData: item.job }
+
+        // 分离 system 和 user/assistant 消息（AI SDK 要求 system 独立传入）
+        const systemMsg = message.value.find((m) => m.role === 'system')
+        const otherMsgs = message.value.filter((m) => m.role !== 'system')
+
+        let fullContent = ''
+        let reasoningContent = ''
+        let promptText = ''
+
+        // 使用 AI SDK 的 streamText 发起流式调用
+        const result = streamText({
+          model: llmModel,
+          system: systemMsg ? renderTemplate(systemMsg.content, context) : undefined,
+          messages: otherMsgs.map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: renderTemplate(m.content, context),
+          })),
+        })
+
+        // 记录发送的完整 prompt，方便调试排查
+        promptText = message.value
+          .map((m) => `[${m.role}]\n${renderTemplate(m.content, context)}`)
+          .join('\n\n')
+
+        // 流式读取 AI 返回的文本和推理过程
+        for await (const part of result.fullStream) {
+          if (part.type === 'text-delta') {
+            fullContent += part.text
+          } else if (part.type === 'reasoning-delta') {
+            reasoningContent += part.text
+          }
+        }
+
+        // AI过滤模式下，尝试将返回的 JSON 文本格式化显示
+        let displayContent = fullContent
+        if (props.data === 'aiFiltering' && fullContent) {
+          try {
+            const parsed = parseGptJson(fullContent)
+            if (parsed) displayContent = JSON.stringify(parsed, null, 2)
+          } catch {
+            /* ignore parse error, show raw */
+          }
+        }
+
+        // 记录本次测试结果
+        testDataContent[item.key].push({
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          prompt: promptText,
+          reasoning_content: reasoningContent || null,
+          content: displayContent,
+        })
       } catch (err: any) {
         logger.error(err)
         toast.add({
-          title: err.message,
+          title: err.message || String(err),
           color: 'error',
         })
       } finally {
@@ -156,6 +210,7 @@ async function testJob() {
       }
     }
 
+    // 每批次并发 4 个请求，避免同时请求过多
     for (let i = 0; i < testData.length; i += 4) {
       const batch = testData.slice(i, i + 4)
       await Promise.all(batch.map(handle))

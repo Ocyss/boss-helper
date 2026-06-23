@@ -92,12 +92,17 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.amap({ deps: ['岗位详情获取'] }), // 高德地图
   tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
 
+  // ===========================================================================
+  // 岗位投递 - 向 BOSS 发送简历投递请求
+  // 调用 sendPublishReq（POST /wapi/zpgeek/friend/add.json）完成投递，
+  // 投递后 BOSS 后端建立求职者与 HR 的好友关系，后续才能发招呼语。
+  // 注意: 之前该步骤被注释（只打了日志），导致投递从未实际执行，
+  //       筛选用招呼语也因为好友关系未建立而发送失败。
+  //       恢复真实 API 调用后，整个"筛选→投递→发消息"流程才能跑通。
+  // ===========================================================================
   defineTaskHandler('岗位投递', () => async (_, { rawData }) => {
-    // await sendPublishReq({
-    //   securityId: rawData.jobitem.securityId,
-    //   encryptJobId: rawData.jobitem.encryptJobId,
-    // })
-    logger.info('发送投递请求', {
+    const { sendPublishReq } = await import('./requests')
+    await sendPublishReq({
       securityId: rawData.jobitem.securityId,
       encryptJobId: rawData.jobitem.encryptJobId,
     })

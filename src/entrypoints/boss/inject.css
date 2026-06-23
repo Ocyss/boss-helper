@@ -1,4 +1,11 @@
+/* ==========================================================================
+   BOSS直聘页面覆盖样式 - 注入到 BOSS 直聘页面的 content script CSS
+   用于覆盖 BOSS 默认布局、颜色和组件样式，使插件 UI 正常嵌入
+   ========================================================================== */
+
+/* 插件外部容器 - 用于重新排列 BOSS 搜索框/筛选条件布局 */
 #boss-helper-external-wrapper {
+  /* 期望选择器下拉项文本颜色 */
   .c-expect-select .expect-list .expect-item,
   .c-expect-select .part-time-expect,
   .c-expect-select .synthesis,
@@ -6,12 +13,14 @@
     color: #000 !important;
   }
 
+  /* 期望选择器下拉项悬停颜色 */
   .c-expect-select .expect-list .expect-item:hover,
   .c-expect-select .part-time-expect:hover,
   .c-expect-select .synthesis:hover {
     color: #0d9ea3 !important;
   }
 
+  /* 期望选择器下拉项激活颜色 */
   .c-expect-select .expect-list .expect-item.active,
   .c-expect-select .part-time-expect.active,
   .c-expect-select .synthesis.active {
@@ -19,11 +28,13 @@
     color: #0d9ea3 !important;
   }
 
+  /* 选择器和搜索框宽度铺满 */
   .c-expect-select,
   .c-search-input {
     width: 100% !important;
   }
 
+  /* 筛选条件换行布局，消除 BOSS 默认间隙 */
   .c-filter-condition {
     flex-wrap: wrap !important;
     gap: 8px !important;
@@ -31,32 +42,44 @@
       margin-right: 0px !important;
     }
   }
+  /* 期望列表宽度自适应 */
   .c-expect-select .expect-list {
     max-width: unset !important;
   }
+  /* 城市选择浮层层级提升 */
   .c-filter-condition .filter-city-area {
     z-index: 2000 !important;
     top: unset !important;
   }
 }
 
+/* 页面顶部偏移，为插件面板腾出空间 */
 .page-jobs#wrap {
   padding-top: 49px !important;
 }
 
+/* 职位详情容器高度限制，防止溢出 */
 .page-jobs-main .job-detail-container {
   max-height: calc(100vh - 70px) !important;
   top: 70px !important;
 }
 
+/* 消除 BOSS 默认底部间距 */
 .page-jobs-main {
   margin-bottom: -20px !important;
 }
 
+/* 固定筛选模式时取消顶部 padding */
 .page-jobs-main.is-fixed-filter {
   padding-top: 0px !important;
 }
 
+/* 
+ * 加载指示器动画
+ * 注意：@keyframes 必须放在选择器外部（全局作用域），
+ * lightningcss 不允许 @keyframes 嵌套在规则集内部。
+ * 如果嵌套在 #loader {} 内会报 "Unknown at rule: @keyframes" 错误
+ */
 #loader {
   width: 0;
   height: 4.8px;
@@ -66,7 +89,9 @@
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
   box-sizing: border-box;
   top: -14px;
+  /* 两端发光小尾巴 - 右侧 */
   &::after,
+  /* 两端发光小尾巴 - 左侧 */
   &::before {
     content: '';
     width: 10px;
@@ -81,33 +106,36 @@
     animation: coli1 0.3s linear infinite;
   }
 
+  /* 左侧小尾巴旋转方向相反 */
   &::before {
     top: -4px;
     transform: rotate(45deg);
     animation: coli2 0.3s linear infinite;
   }
+}
 
-  @keyframes coli1 {
-    0% {
-      transform: rotate(-45deg) translateX(0px);
-      opacity: 0.7;
-    }
-
-    100% {
-      transform: rotate(-45deg) translateX(-45px);
-      opacity: 0;
-    }
+/* 动画: 右侧小尾巴向右滑出消失 */
+@keyframes coli1 {
+  0% {
+    transform: rotate(-45deg) translateX(0px);
+    opacity: 0.7;
   }
 
-  @keyframes coli2 {
-    0% {
-      transform: rotate(45deg) translateX(0px);
-      opacity: 1;
-    }
+  100% {
+    transform: rotate(-45deg) translateX(-45px);
+    opacity: 0;
+  }
+}
 
-    100% {
-      transform: rotate(45deg) translateX(-45px);
-      opacity: 0.7;
-    }
+/* 动画: 左侧小尾巴向左滑出消失 */
+@keyframes coli2 {
+  0% {
+    transform: rotate(45deg) translateX(0px);
+    opacity: 1;
+  }
+
+  100% {
+    transform: rotate(45deg) translateX(-45px);
+    opacity: 0.7;
   }
 }

@@ -18,7 +18,7 @@ import { renderTemplate } from '@/utils/ai'
 
 import { ModelConf } from '.'
 import { WorkflowData } from '../useApplying/type'
-import { HelperContext } from '../useHelper'
+import type { HelperContext } from '../useHelper'
 
 const role = ['system', 'user', 'assistant', 'boss', 'jd', 'filtering', 'greetings'] as const
 type MessageRole = (typeof role)[number]

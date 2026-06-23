@@ -190,10 +190,11 @@ export class Message {
       lastError = normalizeError(error)
     }
     const error = lastError ?? new Error('未找到可用聊天连接')
-    throw error
+    // 显示错误 Toast 通知后抛出异常（之前 throw 在 toast.add 前面导致 toast 不可达）
     toast.add({
       title: error.message,
       color: 'error',
     })
+    throw error
   }
 }

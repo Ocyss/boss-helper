@@ -3,7 +3,7 @@ import { shallowRef, ref } from 'vue'
 import { PipelineCacheManager } from '@/composables/usePipelineCache'
 import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
 
-import { HelperContext } from '../useHelper'
+import type { HelperContext } from '../useHelper'
 import { DependencyMissingError } from './handles'
 import {
   Handler,
