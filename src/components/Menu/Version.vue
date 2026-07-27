@@ -10,7 +10,7 @@ const emits = defineEmits<{
 </script>
 
 <template>
-  <UModal title="BossHelper扩展商店" @open="helper.initNetConf">
+  <UModal title="BossHelper 版本与安装" @open="helper.initNetConf">
     <template #body>
       <div>
         <div style="text-align: center; font-size: 14px; color: #606266">

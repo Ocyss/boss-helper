@@ -9,8 +9,10 @@ const maxResumeChars = 120_000
 function resolvePdfWorkerUrl() {
   if (typeof document === 'undefined') return pdfWorkerPath
   const scriptUrl =
-    document.currentScript?.src ??
-    (document.scripts ? Array.from(document.scripts) : []).find((script) =>
+    (document.currentScript instanceof HTMLScriptElement
+      ? document.currentScript.src
+      : undefined) ??
+    Array.from(document.querySelectorAll<HTMLScriptElement>('script[src]')).find((script) =>
       script.src.endsWith('/boss.js'),
     )?.src
   return scriptUrl ? new URL(pdfWorkerPath, scriptUrl).href : pdfWorkerPath
@@ -70,7 +72,9 @@ async function decompress(
   if (!('DecompressionStream' in globalThis)) {
     throw new Error('当前浏览器不支持该文件格式，请将简历另存为 TXT 后上传')
   }
-  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream(format))
+  const copiedData = new Uint8Array(data.byteLength)
+  copiedData.set(data)
+  const stream = new Blob([copiedData]).stream().pipeThrough(new DecompressionStream(format))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 

@@ -2,31 +2,26 @@
 import type { SelectMenuItem } from '@nuxt/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
-import { useConf } from '@/composables/conf'
+import { activityLog } from '@/composables/useActivityLog'
 import { useHelper } from '@/composables/useHelper'
 import { useModel } from '@/composables/useModel'
 import { useResume } from '@/composables/useResume'
 
 const toast = useToast()
 const helper = useHelper()
-const conf = useConf()
 const models = useModel()
 const resume = useResume()
 
 const selectedFile = ref<File | null>(null)
 const selectedModel = ref('')
-const selectedQuery = ref('')
+const selectedQueries = ref<string[]>([])
 const autoRunTriggered = ref(false)
 
-const employmentItems = [
-  { label: '不限', value: 'any' },
-  { label: '实习', value: 'internship' },
-  { label: '全职', value: 'full-time' },
-]
-const remoteItems = [
-  { label: '不限', value: 'any' },
-  { label: '优先远程', value: 'preferred' },
-  { label: '仅远程', value: 'required' },
+const matchThresholdItems = [
+  { label: '不按分数拦截', value: 0 },
+  { label: '40 分及以上', value: 40 },
+  { label: '60 分及以上（推荐）', value: 60 },
+  { label: '75 分及以上', value: 75 },
 ]
 
 const modelItems = computed(() =>
@@ -44,11 +39,49 @@ const analysisUpdatedAt = computed(() => {
   const updatedAt = resume.profile.value.updatedAt
   return updatedAt ? new Date(updatedAt).toLocaleString('zh-CN', { hour12: false }) : ''
 })
+const hardFilterPreview = computed(() => {
+  const form = helper.conf.formData
+  const items: string[] = []
+  const warnings: string[] = []
+  const selected = selectedQueries.value.map((query) => query.trim()).filter(Boolean)
+  const formatTerms = (name: string, value: string[], include: boolean) =>
+    `${name}${include ? '包含' : '排除'}：${value.join('、')}`
+  const addSelect = (
+    name: string,
+    value: { enable: boolean; include: boolean; value: string[] },
+  ) => {
+    const terms = value.value.map((item) => item.trim()).filter(Boolean)
+    if (!value.enable || !terms.length) return
+    items.push(formatTerms(name, terms, value.include))
+    if (name === '岗位名' && !value.include) {
+      for (const query of selected) {
+        const hit = terms.find((term) =>
+          query.toLocaleLowerCase().includes(term.toLocaleLowerCase()),
+        )
+        if (hit) warnings.push(`搜索词“${query}”含岗位排除词“${hit}”，结果仍以实际岗位标题为准`)
+      }
+    }
+  }
+
+  addSelect('岗位名', form.jobTitle)
+  addSelect('公司名', form.company)
+  addSelect('工作内容', form.jobContent)
+  addSelect('工作地址', form.jobAddress)
+  if (form.salaryRange.enable) {
+    const [min, max, strict] = form.salaryRange.value
+    items.push(`薪资：${min}-${max}K（${strict ? '严格' : '宽松'}）`)
+  }
+  if (form.companySizeRange.enable) {
+    const [min, max, strict] = form.companySizeRange.value
+    items.push(`公司规模：${min}-${max}人（${strict ? '严格' : '宽松'}；缺失放行）`)
+  }
+  return { items, warnings }
+})
 
 watch(
-  modelItems,
-  (items) => {
-    if (!selectedModel.value && items[0]) selectedModel.value = String(items[0].value)
+  () => models.modelData.value[0]?.key,
+  (key) => {
+    if (!selectedModel.value && key) selectedModel.value = key
   },
   { immediate: true },
 )
@@ -83,7 +116,7 @@ async function saveResumeText() {
 async function analyzeResume() {
   try {
     await resume.analyze(selectedModel.value)
-    selectedQuery.value = resume.profile.value.recommendation?.searchQueries[0] ?? ''
+    selectedQueries.value = resume.profile.value.recommendation?.searchQueries.slice(0, 1) ?? []
     toast.add({ title: '简历分析完成', color: 'success' })
   } catch (error) {
     toast.add({
@@ -93,23 +126,32 @@ async function analyzeResume() {
   }
 }
 
-async function savePreferences() {
+async function saveMatchingSettings() {
   try {
     await resume.save()
-    toast.add({ title: '求职偏好已保存', color: 'success' })
+    activityLog.add({
+      category: '简历',
+      action: '保存匹配设置',
+      status: 'success',
+      message: '简历匹配设置已保存；后续自动投递会按此分数阈值筛选岗位。',
+      detail: {
+        enabled: resume.profile.value.matching.enabled,
+        threshold: resume.profile.value.matching.matchThreshold,
+      },
+    })
+    toast.add({ title: '简历匹配设置已保存', color: 'success' })
   } catch (error) {
+    activityLog.add({
+      category: '简历',
+      action: '保存匹配设置',
+      status: 'error',
+      message: '简历匹配设置未保存；请检查浏览器存储权限后重试。',
+    })
     toast.add({
       title: error instanceof Error ? error.message : String(error),
       color: 'error',
     })
   }
-}
-
-async function enableAutoApplyDeduplication() {
-  if (conf.formData.sameCompanyFilter.value && conf.formData.sameHrFilter.value) return
-  conf.formData.sameCompanyFilter.value = true
-  conf.formData.sameHrFilter.value = true
-  await conf.confSaving()
 }
 
 function navigateToSearch(query: string) {
@@ -121,39 +163,40 @@ function navigateToSearch(query: string) {
 }
 
 async function searchJobs(autoApply: boolean) {
-  const query = selectedQuery.value.trim()
-  if (!query) {
-    toast.add({ title: '请选择一个推荐搜索词', color: 'warning' })
-    return
-  }
-
-  try {
-    if (autoApply) await enableAutoApplyDeduplication()
-    if (autoApply) {
-      await resume.startSearchQueue([query])
-    } else {
-      await resume.setSearchRequest(query, false)
-    }
-    navigateToSearch(query)
-  } catch (error) {
-    toast.add({
-      title: error instanceof Error ? error.message : String(error),
-      color: 'error',
-    })
-  }
-}
-
-async function searchAllRecommendedJobs() {
-  const queries = recommendation.value?.searchQueries ?? []
+  const queries = selectedQueries.value
   if (!queries.length) {
-    toast.add({ title: '请先完成简历分析', color: 'warning' })
+    activityLog.add({
+      category: '简历搜索',
+      action: '开始搜索',
+      status: 'action_required',
+      message: '尚未选择推荐搜索词；请选择至少一个岗位方向后再继续。',
+    })
+    toast.add({ title: '请至少选择一个推荐搜索词', color: 'warning' })
+    return
+  }
+  if (!autoApply && queries.length !== 1) {
+    activityLog.add({
+      category: '简历搜索',
+      action: '开始搜索',
+      status: 'action_required',
+      message: '普通搜索一次只能使用一个搜索词；请保留一个选项后再搜索。',
+    })
+    toast.add({
+      title: '搜索岗位一次只能使用一个搜索词，请只选择一个',
+      color: 'warning',
+    })
     return
   }
 
   try {
-    await enableAutoApplyDeduplication()
-    const firstQuery = await resume.startSearchQueue(queries)
-    navigateToSearch(firstQuery)
+    if (autoApply) {
+      const firstQuery = await resume.startSearchQueue(queries)
+      navigateToSearch(firstQuery)
+    } else {
+      const [query] = queries
+      await resume.setSearchRequest(query, false)
+      navigateToSearch(query)
+    }
   } catch (error) {
     toast.add({
       title: error instanceof Error ? error.message : String(error),
@@ -198,10 +241,22 @@ watch(
       helper.logs.info('简历推荐', `已搜索“${pendingSearchQuery}”，开始运行自动投递前自检`)
       await helper.start()
       if (!helper.preflightReport.value?.ok) {
+        activityLog.add({
+          category: '简历搜索',
+          action: '自动投递前检查',
+          status: 'action_required',
+          message: '自动投递前检查未通过，队列已停止；请处理配置页提示后重新开始。',
+        })
         await resume.cancelSearchQueue()
         return
       }
       if (helper.workflow?.status.value !== 'stop' || helper.workflow?.errorMessage.value) {
+        activityLog.add({
+          category: '简历搜索',
+          action: '自动投递队列',
+          status: 'action_required',
+          message: '当前搜索的自动投递已暂停，暂不继续下一个搜索词；请查看任务日志处理原因。',
+        })
         helper.logs.info('简历推荐', '自动搜索已暂停，未继续下一个搜索词')
         return
       }
@@ -210,6 +265,12 @@ watch(
       if (nextQuery) navigateToSearch(nextQuery)
     } catch (error) {
       await resume.cancelSearchQueue()
+      activityLog.add({
+        category: '简历搜索',
+        action: '自动投递队列',
+        status: 'error',
+        message: '自动投递队列已停止；请检查登录状态、网络和配置后重新开始。',
+      })
       toast.add({
         title: error instanceof Error ? `自动投递已停止：${error.message}` : '自动投递已停止',
         color: 'error',
@@ -222,7 +283,7 @@ watch(
 onMounted(async () => {
   try {
     await resume.init()
-    selectedQuery.value = resume.profile.value.recommendation?.searchQueries[0] ?? ''
+    selectedQueries.value = resume.profile.value.recommendation?.searchQueries.slice(0, 1) ?? []
   } catch (error) {
     toast.add({
       title: error instanceof Error ? `简历资料加载失败: ${error.message}` : '简历资料加载失败',
@@ -239,7 +300,7 @@ onMounted(async () => {
         <div>
           <h2 class="text-base font-semibold">简历推荐</h2>
           <p class="mt-1 text-sm text-muted">
-            提取后的文本仅保存在扩展本地，用于生成搜索词和筛选方向。
+            简历文本保存在扩展本地；点击 AI 分析时会发送给所选模型服务，用于生成搜索词和匹配依据。
           </p>
         </div>
         <UBadge v-if="resume.profile.value.updatedAt" color="neutral" variant="subtle">
@@ -296,69 +357,31 @@ onMounted(async () => {
       </div>
     </div>
 
-    <section class="flex flex-col gap-4 border-b border-default pb-5">
+    <section class="flex flex-wrap items-center justify-between gap-4 border-b border-default pb-5">
       <div>
-        <h3 class="text-sm font-semibold">求职偏好</h3>
-        <p class="mt-1 text-sm text-muted">这些条件优先于 AI 建议，自动投递时作为硬筛选。</p>
-      </div>
-      <UCheckbox
-        v-model="resume.profile.value.preferences.enabled"
-        label="启用偏好硬筛与匹配阈值"
-      />
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <UFormField label="城市">
-          <UInputTags v-model="resume.profile.value.preferences.cities" placeholder="例如：北京" />
-        </UFormField>
-        <UFormField label="最低月薪（K）">
-          <UInputNumber
-            v-model="resume.profile.value.preferences.minSalary"
-            :min="0"
-            placeholder="不限"
-          />
-        </UFormField>
-        <UFormField label="岗位类型">
-          <USelectMenu
-            v-model="resume.profile.value.preferences.employmentType"
-            :items="employmentItems"
-            value-key="value"
-          />
-        </UFormField>
-        <UFormField label="远程">
-          <USelectMenu
-            v-model="resume.profile.value.preferences.remote"
-            :items="remoteItems"
-            value-key="value"
-          />
-        </UFormField>
-        <UFormField label="行业">
-          <UInputTags
-            v-model="resume.profile.value.preferences.industries"
-            placeholder="例如：互联网"
-          />
-        </UFormField>
-        <UFormField label="公司规模">
-          <UInputTags
-            v-model="resume.profile.value.preferences.companySizes"
-            placeholder="例如：100-499人"
-          />
-        </UFormField>
-        <UFormField label="排除词" class="sm:col-span-2 xl:col-span-3">
-          <UInputTags
-            v-model="resume.profile.value.preferences.excludedKeywords"
-            placeholder="例如：外包、销售"
-          />
-        </UFormField>
+        <h3 class="text-sm font-semibold">简历匹配</h3>
+        <p class="mt-1 text-sm text-muted">
+          城市、薪资、岗位类型、远程、行业、规模和排除词统一在“配置”页设置；此处只控制 AI 匹配分。
+        </p>
       </div>
       <div class="flex flex-wrap items-center gap-3">
-        <UFormField label="匹配阈值" class="w-40">
-          <UInputNumber
-            v-model="resume.profile.value.preferences.matchThreshold"
-            :min="0"
-            :max="100"
+        <UCheckbox v-model="resume.profile.value.matching.enabled" label="自动投递按匹配分筛选" />
+        <UFormField label="最低分" class="w-48">
+          <USelectMenu
+            v-model="resume.profile.value.matching.matchThreshold"
+            :items="matchThresholdItems"
+            value-key="value"
+            :search-input="false"
           />
         </UFormField>
-        <UButton color="neutral" variant="outline" icon="i-lucide-save" @click="savePreferences">
-          保存求职偏好
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-save"
+          @click="saveMatchingSettings"
+        >
+          保存
         </UButton>
       </div>
     </section>
@@ -402,7 +425,9 @@ onMounted(async () => {
             <div>
               <h3 class="text-sm font-semibold">核心优势</h3>
               <ul class="mt-2 space-y-1 text-sm text-muted">
-                <li v-for="strength in recommendation.strengths" :key="strength">{{ strength }}</li>
+                <li v-for="strength in recommendation.strengths" :key="strength">
+                  {{ strength }}
+                </li>
               </ul>
             </div>
             <div>
@@ -421,14 +446,24 @@ onMounted(async () => {
         >
           <h3 class="text-sm font-semibold">搜索与投递</h3>
           <p class="mt-1 text-sm leading-6 text-muted">
-            搜索按所选词发起；自动投递会在结果加载后按简历评分、硬条件和去重规则筛选。
+            可选多个推荐词；自动投递会按选择顺序搜索，并在结果加载后按简历评分、硬条件和去重规则筛选。
           </p>
           <USelectMenu
-            v-model="selectedQuery"
+            v-model="selectedQueries"
             :items="recommendation.searchQueries"
-            placeholder="选择搜索词"
+            multiple
+            placeholder="选择一个或多个搜索词"
             class="mt-4 w-full"
           />
+          <div
+            v-if="hardFilterPreview.items.length"
+            class="mt-3 space-y-1 text-xs leading-5 text-muted"
+          >
+            <p>当前配置筛选：{{ hardFilterPreview.items.join('；') }}</p>
+            <p v-for="warning in hardFilterPreview.warnings" :key="warning" class="text-warning">
+              {{ warning }}
+            </p>
+          </div>
           <div class="mt-3 flex flex-wrap gap-2">
             <UButton
               color="neutral"
@@ -439,15 +474,7 @@ onMounted(async () => {
               搜索岗位
             </UButton>
             <UButton color="primary" icon="i-lucide-send" @click="searchJobs(true)">
-              搜索并自动投递
-            </UButton>
-            <UButton
-              color="primary"
-              variant="outline"
-              icon="i-lucide-list-start"
-              @click="searchAllRecommendedJobs"
-            >
-              全部推荐词自动投递
+              按所选词自动投递
             </UButton>
             <UButton
               v-if="resume.profile.value.autoApplyActive"

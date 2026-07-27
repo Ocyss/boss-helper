@@ -219,6 +219,7 @@ export class ProtoBufferMessage {
     this.toObjectOptions = {
       enums: String,
       bytes: String,
+      longs: String,
       defaults: true,
       arrays: true,
       objects: true,

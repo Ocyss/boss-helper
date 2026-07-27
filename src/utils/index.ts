@@ -6,7 +6,7 @@ export async function notification(
   options?: Pick<
     Omit<Browser.notifications.NotificationCreateOptions, 'iconUrl' | 'message'>,
     'type' | 'title'
-  >,
+  > & { clickUrl?: string },
 ) {
   return counter.notify({
     ...options,

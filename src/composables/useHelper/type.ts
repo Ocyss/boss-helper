@@ -13,6 +13,8 @@ export type JobBaseData = {
 
   /** 职位描述，包含岗位职责和任职要求，例如：'负责前端页面开发，熟悉Vue/React框架...' */
   jobDescription: string
+  /** 是否已成功采集职位详情。列表页的空字段不能视作真实缺失。 */
+  detailCollected?: boolean
 }
 
 export type JobData = JobBaseData & {

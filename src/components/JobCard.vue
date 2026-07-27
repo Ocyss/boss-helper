@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import { useConf } from '@/composables/conf'
 import { JobStatus } from '@/composables/useApplying/type'
+import { useBlacklist } from '@/composables/useBlacklist'
 import { JobData, useHelper } from '@/composables/useHelper'
 import { useResume } from '@/composables/useResume'
+import { evaluateCompanyRisk } from '@/utils/companyRisk'
 
 const helper = useHelper()
 const resume = useResume()
+const conf = useConf()
+const blacklist = useBlacklist()
+const toast = useToast()
 
 const props = defineProps<{
   job: JobData
@@ -18,6 +24,10 @@ const jobResult = computed(() => {
 })
 
 const jobMatch = computed(() => resume.matchJob(props.job))
+const companyRisk = computed(() => {
+  if (!conf.formData.companyRisk.enable) return null
+  return evaluateCompanyRisk({ job: props.job })
+})
 
 const stateMaps: Record<JobStatus, string> = {
   pending: '#CECECE',
@@ -69,6 +79,26 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
   if (diffDays <= 7) return 'warning'
   return 'error'
 }
+
+async function blacklistCompany() {
+  if (!props.job.brand.name) return
+  try {
+    await blacklist.addRule({
+      list: 'blacklist',
+      target: 'company',
+      matchMode: 'exact',
+      value: props.job.brand.key || props.job.brand.name,
+      reason: `手动拉黑公司：${props.job.brand.name}`,
+      expiresAt: null,
+    })
+    helper.logs.step(props.job, '黑名单', 'warning', `已拉黑公司：${props.job.brand.name}`)
+    toast.add({ title: '公司已加入黑名单', color: 'success' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    helper.logs.step(props.job, '黑名单', 'danger', `拉黑失败：${message}`)
+    toast.add({ title: `拉黑失败：${message}`, color: 'error' })
+  }
+}
 </script>
 
 <template>
@@ -89,10 +119,31 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
     <h3 class="card-salary">
       {{ job.salary }}
     </h3>
+    <div v-if="companyRisk" class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+      <UBadge
+        :color="
+          companyRisk.level === 'high'
+            ? 'error'
+            : companyRisk.level === 'medium'
+              ? 'warning'
+              : 'success'
+        "
+        size="sm"
+        variant="subtle"
+        :title="companyRisk.reasons.map((item) => item.message).join('；') || '未命中本地风险规则'"
+      >
+        风险 {{ companyRisk.score }} 分
+      </UBadge>
+      <span v-if="companyRisk.reasons[0]" class="truncate">{{
+        companyRisk.reasons[0].message
+      }}</span>
+    </div>
     <div v-if="jobMatch" class="mt-2 flex flex-col gap-1 text-xs leading-5 text-muted">
       <div class="flex flex-wrap items-center gap-1.5">
         <UBadge
-          :color="jobMatch.hardMismatches.length ? 'warning' : 'success'"
+          :color="
+            jobMatch.score < resume.profile.value.matching.matchThreshold ? 'warning' : 'success'
+          "
           size="sm"
           variant="subtle"
         >
@@ -102,8 +153,14 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
           >命中项：{{ jobMatch.matched.slice(0, 3).join('、') }}</span
         >
       </div>
-      <span v-if="jobMatch.hardMismatches.length" class="text-error">
-        硬条件：{{ jobMatch.hardMismatches.join('；') }}
+      <span
+        v-if="
+          resume.profile.value.matching.enabled &&
+          jobMatch.score < resume.profile.value.matching.matchThreshold
+        "
+        class="text-warning"
+      >
+        低于自动投递阈值：{{ resume.profile.value.matching.matchThreshold }} 分
       </span>
       <span v-else-if="jobMatch.missing.length">
         不匹配项：{{ jobMatch.missing.slice(0, 3).join('、') }}
@@ -166,6 +223,18 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
         <!-- <h4>{{ job.cityName }}/{{ job.areaDistrict }}/{{ job.businessDistrict }}</h4> -->
         <h4>{{ job.address }}</h4>
       </div>
+    </div>
+    <div class="mt-2 flex justify-end">
+      <UButton
+        size="xs"
+        color="error"
+        variant="ghost"
+        icon="i-lucide-ban"
+        title="将该公司加入黑名单"
+        @click="blacklistCompany"
+      >
+        拉黑公司
+      </UButton>
     </div>
     <div
       class="card-status flex-row gap-2 justify-center items-center"

@@ -10,6 +10,50 @@ export const userKey = 'local:conf-user'
 
 const DB_NAME = 'ExtensionGlobalDB'
 const STORE_NAME = 'images'
+const CHAT_NOTIFICATION_ID_PREFIX = 'boss-helper-chat:'
+
+type NotificationOptions = Browser.notifications.NotificationCreateOptions & {
+  clickUrl?: string
+}
+
+function parseBossChatUrl(value: string) {
+  try {
+    const url = new URL(value)
+    if (
+      url.protocol !== 'https:' ||
+      (url.hostname !== 'zhipin.com' && !url.hostname.endsWith('.zhipin.com'))
+    ) {
+      return null
+    }
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+function chatUrlFromNotificationId(id: string) {
+  if (!id.startsWith(CHAT_NOTIFICATION_ID_PREFIX)) return null
+  try {
+    return parseBossChatUrl(decodeURIComponent(id.slice(CHAT_NOTIFICATION_ID_PREFIX.length)))
+  } catch {
+    return null
+  }
+}
+
+async function focusChat(url: string) {
+  const tabs = await browser.tabs.query({ url: ['*://zhipin.com/*', '*://*.zhipin.com/*'] })
+  const tab = tabs[0]
+  if (tab?.id != null) {
+    try {
+      await browser.tabs.update(tab.id, { active: true, url })
+      if (tab.windowId != null) await browser.windows.update(tab.windowId, { focused: true })
+      return
+    } catch {
+      // A stale tab must not turn a notification click into a no-op.
+    }
+  }
+  await browser.tabs.create({ url })
+}
 
 async function initDB() {
   return openDB(DB_NAME, 1, {
@@ -22,13 +66,20 @@ async function initDB() {
 }
 
 export class BackgroundCounter {
+  constructor() {
+    browser.notifications.onClicked.addListener((id) => {
+      const url = chatUrlFromNotificationId(id)
+      if (!url) return
+      void focusChat(url).catch(() => browser.tabs.create({ url }))
+    })
+  }
+
   async request(args: {
     url: string
     data: RequestInit
     timeout: number
     responseType: ResponseType
   }) {
-    console.log('request', args)
     const signal = AbortSignal.timeout(args.timeout * 1000)
 
     const res = await fetch(args.url, {
@@ -37,8 +88,6 @@ export class BackgroundCounter {
       mode: 'cors',
       credentials: 'include',
     }).then(async (res) => {
-      console.log('request res', res)
-
       if (!res.ok || res.status >= 400) {
         const errorText = await res.text()
         throw new Error(`状态码: ${res.status}: ${errorText}`)
@@ -51,14 +100,21 @@ export class BackgroundCounter {
     return res
   }
 
-  async notify(args: Browser.notifications.NotificationCreateOptions) {
-    await browser.notifications.create({
+  async notify(args: NotificationOptions) {
+    const clickUrl = args.clickUrl ? parseBossChatUrl(args.clickUrl) : null
+    const options: Browser.notifications.NotificationCreateOptions = {
       type: args.type,
       iconUrl: args.iconUrl,
       title: args.title,
       message: args.message,
-    })
-    return true
+    }
+    if (clickUrl) {
+      return browser.notifications.create(
+        `${CHAT_NOTIFICATION_ID_PREFIX}${encodeURIComponent(clickUrl)}`,
+        options,
+      )
+    }
+    return browser.notifications.create(options)
   }
 
   async backgroundTest(type: 'success' | 'error') {

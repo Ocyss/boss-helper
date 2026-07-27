@@ -1,6 +1,10 @@
+import { activityLog } from '@/composables/useActivityLog'
+import { useBlacklist } from '@/composables/useBlacklist'
+import { evaluateJobCompanyRisk } from '@/composables/useCompanyRisk'
 import { useResume } from '@/composables/useResume'
 import { counter } from '@/message'
 import { renderTemplate } from '@/utils/ai'
+import { logger } from '@/utils/logger'
 import { HelperContext } from '~/composables/useHelper'
 import type { JobData } from '~/composables/useHelper'
 
@@ -49,13 +53,17 @@ function amapHandler<C extends HelperContext<C, T, S>, T, S>(
   if (distance > 0 && amap.distance > distance * 1000) {
     return {
       isSkip: true,
-      reason: `${id}距离超标: ${amap.distance / 1000} 设定: ${ctx.helper.conf.formData.amap.straightDistance}`,
+      reason: `${id}距离超标: ${amap.distance / 1000} 设定: ${
+        ctx.helper.conf.formData.amap.straightDistance
+      }`,
     }
   }
   if (duration > 0 && amap.duration > duration * 60) {
     return {
       isSkip: true,
-      reason: `${id}时间超标: ${amap.duration / 60} 设定: ${ctx.helper.conf.formData.amap.drivingDuration}`,
+      reason: `${id}时间超标: ${amap.duration / 60} 设定: ${
+        ctx.helper.conf.formData.amap.drivingDuration
+      }`,
     }
   }
 }
@@ -75,6 +83,10 @@ export const taskResult = {
 
 const duplicateSetCache = new Map<string, Promise<Set<string>>>()
 
+function normalizeDuplicateUserId(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
 function duplicateCacheKey(storageKey: string, uid: string) {
   return `${storageKey}:${uid}`
 }
@@ -83,10 +95,19 @@ async function getDuplicateSet(storageKey: string, uid: string) {
   const cacheKey = duplicateCacheKey(storageKey, uid)
   let cached = duplicateSetCache.get(cacheKey)
   if (!cached) {
-    cached = counter
-      .storageGet<Record<string, string[]>>(storageKey, {})
-      .then((data) => new Set(data[uid] ?? []))
+    cached = counter.storageGet<unknown>(storageKey, {}).then((data) => {
+      const values =
+        data && typeof data === 'object' && !Array.isArray(data)
+          ? (data as Record<string, unknown>)[uid]
+          : undefined
+      return new Set(
+        Array.isArray(values)
+          ? values.filter((value): value is string => typeof value === 'string')
+          : [],
+      )
+    })
     duplicateSetCache.set(cacheKey, cached)
+    void cached.catch(() => duplicateSetCache.delete(cacheKey))
   }
   return cached
 }
@@ -111,58 +132,159 @@ async function recordDuplicate(storageKey: string, uid: string, value: string | 
   if (values.has(value)) return
 
   values.add(value)
-  const stored = await counter.storageGet<Record<string, string[]>>(storageKey, {})
+  const stored = await counter.storageGet<unknown>(storageKey, {})
+  const existing = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
   await counter.storageSet(storageKey, {
-    ...stored,
+    ...existing,
     [uid]: Array.from(values),
   })
 }
 
 export async function recordSuccessfulDelivery(
-  uid: string,
+  uid: unknown,
   job: JobData,
   options: { company: boolean; hr: boolean },
 ) {
+  const userId = normalizeDuplicateUserId(uid)
+  if (!userId) {
+    logger.warn('投递成功，但未获取到账号标识，已跳过跨账号去重记录')
+    return
+  }
   const writes: Promise<void>[] = []
   if (options.company) {
-    writes.push(recordDuplicate(sameCompanyKey, uid, companyDuplicateKey(job)))
+    writes.push(recordDuplicate(sameCompanyKey, userId, companyDuplicateKey(job)))
   }
   if (options.hr) {
-    writes.push(recordDuplicate(sameHrKey, uid, hrDuplicateKey(job)))
+    writes.push(recordDuplicate(sameHrKey, userId, hrDuplicateKey(job)))
   }
   await Promise.all(writes)
 }
 
 export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
-  ResumeJobDuplicate = defineTaskHandler<C, T, S>('简历岗位去重', () => {
+  BlacklistQuickFilter = defineTaskHandler<C, T, S>('黑名单快速检查', () => {
+    const blacklist = useBlacklist()
+    return async (_, { jobData }) => {
+      await blacklist.init()
+      const reason = blacklist.evaluate(jobData)
+      if (reason) {
+        activityLog.add({
+          category: '黑白名单',
+          action: '岗位筛选',
+          status: 'skipped',
+          message: '已跳过岗位：命中黑白名单规则。如需继续投递，请调整黑白名单规则后重试。',
+          detail: { job: jobData.jobName || jobData.positionName, company: jobData.brand.name },
+        })
+        return taskResult.skip(reason)
+      }
+    }
+  })
+
+  BlacklistFilter = defineTaskHandler<C, T, S>('黑名单过滤', () => {
+    const blacklist = useBlacklist()
+    return async (_, { jobData }) => {
+      await blacklist.init()
+      const reason = blacklist.evaluate(jobData)
+      if (reason) {
+        activityLog.add({
+          category: '黑白名单',
+          action: '岗位详情筛选',
+          status: 'skipped',
+          message: '已跳过岗位：命中黑白名单规则。如需继续投递，请调整黑白名单规则后重试。',
+          detail: { job: jobData.jobName || jobData.positionName, company: jobData.brand.name },
+        })
+        return taskResult.skip(reason)
+      }
+    }
+  })
+
+  CompanyRisk = defineTaskHandler<C, T, S>('公司风险评估', (ctx) => {
+    const config = ctx.helper.conf.formData.companyRisk
+    if (config?.enable !== true) return
+    const configuredThreshold = Number(config.blockThreshold)
+    const threshold = Number.isFinite(configuredThreshold) ? configuredThreshold : 50
+    if (!Number.isFinite(configuredThreshold)) {
+      logger.warn('公司风险拦截阈值无效，已使用默认值 50')
+    }
+    return async (_, { jobData }) => {
+      const companyKey = companyDuplicateKey(jobData)
+      const sameCompanyJobs = companyKey
+        ? ctx.helper.jobList.value.filter((job) => companyDuplicateKey(job) === companyKey)
+        : []
+      const hrActiveDaysAgo = jobData.activeTime
+        ? Math.max(0, Math.floor((Date.now() - jobData.activeTime) / (24 * 60 * 60 * 1000)))
+        : undefined
+      const risk = await evaluateJobCompanyRisk(jobData, config, {
+        postingCount: sameCompanyJobs.length,
+        hrActiveDaysAgo,
+      })
+      const detail = risk.reasons
+        .map((item) => item.message)
+        .slice(0, 2)
+        .join('；')
+      if (risk.score >= threshold) {
+        activityLog.add({
+          category: '公司风险',
+          action: '风险拦截',
+          status: 'skipped',
+          message: `已跳过风险 ${risk.score} 分的岗位，达到设定的 ${threshold} 分拦截阈值；风险原因请查看任务日志。`,
+          detail: {
+            job: jobData.jobName || jobData.positionName,
+            company: jobData.brand.name,
+            score: risk.score,
+            threshold,
+            source: risk.source,
+          },
+        })
+        return taskResult.skip(`公司风险 ${risk.score} 分：${detail || '达到自动拦截阈值'}`)
+      }
+      return {
+        status: 'success',
+        msg: `风险 ${risk.score} 分（${
+          risk.source === 'combined' ? '本地 + 企业信息' : '本地规则'
+        }）`,
+      }
+    }
+  })
+
+  ResumeJobDuplicate = defineTaskHandler<C, T, S>('简历岗位去重', async () => {
     const resume = useResume()
-    if (!resume.isAutoApplyActive()) return
+    await resume.init()
+    if (!resume.isMatchFilterEnabled()) return
     return async (_, { jobData }) => {
       if (resume.isDeliveredJob(jobData.key)) {
-        return taskResult.skip('简历自动投递已处理过该岗位')
+        activityLog.add({
+          category: '简历匹配',
+          action: '岗位去重',
+          status: 'skipped',
+          message: '已跳过此前用当前简历处理过的岗位；更新简历后会自动重新开始去重。',
+          detail: { job: jobData.jobName || jobData.positionName, company: jobData.brand.name },
+        })
+        return taskResult.skip('当前简历的自动投递已处理过该岗位')
       }
     }
   })
 
-  ResumePreferences = defineTaskHandler<C, T, S>('简历硬条件', () => {
+  ResumeMatch = defineTaskHandler<C, T, S>('简历匹配评分', async () => {
     const resume = useResume()
-    if (!resume.isAutoApplyActive()) return
-    return async (_, { jobData }) => {
-      const match = resume.matchJob(jobData)
-      if (match?.hardMismatches.length) {
-        return taskResult.skip(match.hardMismatches.join('；'))
-      }
-    }
-  })
-
-  ResumeMatch = defineTaskHandler<C, T, S>('简历匹配评分', () => {
-    const resume = useResume()
-    if (!resume.isAutoApplyActive()) return
+    await resume.init()
+    if (!resume.isMatchFilterEnabled()) return
     return async (_, { jobData }) => {
       const match = resume.matchJob(jobData)
       if (!match) return
-      const threshold = resume.profile.value.preferences.matchThreshold
+      const threshold = resume.profile.value.matching.matchThreshold
       if (match.score < threshold) {
+        activityLog.add({
+          category: '简历匹配',
+          action: '匹配评分',
+          status: 'skipped',
+          message: `已跳过简历匹配 ${match.score} 分的岗位，低于设定的 ${threshold} 分；可在简历页调整阈值。`,
+          detail: {
+            job: jobData.jobName || jobData.positionName,
+            company: jobData.brand.name,
+            score: match.score,
+            threshold,
+          },
+        })
         return taskResult.skip(`简历匹配 ${match.score} 分，低于阈值 ${threshold} 分`)
       }
       return { msg: `简历匹配 ${match.score} 分` }
@@ -175,7 +297,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameCompanyFilter.value) {
         return
       }
-      const duplicateSet = await getDuplicateSet(sameCompanyKey, ctx.helper.uid)
+      const uid = normalizeDuplicateUserId(ctx.helper.uid)
+      if (!uid) {
+        logger.warn('未获取到账号标识，已跳过相同公司去重检查')
+        return
+      }
+      const duplicateSet = await getDuplicateSet(sameCompanyKey, uid)
       return {
         fn: async (_, { jobData }) => {
           const key = companyDuplicateKey(jobData)
@@ -194,7 +321,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameHrFilter.value) {
         return
       }
-      const duplicateSet = await getDuplicateSet(sameHrKey, ctx.helper.uid)
+      const uid = normalizeDuplicateUserId(ctx.helper.uid)
+      if (!uid) {
+        logger.warn('未获取到账号标识，已跳过相同 HR 去重检查')
+        return
+      }
+      const duplicateSet = await getDuplicateSet(sameHrKey, uid)
 
       return {
         fn: async (_, { jobData }) => {
@@ -302,10 +434,16 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return
     }
     return async (ctx, { jobData: data }) => {
-      const text = data.brand.scale
+      const text = data.brand.scale?.trim()
+      if (!text) {
+        return { msg: '未获取公司规模，按未验证放行' }
+      }
       if (!rangeMatch(text, ctx.helper.conf.formData.companySizeRange.value)) {
         return taskResult.skip(
-          `不匹配的公司规模 ${text}, 预期: ${rangeMatchFormat(ctx.helper.conf.formData.companySizeRange.value, '人')}`,
+          `不匹配的公司规模 ${text}, 预期: ${rangeMatchFormat(
+            ctx.helper.conf.formData.companySizeRange.value,
+            '人',
+          )}`,
         )
       }
     }

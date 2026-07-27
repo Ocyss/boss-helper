@@ -1,6 +1,7 @@
 import { reactiveComputed, useStorageAsync, watchThrottled } from '@vueuse/core'
 import { reactive, ref, toRaw } from 'vue'
 
+import { activityLog } from '@/composables/useActivityLog'
 import { counter } from '@/message'
 import { ExtStorage } from '@/message'
 import type { ConfigLevel, FormData } from '@/types/formData'
@@ -207,7 +208,19 @@ export const useConf = () => {
         title: '保存成功',
         color: 'success',
       })
+      activityLog.add({
+        category: '配置',
+        action: '保存配置',
+        status: 'success',
+        message: `配置已保存到“${formDataPreset.value === 'default' ? '默认配置' : '当前预设'}”；下次自动投递会使用这些筛选条件。`,
+      })
     } catch (error: any) {
+      activityLog.add({
+        category: '配置',
+        action: '保存配置',
+        status: 'error',
+        message: '配置未保存；请检查浏览器存储权限后重试。',
+      })
       toast.add({
         title: `保存失败: ${error.message}`,
         color: 'error',
@@ -224,6 +237,12 @@ export const useConf = () => {
     const v = await loadFormData()
     Object.assign(formData, v)
     logger.debug('formData已重置')
+    activityLog.add({
+      category: '配置',
+      action: '重新加载配置',
+      status: 'success',
+      message: '已恢复上次保存的配置；当前页面未保存的修改已被替换。',
+    })
     toast.add({
       title: '重置成功',
       color: 'success',
@@ -233,16 +252,38 @@ export const useConf = () => {
   async function confExport() {
     const data = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
     exportJson(data, '打招呼配置')
+    activityLog.add({
+      category: '配置',
+      action: '导出配置',
+      status: 'success',
+      message: '配置文件已导出，可用于备份或在其他浏览器中导入。',
+    })
   }
 
   async function confImport() {
-    let jsonData = await importJson<Partial<FormData>>()
-    jsonData = (await formDataHandler(jsonData)) ?? jsonData
-    deepmerge(formData, jsonData, { clone: false })
-    toast.add({
-      title: '导入成功, 切记要手动保存哦',
-      color: 'success',
-    })
+    try {
+      let jsonData = await importJson<Partial<FormData>>()
+      jsonData = (await formDataHandler(jsonData)) ?? jsonData
+      deepmerge(formData, jsonData, { clone: false })
+      activityLog.add({
+        category: '配置',
+        action: '导入配置',
+        status: 'action_required',
+        message: '配置已导入到当前页面，尚未保存；确认筛选条件后请点击保存配置。',
+      })
+      toast.add({
+        title: '导入成功, 切记要手动保存哦',
+        color: 'success',
+      })
+    } catch (error) {
+      activityLog.add({
+        category: '配置',
+        action: '导入配置',
+        status: 'error',
+        message: '配置导入失败；请选择有效的配置文件后重试。',
+      })
+      throw error
+    }
   }
 
   function confRecommend() {
@@ -268,6 +309,12 @@ export const useConf = () => {
       { clone: false },
     )
     logger.debug('formData推荐配置已应用')
+    activityLog.add({
+      category: '配置',
+      action: '应用推荐设置',
+      status: 'action_required',
+      message: '已应用推荐设置，尚未保存；确认无误后请点击保存配置。',
+    })
     toast.add({
       title: '推荐配置已应用, 不会自动保存, 请手动保存或重载恢复',
       color: 'success',
@@ -277,6 +324,12 @@ export const useConf = () => {
   function confDelete() {
     Object.assign(formData, jsonClone(defaultFormData))
     logger.debug('formData已清空')
+    activityLog.add({
+      category: '配置',
+      action: '恢复默认设置',
+      status: 'action_required',
+      message: '当前页面已恢复默认设置，尚未保存；确认后请点击保存配置。',
+    })
     toast.add({
       title: '配置清空成功, 不会自动保存, 请手动保存或重载恢复',
       color: 'success',
@@ -313,6 +366,13 @@ export const useConf = () => {
       await counter.storageSet(formDataPresetsKey, formDataPresets.value)
       await counter.storageSet(formDataKey(), jsonClone(formData))
 
+      activityLog.add({
+        category: '配置',
+        action: '创建配置预设',
+        status: 'success',
+        message: `已创建并切换到“${label.trim() || '新预设'}”，当前配置已保存。`,
+      })
+
       toast.add({
         title: '预设创建成功',
         color: 'success',
@@ -323,6 +383,12 @@ export const useConf = () => {
         color: 'error',
       })
       logger.error('预设创建失败', e)
+      activityLog.add({
+        category: '配置',
+        action: '创建配置预设',
+        status: 'error',
+        message: '创建配置预设失败；请稍后重试。',
+      })
     } finally {
       isLoading.value = false
     }
@@ -335,12 +401,24 @@ export const useConf = () => {
       formDataPreset.value = value
       await counter.storageSet(formDataPresetKey, value)
       Object.assign(formData, await loadFormData())
+      activityLog.add({
+        category: '配置',
+        action: '切换配置预设',
+        status: 'success',
+        message: '已切换配置预设，之后的筛选和自动投递会使用这套设置。',
+      })
     } catch (e) {
       toast.add({
         title: `预设切换失败: ${String(e)}`,
         color: 'error',
       })
       logger.error('预设切换失败', e)
+      activityLog.add({
+        category: '配置',
+        action: '切换配置预设',
+        status: 'error',
+        message: '切换配置预设失败；请稍后重试。',
+      })
     } finally {
       isLoading.value = false
     }

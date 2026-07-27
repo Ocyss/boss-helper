@@ -2,6 +2,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { streamText } from 'ai'
 import { ref } from 'vue'
 
+import { activityLog } from '@/composables/useActivityLog'
 import { counter } from '@/message'
 import { parseGptJson } from '@/utils/ai'
 import { logger } from '@/utils/logger'
@@ -22,15 +23,8 @@ export interface ResumeRecommendation {
   requirements: string[]
 }
 
-export interface ResumePreferences {
+export interface ResumeMatchSettings {
   enabled: boolean
-  cities: string[]
-  minSalary: number | null
-  employmentType: 'any' | 'internship' | 'full-time'
-  remote: 'any' | 'preferred' | 'required'
-  industries: string[]
-  companySizes: string[]
-  excludedKeywords: string[]
   matchThreshold: number
 }
 
@@ -38,7 +32,6 @@ export interface ResumeJobMatch {
   score: number
   matched: string[]
   missing: string[]
-  hardMismatches: string[]
 }
 
 export interface ResumeProfile {
@@ -46,7 +39,7 @@ export interface ResumeProfile {
   text: string
   updatedAt: number | null
   recommendation: ResumeRecommendation | null
-  preferences: ResumePreferences
+  matching: ResumeMatchSettings
   pendingSearchQuery: string | null
   pendingAutoApply: boolean
   autoApplyActive: boolean
@@ -54,15 +47,8 @@ export interface ResumeProfile {
   deliveredJobKeys: string[]
 }
 
-const defaultPreferences = (): ResumePreferences => ({
+const defaultMatching = (): ResumeMatchSettings => ({
   enabled: true,
-  cities: [],
-  minSalary: null,
-  employmentType: 'any',
-  remote: 'any',
-  industries: [],
-  companySizes: [],
-  excludedKeywords: [],
   matchThreshold: 60,
 })
 
@@ -71,7 +57,7 @@ const defaultProfile = (): ResumeProfile => ({
   text: '',
   updatedAt: null,
   recommendation: null,
-  preferences: defaultPreferences(),
+  matching: defaultMatching(),
   pendingSearchQuery: null,
   pendingAutoApply: false,
   autoApplyActive: false,
@@ -120,44 +106,28 @@ function normalizeRecommendation(value: unknown): ResumeRecommendation | null {
     : null
 }
 
-function normalizePreferences(value: unknown): ResumePreferences {
-  if (!value || typeof value !== 'object') return defaultPreferences()
-  const source = value as Partial<ResumePreferences>
-  const minSalary =
-    typeof source.minSalary === 'number' &&
-    Number.isFinite(source.minSalary) &&
-    source.minSalary >= 0
-      ? source.minSalary
-      : null
+function normalizeMatching(value: unknown): ResumeMatchSettings {
+  if (!value || typeof value !== 'object') return defaultMatching()
+  const source = value as Partial<ResumeMatchSettings>
   const matchThreshold =
     typeof source.matchThreshold === 'number' && Number.isFinite(source.matchThreshold)
       ? Math.min(100, Math.max(0, Math.round(source.matchThreshold)))
       : 60
   return {
     enabled: source.enabled !== false,
-    cities: stringList(source.cities),
-    minSalary,
-    employmentType:
-      source.employmentType === 'internship' || source.employmentType === 'full-time'
-        ? source.employmentType
-        : 'any',
-    remote: source.remote === 'preferred' || source.remote === 'required' ? source.remote : 'any',
-    industries: stringList(source.industries),
-    companySizes: stringList(source.companySizes),
-    excludedKeywords: stringList(source.excludedKeywords),
     matchThreshold,
   }
 }
 
 function normalizeProfile(value: unknown): ResumeProfile {
   if (!value || typeof value !== 'object') return defaultProfile()
-  const source = value as Partial<ResumeProfile>
+  const source = value as Partial<ResumeProfile> & { preferences?: unknown }
   return {
     fileName: typeof source.fileName === 'string' ? source.fileName : '',
     text: typeof source.text === 'string' ? source.text.slice(0, 120_000) : '',
     updatedAt: typeof source.updatedAt === 'number' ? source.updatedAt : null,
     recommendation: normalizeRecommendation(source.recommendation),
-    preferences: normalizePreferences(source.preferences),
+    matching: normalizeMatching(source.matching ?? source.preferences),
     pendingSearchQuery:
       typeof source.pendingSearchQuery === 'string' && source.pendingSearchQuery.trim()
         ? source.pendingSearchQuery.trim()
@@ -222,13 +192,6 @@ function jobText(job: JobData) {
   )
 }
 
-function parseLowestSalaryK(value: string) {
-  const match = value
-    .replace(/,/g, '')
-    .match(/(\d+(?:\.\d+)?)\s*(?:[-~至到]\s*\d+(?:\.\d+)?\s*)?[kK]/)
-  return match ? Number(match[1]) : null
-}
-
 function matchTerms(text: string, terms: string[], prefix: string) {
   const matched: string[] = []
   const missing: string[] = []
@@ -271,69 +234,10 @@ export const useResume = () => {
     const recommendation = profile.value.recommendation
     if (!recommendation) return null
 
-    const preferences = profile.value.preferences
     const text = jobText(job)
     const titleText = normalizeText([job.jobName, job.positionName].filter(Boolean).join(' '))
     const matched: string[] = []
     const missing: string[] = []
-    const hardMismatches: string[] = []
-
-    if (preferences.cities.length) {
-      const location = normalizeText([job.city, job.address].filter(Boolean).join(' '))
-      if (!location) hardMismatches.push('岗位未提供城市信息')
-      else if (!preferences.cities.some((city) => contains(location, city))) {
-        hardMismatches.push(`城市不符合：${preferences.cities.join('、')}`)
-      } else {
-        matched.push(`城市：${preferences.cities.find((city) => contains(location, city))}`)
-      }
-    }
-
-    if (preferences.minSalary != null) {
-      const minimum = parseLowestSalaryK(job.salary)
-      if (minimum == null) hardMismatches.push(`无法解析薪资：${job.salary || '未提供'}`)
-      else if (minimum < preferences.minSalary) {
-        hardMismatches.push(`最低薪资 ${minimum}K 低于 ${preferences.minSalary}K`)
-      } else {
-        matched.push(`薪资：${minimum}K 起`)
-      }
-    }
-
-    const isInternship = /实习|intern/.test(text)
-    if (preferences.employmentType === 'internship' && !isInternship) {
-      hardMismatches.push('不是实习岗位')
-    } else if (preferences.employmentType === 'full-time' && isInternship) {
-      hardMismatches.push('是实习岗位，非全职')
-    } else if (preferences.employmentType !== 'any') {
-      matched.push(preferences.employmentType === 'internship' ? '实习岗位' : '全职岗位')
-    }
-
-    const isRemote = /远程|remote|居家|在家办公/.test(text)
-    if (preferences.remote === 'required' && !isRemote) {
-      hardMismatches.push('不支持远程')
-    } else if (preferences.remote !== 'any' && isRemote) {
-      matched.push('支持远程')
-    }
-
-    if (preferences.industries.length) {
-      const industry = normalizeText(job.brand.industry)
-      if (!industry || !preferences.industries.some((item) => contains(industry, item))) {
-        hardMismatches.push(`行业不符合：${preferences.industries.join('、')}`)
-      } else {
-        matched.push(`行业：${preferences.industries.find((item) => contains(industry, item))}`)
-      }
-    }
-
-    if (preferences.companySizes.length) {
-      const scale = normalizeText(job.brand.scale)
-      if (!scale || !preferences.companySizes.some((item) => contains(scale, item))) {
-        hardMismatches.push(`公司规模不符合：${preferences.companySizes.join('、')}`)
-      } else {
-        matched.push(`规模：${preferences.companySizes.find((item) => contains(scale, item))}`)
-      }
-    }
-
-    const excluded = preferences.excludedKeywords.find((keyword) => contains(text, keyword))
-    if (excluded) hardMismatches.push(`命中排除词：${excluded}`)
 
     let score = 0
     const roleTerms = splitTerms([...recommendation.targetRoles, ...recommendation.searchQueries])
@@ -357,18 +261,23 @@ export const useResume = () => {
     matched.push(...matchedRequirements)
     missing.push(...requirementMatch.missing.slice(0, 3))
 
-    if (preferences.remote === 'preferred' && isRemote) score += 5
-
     return {
       score: Math.min(100, score),
       matched: Array.from(new Set(matched)).slice(0, 8),
       missing: Array.from(new Set(missing)).slice(0, 8),
-      hardMismatches,
     }
   }
 
   function isAutoApplyActive() {
-    return profile.value.autoApplyActive && profile.value.preferences.enabled
+    return profile.value.autoApplyActive
+  }
+
+  function hasValidAnalysis() {
+    return Boolean(profile.value.text.trim() && profile.value.recommendation)
+  }
+
+  function isMatchFilterEnabled() {
+    return hasValidAnalysis() && profile.value.matching.enabled
   }
 
   function isDeliveredJob(key: string) {
@@ -385,8 +294,28 @@ export const useResume = () => {
         text,
         updatedAt: Date.now(),
         recommendation: null,
+        pendingSearchQuery: null,
+        pendingAutoApply: false,
+        autoApplyActive: false,
+        searchQueue: [],
+        deliveredJobKeys: [],
       }
       await save()
+      activityLog.add({
+        category: '简历',
+        action: '上传并提取',
+        status: 'success',
+        message: '已提取简历文本，旧的分析和岗位去重记录已清空；可继续保存或进行 AI 分析。',
+        detail: { fileType: file.name.split('.').pop()?.toUpperCase() || '未知' },
+      })
+    } catch (error) {
+      activityLog.add({
+        category: '简历',
+        action: '上传并提取',
+        status: 'error',
+        message: '简历文件未能提取；请确认文件未加密且格式受支持后重试。',
+      })
+      throw error
     } finally {
       isLoading.value = false
     }
@@ -439,7 +368,25 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
         updatedAt: Date.now(),
       }
       await save()
+      activityLog.add({
+        category: '简历',
+        action: 'AI 分析',
+        status: 'success',
+        message: 'AI 已生成岗位方向和搜索词；请确认搜索词后再开始搜索或自动投递。',
+        detail: {
+          targetRoleCount: recommendation.targetRoles.length,
+          searchQueryCount: recommendation.searchQueries.length,
+        },
+      })
       return recommendation
+    } catch (error) {
+      activityLog.add({
+        category: '简历',
+        action: 'AI 分析',
+        status: 'error',
+        message: 'AI 未能完成简历分析；请检查模型配置和网络后重试。',
+      })
+      throw error
     } finally {
       isAnalyzing.value = false
     }
@@ -451,8 +398,19 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
       text: text.slice(0, 120_000),
       updatedAt: Date.now(),
       recommendation: null,
+      pendingSearchQuery: null,
+      pendingAutoApply: false,
+      autoApplyActive: false,
+      searchQueue: [],
+      deliveredJobKeys: [],
     }
     await save()
+    activityLog.add({
+      category: '简历',
+      action: '保存文本',
+      status: 'success',
+      message: '简历文本已保存，旧的分析和岗位去重记录已清空；请重新进行 AI 分析。',
+    })
   }
 
   async function setSearchRequest(query: string, autoApply: boolean) {
@@ -464,6 +422,13 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
       searchQueue: [],
     }
     await save()
+    activityLog.add({
+      category: '简历搜索',
+      action: '开始搜索',
+      status: 'success',
+      message: `已准备搜索“${query.trim()}”；将跳转到岗位搜索页。`,
+      detail: { autoApply },
+    })
   }
 
   async function startSearchQueue(queries: string[]) {
@@ -484,8 +449,16 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
       pendingAutoApply: true,
       autoApplyActive: true,
       searchQueue,
+      deliveredJobKeys: [],
     }
     await save()
+    activityLog.add({
+      category: '简历搜索',
+      action: '开始自动投递队列',
+      status: 'success',
+      message: `已开始 ${normalizedQueries.length} 个搜索词的自动投递队列；会按顺序搜索并去重。`,
+      detail: { queryCount: normalizedQueries.length },
+    })
     return pendingSearchQuery
   }
 
@@ -496,6 +469,12 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
       pendingAutoApply: false,
     }
     await save()
+    activityLog.add({
+      category: '简历搜索',
+      action: '开始当前队列',
+      status: 'success',
+      message: '当前搜索词已开始自动投递；完成后会继续检查下一个搜索词。',
+    })
   }
 
   async function advanceSearchQueue() {
@@ -508,6 +487,15 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
       searchQueue,
     }
     await save()
+    activityLog.add({
+      category: '简历搜索',
+      action: pendingSearchQuery ? '切换搜索词' : '完成自动投递队列',
+      status: 'success',
+      message: pendingSearchQuery
+        ? `当前搜索已完成，接下来将搜索“${pendingSearchQuery}”。`
+        : '全部搜索词已处理完毕；可在操作记录中查看投递与跳过原因。',
+      detail: { remainingQueryCount: searchQueue.length },
+    })
     return pendingSearchQuery ?? null
   }
 
@@ -520,6 +508,12 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
       searchQueue: [],
     }
     await save()
+    activityLog.add({
+      category: '简历搜索',
+      action: '取消自动投递队列',
+      status: 'skipped',
+      message: '后续搜索和自动投递已停止；已开始的投递不会被撤回。',
+    })
   }
 
   async function recordDeliveredJob(key: string) {
@@ -552,6 +546,8 @@ ${profile.value.text.slice(0, maxPromptChars)}`,
     cancelSearchQueue,
     recordDeliveredJob,
     isAutoApplyActive,
+    hasValidAnalysis,
+    isMatchFilterEnabled,
     isDeliveredJob,
     matchJob,
     clear,

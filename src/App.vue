@@ -8,13 +8,17 @@ import JobCards from '@/components/JobCards.vue'
 import Version from '@/components/Menu/Version.vue'
 import About from '@/components/Tabs/About.vue'
 import Ai from '@/components/Tabs/AI.vue'
+import Automation from '@/components/Tabs/Automation.vue'
 import Config from '@/components/Tabs/Config.vue'
 import Filter from '@/components/Tabs/Filter.vue'
 import Logs from '@/components/Tabs/Logs.vue'
 import Resume from '@/components/Tabs/Resume.vue'
 import Statistics from '@/components/Tabs/Statistics.vue'
 import { useConf, appearanceConf } from '@/composables/conf'
+import { useActivityLog } from '@/composables/useActivityLog'
+import { useBlacklist } from '@/composables/useBlacklist'
 import { useModel } from '@/composables/useModel'
+import { useResume } from '@/composables/useResume'
 import { useStatistics } from '@/composables/useStatistics'
 
 import { useHelper, VITE_VERSION } from './composables/useHelper'
@@ -23,16 +27,20 @@ const model = useModel()
 const { todayData } = useStatistics()
 const conf = useConf()
 const helper = useHelper()
+const activityLog = useActivityLog()
+const blacklist = useBlacklist()
+const resumeProfile = useResume()
 
 const items = computed<TabsItem[]>(() => {
   const configs = [
-    { slot: 'statistics', label: '统计', help: '失败是成功她妈' },
-    { slot: 'filter', label: '筛选' },
-    { slot: 'config', label: '配置', help: '好好看，好好学' },
-    { slot: 'ai', label: 'AI', help: 'AI时代，脚本怎么能落伍!' },
+    { slot: 'statistics', label: '统计', help: '查看今天的投递和沟通情况' },
+    { slot: 'filter', label: '筛选', help: '设置当前页面岗位的筛选条件' },
+    { slot: 'config', label: '配置', help: '设置投递方式、筛选条件和偏好' },
+    { slot: 'ai', label: 'AI', help: '配置用于分析、招呼和回复的 AI 模型' },
     { slot: 'resume', label: '简历推荐', help: '上传简历并生成岗位搜索词' },
-    { slot: 'logs', label: '日志', help: '反正你也不看' },
-    { slot: 'about', label: '关于&赞赏', help: '项目是写不完美的,但总要去追求完美' },
+    { slot: 'automation', label: '自动化', help: '风险、黑白名单和聊天自动化' },
+    { slot: 'logs', label: '日志', help: '查看每一步处理结果和需要你处理的问题' },
+    { slot: 'about', label: '关于&赞赏', help: '查看版本说明、使用信息和项目支持方式' },
   ] satisfies (TabsItem | boolean | null | undefined | '')[]
 
   return configs.filter((item) => !!item) as TabsItem[]
@@ -113,11 +121,57 @@ const { pause, resume } = useRafFn(updateOverlay, { immediate: false })
 
 const chatOpen = ref(appearanceConf.value.defaultShowChatBox)
 
+async function initializeWorkspace() {
+  await Promise.allSettled([
+    conf.confInit(),
+    model.initModel(),
+    helper.logs.init(),
+    activityLog.init(),
+    blacklist.init(),
+    resumeProfile.init(),
+  ])
+
+  activityLog.add({
+    category: '配置',
+    action: '检查当前设置',
+    status: 'success',
+    message: '已加载当前配置；后续搜索和自动投递会按已保存的筛选条件执行。',
+  })
+  activityLog.add({
+    category: '简历',
+    action: '检查简历匹配',
+    status: resumeProfile.profile.value.recommendation ? 'success' : 'skipped',
+    message: resumeProfile.profile.value.recommendation
+      ? '已加载简历分析结果；开启自动投递时会按你设置的匹配分筛选岗位。'
+      : '尚未完成简历分析；自动投递暂不会按简历匹配分筛选岗位。',
+  })
+  activityLog.add({
+    category: '公司风险',
+    action: '检查风险筛查',
+    status: conf.formData.companyRisk.enable ? 'success' : 'skipped',
+    message: conf.formData.companyRisk.enable
+      ? '公司风险筛查已开启；达到设定风险分的岗位会被自动跳过。'
+      : '公司风险筛查未开启；自动投递不会因风险分跳过岗位。',
+  })
+  activityLog.add({
+    category: '黑白名单',
+    action: '检查名单规则',
+    status: 'success',
+    message: blacklist.rules.value.length
+      ? `已加载 ${blacklist.rules.value.length} 条黑白名单规则，投递前会优先检查。`
+      : '暂无黑白名单规则，当前不会因名单规则跳过岗位。',
+  })
+  activityLog.add({
+    category: '投递',
+    action: '准备投递流程',
+    status: 'success',
+    message: '投递流程已准备；开始后会先检查登录、岗位数据和筛选条件，再逐个处理岗位。',
+  })
+}
+
 onMounted(() => {
   root = (container.value?.getRootNode() as ShadowRoot) ?? document
-  void conf.confInit()
-  void model.initModel()
-  void helper.logs.init()
+  void initializeWorkspace()
   chatOpen.value = appearanceConf.value.defaultShowChatBox
 })
 
@@ -230,6 +284,7 @@ function onPointerMove(ev: PointerEvent) {
             <template #config><Config /></template>
             <template #ai><Ai /></template>
             <template #resume><Resume /></template>
+            <template #automation><Automation /></template>
             <template #logs><Logs /></template>
             <template #about><About /></template>
             <template #list-trailing>

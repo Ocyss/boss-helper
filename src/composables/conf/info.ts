@@ -294,7 +294,61 @@ export const defaultFormData: FormData = {
   },
   aiReply: {
     enable: false,
-    prompt: [{ role: 'user', content: '帮我写一个回复的提示' }],
+    prompt: [
+      {
+        role: 'system',
+        content:
+          '你是求职者的聊天助手。回复应自然、简短、真实；不能承诺未确认的入职时间、薪资、证件、联系方式或面试安排。遇到这些事项时明确建议人工处理。只输出可直接发送给 HR 的中文文本。',
+      },
+      {
+        role: 'user',
+        content: `公司：{{ state.chat.companyName }}
+岗位：{{ state.chat.jobName }}
+HR：{{ state.chat.senderName }}
+对方消息：{{ state.chat.text }}
+简历优势：{{ state.chat.resumeStrengths }}
+请生成回复。`,
+      },
+    ],
+  },
+  companyRisk: {
+    enable: true,
+    blockThreshold: 50,
+    external: {
+      provider: 'none',
+      endpoint: '',
+      apiKey: '',
+      apiSecret: '',
+      headers: '',
+      cacheMinutes: 60 * 24,
+    },
+  },
+  chatAutomation: {
+    enable: false,
+    mode: 'remind',
+    browserNotification: true,
+    pagePopup: true,
+    blockReadReceipts: false,
+    quietStart: '22:00',
+    quietEnd: '08:00',
+    allowlist: [],
+    keywords: [],
+    manualReviewKeywords: [
+      '面试',
+      '薪资',
+      '工资',
+      '待遇',
+      'offer',
+      '入职',
+      '到岗',
+      '电话',
+      '微信',
+      '身份证',
+      '合同',
+    ],
+    maxRepliesPerConversation: 3,
+    cooldownMinutes: 10,
+    dailyReplyLimit: 20,
   },
   amap: {
     key: '',

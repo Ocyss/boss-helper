@@ -1,7 +1,10 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import { defineUnlistedScript } from '#imports'
+import { installReadReceiptHook, setReadReceiptBlocking } from '@/chatAutomation/readReceiptHook'
+import { ChatAutomationRuntime } from '@/chatAutomation/runtime'
 import { appearanceConf, useConf } from '@/composables/conf'
+import { activityLog } from '@/composables/useActivityLog'
 import { createLazyObject, isInitialized } from '@/composables/useApplying/type'
 import type {
   PreflightCheck,
@@ -9,13 +12,16 @@ import type {
   SimulationResult,
   WorkflowData,
 } from '@/composables/useApplying/type'
+import { useBlacklist } from '@/composables/useBlacklist'
 import { HelperContext } from '@/composables/useHelper'
 import type { JobData } from '@/composables/useHelper'
 import type { AlertItem, ConfigAccordionItem } from '@/composables/useHelper/type'
+import { useResume } from '@/composables/useResume'
 import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
 import { run } from '@/index'
 import { counter } from '@/message'
-import { FormDataInput } from '@/types/formData'
+import type { FormDataInput } from '@/types/formData'
+import { notification } from '@/utils'
 import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 
@@ -73,6 +79,7 @@ function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
     jobName: item.jobName,
     positionName: item.jobName,
     jobDescription: '',
+    detailCollected: false,
 
     // 经验和学历要求 - 从 jobLabels 中解析或直接使用
     experienceName: item.jobExperience || item.jobLabels?.[0] || '经验不限',
@@ -135,6 +142,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   key = 'boss'
 
   geek!: GeekChatClientManager
+  chatAutomation: ChatAutomationRuntime | null = null
+  private chatServicesPromise: Promise<void> | null = null
+  private mountingJobUi = false
 
   _page = ref({ page: 1, pageSize: 15 })
   _pageHasMore = ref(true)
@@ -530,56 +540,209 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
   }
 
-  async onMount(path?: string) {
-    if (!path) {
-      path = this.rootVue.$route.path
-    }
-
-    try {
-      if (await elmGetter.get('boss-helper-job', 3000)) {
-        return
-      }
-    } catch {}
-
-    if (BossHelperCtx.instance) {
-      BossHelperCtx.instance.remove()
-      BossHelperCtx.instance = null
-    }
-    // TODO: 移除menu, 可能导致nuxtui实例冲突
-    // if (!document.querySelector('boss-helper-menu')) {
-    //   const menuElement = document.createElement('boss-helper-menu')
-    //   document.body.appendChild(menuElement)
-    // }
-    const elm = await elmGetter.get(
-      '.job-search-wrapper,.job-recommend-main,.page-jobs .page-jobs-main',
-    )
-
-    const appElement = document.createElement('boss-helper-job')
-    BossHelperCtx.instance = appElement
-    elm.insertBefore(appElement, elm.firstChild)
-    removeAd()
-
-    await this._initPage()
-    await this._initPageChange()
-    await this._initJobDetail()
-    await this._initClickJobCardAction()
-    await this._initJobList()
-
-    this.initNetConf()
-    const contentElm = elm.querySelector<HTMLDivElement>('.recommend-result-inner')
-    this.geek = new GeekChatClientManager()
-    await this.geek.connect()
+  private async initChatAutomation() {
+    if (this.chatAutomation) return
+    await Promise.all([this.conf.confInit(), this.models.initModel()])
+    installReadReceiptHook()
     watch(
-      appearanceConf.value,
-      (v) => {
-        if (!contentElm) return
-        contentElm.style.marginRight =
-          v.leftChat && v.contentOffset != 25 ? `${v.contentOffset}%` : 'unset'
-        contentElm.style.marginLeft =
-          !v.leftChat && v.contentOffset != 25 ? `${v.contentOffset}%` : 'unset'
-      },
+      () => this.conf.formData.chatAutomation.blockReadReceipts,
+      (enabled) => setReadReceiptBlocking(enabled),
       { immediate: true },
     )
+    this.chatAutomation = new ChatAutomationRuntime({
+      getConfig: () => this.conf.formData.chatAutomation,
+      notify: async (title, message, clickUrl) => {
+        await notification(message, { title, type: 'basic', clickUrl })
+      },
+      createDraft: async (message, history) => {
+        const model = this.conf.formData.aiReply
+        if (!model.enable || !this.chatModel.createAgent(model, 'reply')) {
+          throw new Error('AI 回复模型未配置或未启用')
+        }
+        const resume = useResume()
+        await resume.init()
+        const strengths = resume.profile.value.recommendation?.strengths?.join('、') ?? ''
+        const jobData: JobData = {
+          key: `chat:${message.conversationId}`,
+          jobName: message.jobName || '聊天沟通',
+          positionName: message.jobName || '聊天沟通',
+          jobDescription: history.join('\n'),
+          experienceName: '',
+          degreeName: '',
+          salary: '',
+          showSkills: [],
+          jobLabels: [],
+          skills: [],
+          boss: {
+            key: message.senderId,
+            name: message.senderName || 'HR',
+            title: '',
+            avatar: '',
+            certificated: false,
+          },
+          brand: {
+            key: message.companyName,
+            name: message.companyName || '未提供公司',
+            logo: '',
+            scale: '',
+            industry: '',
+            introduce: '',
+            labels: [],
+          },
+        }
+        const result = await this.chatModel.chat(
+          'reply',
+          {
+            jobData,
+            rawData: {} as BoosJobData,
+            state: {
+              chat: {
+                ...message,
+                history: history.join('\n'),
+                resumeStrengths: strengths,
+              },
+            },
+          },
+          { disableMessages: true },
+        )
+        return await result.text
+      },
+      sendReply: async (message, text) => {
+        await this.geek.sendText(message.raw as Record<string, unknown>, text)
+      },
+      retryConnection: async () => {
+        await this.geek.retry()
+      },
+      blacklistSender: async (message) => {
+        const blacklist = useBlacklist()
+        const company = message.companyName?.trim()
+        await blacklist.addRule({
+          list: 'blacklist',
+          target: company ? 'company' : 'hr',
+          matchMode: 'exact',
+          value: company || message.senderId,
+          reason: `聊天窗口拉黑：${company || message.senderName || message.senderId}`,
+          expiresAt: null,
+        })
+      },
+    })
+    this.geek.onIncomingMessage((message) => {
+      void this.chatAutomation?.handleRawMessage(message).catch((error) => {
+        logger.error('聊天自动化处理失败', error)
+        activityLog.add({
+          category: '聊天自动化',
+          action: '处理新消息',
+          status: 'error',
+          message:
+            '新消息处理失败，已保存在 BOSS 会话中。请进入会话手动查看，并检查聊天自动化设置。',
+        })
+      })
+    })
+    this.geek.onOwnMessage((message, isExtensionMessage) => {
+      void this.chatAutomation?.handleOwnMessage(message, isExtensionMessage).catch((error) => {
+        logger.warn('聊天人工接管状态更新失败', error)
+        activityLog.add({
+          category: '聊天自动化',
+          action: '切换人工接管',
+          status: 'error',
+          message: '没有成功切换为人工接管。请在聊天自动化的会话记录中手动暂停该会话。',
+        })
+      })
+    })
+    activityLog.add({
+      category: '聊天自动化',
+      action: '启动消息监听',
+      status: 'success',
+      message: '聊天自动化已准备就绪，会在收到新的在线文本消息时按你的规则处理。',
+    })
+  }
+
+  private initChatServices() {
+    if (this.chatServicesPromise) {
+      this.startChatConnection()
+      return this.chatServicesPromise
+    }
+    const services = this.initChatServicesOnce()
+    this.chatServicesPromise = services
+    void services.catch(() => {
+      if (this.chatServicesPromise === services) this.chatServicesPromise = null
+    })
+    return services
+  }
+
+  private async initChatServicesOnce() {
+    if (!this.geek) {
+      this.geek = new GeekChatClientManager()
+    }
+    await this.initChatAutomation()
+    this.startChatConnection()
+  }
+
+  private startChatConnection() {
+    // The page UI and notification runtime can start immediately. `sendText` waits for
+    // this connection when a user actually sends a draft or an automatic reply.
+    void this.geek.connect().catch((error) => logger.warn('聊天通道连接失败', error))
+  }
+
+  async onMount(path?: string) {
+    const currentPath = path ?? this.rootVue.$route.path ?? ''
+
+    try {
+      // Chat messages must be observed on the chat page as well as job-list pages.
+      await this.initChatServices()
+    } catch (error) {
+      logger.warn('聊天自动化初始化失败', error)
+    }
+
+    if (document.querySelector('boss-helper-job')) return
+
+    if (!/^\/web\/geek\/(?:job-recommend|jobs)/.test(currentPath)) {
+      return
+    }
+    if (this.mountingJobUi) return
+
+    this.mountingJobUi = true
+    try {
+      if (BossHelperCtx.instance) {
+        BossHelperCtx.instance.remove()
+        BossHelperCtx.instance = null
+      }
+      // TODO: 移除menu, 可能导致nuxtui实例冲突
+      // if (!document.querySelector('boss-helper-menu')) {
+      //   const menuElement = document.createElement('boss-helper-menu')
+      //   document.body.appendChild(menuElement)
+      // }
+      const elm = await elmGetter.get(
+        '.job-search-wrapper,.job-recommend-main,.page-jobs .page-jobs-main',
+      )
+
+      const appElement = document.createElement('boss-helper-job')
+      BossHelperCtx.instance = appElement
+      elm.insertBefore(appElement, elm.firstChild)
+      removeAd()
+
+      await this._initPage()
+      await this._initPageChange()
+      await this._initJobDetail()
+      await this._initClickJobCardAction()
+      await this._initJobList()
+
+      this.initNetConf()
+      const contentElm = elm.querySelector<HTMLDivElement>('.recommend-result-inner')
+      watch(
+        appearanceConf.value,
+        (v) => {
+          if (!contentElm) return
+          contentElm.style.marginRight =
+            v.leftChat && v.contentOffset != 25 ? `${v.contentOffset}%` : 'unset'
+          contentElm.style.marginLeft =
+            !v.leftChat && v.contentOffset != 25 ? `${v.contentOffset}%` : 'unset'
+        },
+        { immediate: true },
+      )
+    } finally {
+      this.mountingJobUi = false
+    }
   }
   getConfigItems() {
     const conf = useConf()
@@ -820,6 +983,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     targetJob.activeTime = detail.brandComInfo.activeTime
     targetJob.activeTimeStr = detail.bossInfo.activeTimeDesc
     targetJob.jobDescription = detail.jobInfo.postDescription
+    targetJob.detailCollected = true
     targetJob.city = detail.jobInfo.locationName
     targetJob.address = detail.jobInfo.address
     targetJob.addressCoords = [detail.jobInfo.longitude, detail.jobInfo.latitude]

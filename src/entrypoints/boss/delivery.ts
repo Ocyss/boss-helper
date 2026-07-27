@@ -1,3 +1,4 @@
+import { activityLog } from '@/composables/useActivityLog'
 import {
   recordSuccessfulDelivery,
   TaskRegistry,
@@ -35,6 +36,7 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   ), // 已沟通过滤
   tasks.SameCompanyFilter(), // 相同公司过滤
   tasks.SameHrFilter(), // 相同hr过滤
+  tasks.BlacklistQuickFilter(), // 公司、HR、岗位等列表信息命中时不再请求详情
   tasks.jobTitle(), // 岗位名筛选
   tasks.company(), // 公司名筛选
   tasks.salaryRange(), // 薪资筛选
@@ -50,13 +52,14 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
       stateMsg: '获取岗位详情',
     },
   ), // 获取岗位详情
+  tasks.BlacklistFilter({ deps: ['岗位详情获取'] }), // 黑白名单优先于后续详情筛选与风险评估
   tasks.activityFilter({ deps: ['岗位详情获取'] }), // 活跃度过滤
   tasks.hrPosition({ deps: ['岗位详情获取'] }), // Hr职位筛选
   tasks.jobAddress({ deps: ['岗位详情获取'] }), // 工作地址筛选
   tasks.jobFriendStatus({ deps: ['岗位详情获取'] }), // 好友状态过滤
   tasks.jobContent({ deps: ['岗位详情获取'] }), // 工作内容筛选
+  tasks.CompanyRisk({ deps: ['岗位详情获取'] }), // 公司风险
   tasks.ResumeJobDuplicate({ deps: ['岗位详情获取'] }), // 简历岗位去重
-  tasks.ResumePreferences({ deps: ['岗位详情获取'] }), // 简历硬条件
   tasks.ResumeMatch({ deps: ['岗位详情获取'] }), // 简历匹配评分
 
   defineTaskHandler(
@@ -82,18 +85,37 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
 
   defineTaskHandler('岗位投递', () => async (ctx, { rawData, jobData }) => {
-    await sendPublishReq({
-      securityId: rawData.jobitem.securityId,
-      encryptJobId: rawData.jobitem.encryptJobId,
+    try {
+      await sendPublishReq({
+        securityId: rawData.jobitem.securityId,
+        encryptJobId: rawData.jobitem.encryptJobId,
+      })
+    } catch (error) {
+      activityLog.add({
+        category: '投递',
+        action: '提交岗位投递',
+        status: 'error',
+        message: '岗位投递未提交成功；请检查登录状态、网络和平台页面后重试。',
+        detail: { job: jobData.jobName || jobData.positionName, company: jobData.brand.name },
+      })
+      throw error
+    }
+    activityLog.add({
+      category: '投递',
+      action: '提交岗位投递',
+      status: 'success',
+      message: '岗位投递请求已提交；请以平台页面的最终状态为准。',
+      detail: { job: jobData.jobName || jobData.positionName, company: jobData.brand.name },
     })
     try {
       const resume = useResume()
+      await resume.init()
       await Promise.all([
         recordSuccessfulDelivery(ctx.helper.uid, jobData, {
           company: ctx.helper.conf.formData.sameCompanyFilter.value,
           hr: ctx.helper.conf.formData.sameHrFilter.value,
         }),
-        ...(resume.isAutoApplyActive() ? [resume.recordDeliveredJob(jobData.key)] : []),
+        ...(resume.isMatchFilterEnabled() ? [resume.recordDeliveredJob(jobData.key)] : []),
       ])
     } catch (error) {
       logger.error('投递成功，但去重记录保存失败', error)
@@ -103,6 +125,14 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
         'warning',
         error instanceof Error ? error.message : String(error),
       )
+      activityLog.add({
+        category: '投递',
+        action: '保存去重记录',
+        status: 'action_required',
+        message:
+          '岗位投递已提交，但本地去重记录未保存；下次可能再次遇到同一岗位，请检查浏览器存储权限。',
+        detail: { job: jobData.jobName || jobData.positionName, company: jobData.brand.name },
+      })
     }
     return {
       status: 'success',

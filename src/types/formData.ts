@@ -47,6 +47,8 @@ export interface FormData {
   aiGreeting: FormDataAi
   aiFiltering: FormDataAi & { score: number }
   aiReply: FormDataAi
+  companyRisk: CompanyRiskConfig
+  chatAutomation: ChatAutomationConfig
   amap: {
     key: string
     origins: string
@@ -120,6 +122,49 @@ export interface FormDataAi {
   model?: string
   prompt: Prompt
   enable: boolean
+}
+
+export type CompanyRiskProvider = 'none' | 'tianyancha' | 'qichacha' | 'custom'
+
+export interface CompanyRiskConfig {
+  enable: boolean
+  blockThreshold: number
+  external: {
+    provider: CompanyRiskProvider
+    endpoint: string
+    apiKey: string
+    apiSecret: string
+    headers: string
+    cacheMinutes: number
+  }
+}
+
+export type ChatAutomationMode = 'remind' | 'suggest' | 'confirm' | 'auto'
+
+export type ChatAllowlistTarget = 'company' | 'hr' | 'job' | 'hr-id'
+export type ChatAllowlistMatchMode = 'exact' | 'contains'
+
+export interface ChatAllowlistRule {
+  target: ChatAllowlistTarget
+  matchMode: ChatAllowlistMatchMode
+  value: string
+}
+
+export interface ChatAutomationConfig {
+  enable: boolean
+  mode: ChatAutomationMode
+  browserNotification: boolean
+  pagePopup: boolean
+  blockReadReceipts: boolean
+  quietStart: string
+  quietEnd: string
+  // Legacy string entries remain supported when loading an older local configuration.
+  allowlist: Array<ChatAllowlistRule | string>
+  keywords: string[]
+  manualReviewKeywords: string[]
+  maxRepliesPerConversation: number
+  cooldownMinutes: number
+  dailyReplyLimit: number
 }
 
 export type CustomGreetingItemText = {
