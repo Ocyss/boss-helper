@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["import", "vue", "jsx-a11y", "oxc", "typescript"],
+  "rules": {
+    "eslint/no-unused-expressions": [
+      "error",
+      {
+        "allowShortCircuit": true
+      }
+    ]
+  },
+  "ignorePatterns": ["*.min.js"]
+}

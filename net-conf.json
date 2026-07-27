@@ -1,0 +1,128 @@
+{
+  "version": "0.4.3",
+  "version_description": "0.4.3: 修复招呼语无法发送的问题, 增加缓存配置, 外观伪装等功能\n0.4.2: 修复投递触发风控而自动刷新问题\n0.4.1:修复model无法保存，通知样式错误等问题\n0.4.0: 代码开源，调整架构。\n添加地址筛选功能(支持高德地图api)\n调整范围匹配，优化UI",
+  "store": {
+    "chrome": [
+      "Chrome Store, 需要魔法，审核速度较慢",
+      "https://chromewebstore.google.com/detail/ogkmgjbagackkdlcibcailacnncgonbn?authuser=1&hl=zh-CN",
+      "https://img.shields.io/chrome-web-store/v/ogkmgjbagackkdlcibcailacnncgonbn?label=Chrome插件商店"
+    ],
+    "crx": [
+      "国内Chrome用户推荐，Chrome 同步无需魔法，更新速度未知",
+      "https://www.crxsoso.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn",
+      "https://img.shields.io/badge/Crx搜索-v%3F.%3F.%3F-EF7C3D"
+    ],
+    "edge": [
+      "Edge浏览器用户推荐，除了更新慢一些。审核速度最慢",
+      "https://microsoftedge.microsoft.com/addons/detail/jcllnbjfeamhihjpfjlclhdnjmggbgal",
+      "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fjcllnbjfeamhihjpfjlclhdnjmggbgal&query=version&prefix=v&label=Edge插件商店&color=EF7C3D"
+    ],
+    "firefox": [
+      "Firefox 浏览器用户，无需魔法, 审核速度最快",
+      "https://addons.mozilla.org/zh-CN/firefox/addon/boos-helper/",
+      "https://img.shields.io/amo/v/boss-helper?label=Mozilla插件商店"
+    ],
+    "github": [
+      "Github, 需要魔法，没有审核，随时更新",
+      "https://github.com/Ocyss/boos-helper/releases/latest",
+      "https://img.shields.io/github/v/release/Ocyss/boos-helper?label=GitHub-Release"
+    ]
+  },
+  "notification": [
+    {
+      "key": "050320/pre",
+      "type": "notification",
+      "data": {
+        "title": "0.3.3 版本发布",
+        "message": "修复了大量bug，并添加小白友好的密钥系统<br/><a href=\"https://chromewebstore.google.com/detail/ogkmgjbagackkdlcibcailacnncgonbn?authuser=1&hl=zh-CN\" target=\"_blank\">Chrome Store</a><br/><a href=\"https://microsoftedge.microsoft.com/addons/detail/jcllnbjfeamhihjpfjlclhdnjmggbgal\" target=\"_blank\">Edge Store</a><br/><a href=\"https://addons.mozilla.org/zh-CN/firefox/addon/boos-helper/\" target=\"_blank\">Firefox ADD-ONS</a><br/><a href=\"https://github.com/Ocyss/boos-helper/releases/tag/0.3.3\" target=\"_blank\">Github</a><br/>",
+        "type": "success",
+        "duration": 999999999,
+        "dangerouslyUseHTMLString": true,
+        "url": "https://github.com/Ocyss/boos-helper/releases/tag/0.3.3"
+      }
+    },
+    {
+      "key": "050325/pre",
+      "type": "notification",
+      "data": {
+        "title": "0.3.4 版本发布",
+        "message": "修复了一系列问题，已登录但提示未登录, 偶尔加载失败，获取不到根元素等",
+        "type": "success",
+        "duration": 999999999,
+        "dangerouslyUseHTMLString": true,
+        "url": "https://github.com/Ocyss/boos-helper/releases/tag/0.3.4"
+      }
+    },
+    {
+      "key": "050331/price",
+      "type": "notification",
+      "data": {
+        "title": "会员模式降价幅度70%！",
+        "message": "会员模式使用了思维链导致上下文很长，为了稳定性选择了火山deepseek,但没有缓存功能导致价格高昂，如今火山更新了缓存功能，已经针对Prompt进行了优化，每次调用仅0.05元，相较于前些日的0.15+更能接受。当然使用自己的api性价比最高",
+        "type": "success",
+        "duration": 999999999
+      }
+    },
+    {
+      "key": "050408/bug",
+      "type": "notification",
+      "data": {
+        "title": "0.3.5 存在bug",
+        "message": "非常抱歉，0.3.5版本存在一个bug导致第三个投递之后会报错，请先禁用筛选中的相同公司和相同Hr筛选。下一个版本0.3.6会修复",
+        "type": "warning",
+        "duration": 999999999
+      }
+    },
+    {
+      "key": "050831/pre",
+      "type": "notification",
+      "data": {
+        "title": "0.4.0 发布",
+        "message": "代码已开源，更新了架构，增加了高德地图api拥有更好的地址筛选,调整了范围匹配的样式。发送图片尽请期待",
+        "type": "success",
+        "duration": 999999999
+      }
+    },
+    {
+      "key": "050905/pre",
+      "type": "notification",
+      "data": {
+        "title": "0.4.2/0.4.1 发布",
+        "message": "修复投递风控而自动刷新, 修复model无法保存，通知样式错误。",
+        "type": "success",
+        "duration": 999999999
+      }
+    },
+    {
+      "key": "050905/pre2",
+      "type": "notification",
+      "data": {
+        "title": "0.4.1 错误已知",
+        "message": "目前只影响edge0.4.1自动更新，投递会出现未知错误是因为触发风控。因为审核时间长所以先提交了再进行的测试(有问题也能取消审核更换版本)，但edge秒通过了，修复版本提交了还在审核中。。没有办法",
+        "type": "success",
+        "duration": 999999999
+      }
+    },
+    {
+      "key": "051223/pre",
+      "type": "notification",
+      "data": {
+        "title": "0.4.3 版本发布",
+        "message": "修复了招呼语发送没反应的bug，添加了缓存配置，外观配置，但同时部分人的boss版本不同导致直接报错了，这是正常现象，切换浏览器或者禁用招呼语 等待修复。Firefox账号同步问题暂时回退0.4.2了，修复时间待定",
+        "type": "success",
+        "duration": 999999999
+      }
+    },
+    {
+      "key": "060425/bug",
+      "type": "notification",
+      "data": {
+        "title": "招呼语已经在修了",
+        "message": "问题已知, 耐心等待0.5版本, 整体重构并添加更多新功能.相同问题不用在反馈了, 尽量劳动节发布吧~",
+        "type": "warning",
+        "duration": 999999999
+      }
+    }
+  ],
+  "feedback": "https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g"
+}

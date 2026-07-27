@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "sortImports": {
+    "partitionByComment": true
+  },
+  "ignorePatterns": [
+    "*.min.js",
+    ".claude/**",
+    "output/playwright/**",
+    "components.d.ts",
+    "nuxt-ui-components.d.ts",
+    "nuxt-ui-imports.d.ts"
+  ]
+}

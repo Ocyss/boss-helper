@@ -1,0 +1,290 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+@plugin "@tailwindcss/typography";
+
+body {
+  background-color: unset;
+}
+
+@theme {
+  --color-help-brand: #3eaf7c;
+  --color-help-bg: rgba(62, 175, 124, 0.2);
+}
+
+@layer components {
+  .overlay-box {
+    @apply fixed top-0 left-0 pointer-events-none z-999 rounded-sm;
+    @apply border border-help-brand bg-help-bg;
+
+    will-change: transform, width, height;
+    transition-property: transform, width, height;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+* {
+  scrollbar-width: thin;
+}
+
+/* https://css-tricks.com/ */
+/* https://uiverse.io/Subaashbala/polite-newt-9 */
+
+.boss-helper-card {
+  position: relative;
+  --x: 0px;
+  --y: 0px;
+  --r: 0px;
+}
+
+.card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  margin: 0 0 1.5rem;
+  position: relative;
+  overflow-x: scroll;
+  scrollbar-color: #c6c6c6 #e9e9e9;
+  scrollbar-gutter: always;
+  padding: 3rem 0 4rem 2rem;
+  margin: 0;
+  display: flex;
+  color: #000;
+  -webkit-overflow-scrolling: touch;
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #434343;
+    border-radius: 10px;
+    box-shadow:
+      inset 2px 2px 2px hsla(0, 0%, 100%, 0.25),
+      inset -2px -2px 2px rgba(0, 0, 0, 0.25);
+  }
+  &::-webkit-scrollbar-track {
+    background: linear-gradient(90deg, #434343, #434343 1px, #262626 0, #262626);
+  }
+}
+
+.card-grid-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  will-change:
+    mask-image,
+    -webkit-mask-image,
+    backdrop-filter;
+  transform: translateZ(0);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  background-color: #ffffff20;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    transparent 100%,
+    black 100%
+  );
+  mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), transparent 100%, black 100%);
+  transition: -webkit-mask-image 0.2s ease;
+}
+
+html.dark {
+  .card-grid {
+    scrollbar-color: #666 #201c29;
+    color: #fff;
+    &::-webkit-scrollbar-thumb {
+      background: #434343;
+      box-shadow:
+        inset 2px 2px 2px hsla(0, 0%, 100%, 0.25),
+        inset -2px -2px 2px rgba(0, 0, 0, 0.25);
+    }
+    &::-webkit-scrollbar-track {
+      background: linear-gradient(90deg, #434343, #434343 1px, #262626 0, #262626);
+    }
+  }
+}
+
+.job-card {
+  --state-color: #f00;
+  --state-show: block;
+
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: linear-gradient(85deg, #f2eeee, #eff0f6);
+  color: #000;
+  display: flex;
+  flex-direction: column;
+  transition: 0.2s;
+  margin: 0;
+  position: relative;
+  min-width: 300px;
+  max-width: 360px;
+  min-height: 28rem;
+  max-height: 32rem;
+  box-shadow: -2rem 0 1rem -2rem #cdb9b9;
+
+  * {
+    user-select: none;
+  }
+  .card-status {
+    position: absolute;
+    display: var(--state-show);
+    border-radius: 30px;
+    border-bottom-left-radius: 0;
+    border-top-left-radius: 0;
+    background-color: var(--state-color);
+    color: #fff;
+    padding: 7px 17px;
+    text-wrap: nowrap;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 5px;
+    left: -6px;
+    bottom: -14px;
+    transition: all 0.25s ease;
+    box-shadow: 1px -7px 12px -2px rgb(167 167 167 / 40%);
+  }
+  &::after {
+    position: absolute;
+    content: '';
+    display: var(--state-show);
+    left: -6px;
+    bottom: 18px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 0px solid transparent;
+    border-bottom: 10px solid oklch(from var(--state-color) calc(l * 0.75) c h);
+  }
+  .card-tag {
+    display: block;
+    margin: 0 0 0.25rem;
+    color: #6a6868;
+    font-size: 0.7rem;
+  }
+  .card-title {
+    font-size: 1.2rem;
+    margin: 0 0 8px;
+    &:hover {
+      color: #409eff;
+    }
+  }
+  .card-salary {
+    font-size: 1.1rem;
+    margin: 0 0 1rem;
+    color: #ff442e;
+  }
+  .card-footer {
+    -webkit-margin-before: auto;
+    margin-block-start: auto;
+    padding: 5px 0;
+  }
+  .active-time-tag {
+    padding: 0.5rem 0;
+    display: flex;
+    justify-content: flex-start;
+  }
+  .card-content {
+    cursor: pointer;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+  }
+  .author-row {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 0.5rem;
+    align-items: center;
+    color: #a09f9f;
+    line-height: 1.3;
+    padding-top: 0.5rem;
+    .company-name {
+      color: #000;
+    }
+  }
+
+  &:focus-within,
+  &.job-card-hover:hover {
+    transform: translateY(-1rem) rotate(3deg);
+  }
+
+  &:focus-within ~ &,
+  &.job-card-hover:hover ~ & {
+    transform: translateX(130px);
+  }
+
+  &:first-child:focus-within,
+  &:first-child.job-card-hover:hover {
+    transform: translate(-0.5rem, -1rem) rotate(3deg);
+  }
+
+  &:not(:first-child) {
+    margin-left: -130px;
+    box-shadow: -3rem 0 3rem -3rem #b4adad;
+  }
+
+  @media (max-width: 1200px) {
+    & {
+      min-width: 250px;
+    }
+
+    &:not(:first-child) {
+      margin-left: -30px;
+    }
+
+    &.job-card-hover:hover {
+      transform: translateY(-1rem);
+    }
+
+    &.job-card-hover:hover ~ & {
+      transform: translateX(30px);
+    }
+  }
+}
+
+html.dark {
+  .job-card {
+    background: linear-gradient(85deg, #434343, #262626);
+    color: #fff;
+    box-shadow: -2rem 0 1rem -2rem #000;
+    .card-title {
+      color: #fff;
+      &:hover {
+        color: #409eff;
+      }
+    }
+    .card-status {
+      color: #fff;
+
+      box-shadow: 1px -7px 12px -2px rgb(167 167 167 / 40%);
+    }
+
+    .card-tag {
+      color: #b4b4b4;
+    }
+
+    .card-salary {
+      color: #ff442e;
+    }
+
+    .author-row {
+      color: #a09f9f;
+
+      .company-name {
+        color: #fff;
+      }
+    }
+
+    &:not(:first-child) {
+      box-shadow: -3rem 0 3rem -3rem #000;
+    }
+  }
+}
