@@ -227,6 +227,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
     for (const msg of msgs) {
       var m
+      // Each chat message needs its own client id; reusing one makes later messages look duplicated.
+      stanza.clientMid = Date.now()
       if (msg.type === 'image') {
         const response = await counter.getImage(msg.image)
         if (!response.success) {
