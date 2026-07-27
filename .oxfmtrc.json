@@ -5,5 +5,12 @@
   "sortImports": {
     "partitionByComment": true
   },
-  "ignorePatterns": ["*.min.js"]
+  "ignorePatterns": [
+    "*.min.js",
+    ".claude/**",
+    "output/playwright/**",
+    "components.d.ts",
+    "nuxt-ui-components.d.ts",
+    "nuxt-ui-imports.d.ts"
+  ]
 }

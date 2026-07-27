@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { JobStatus } from '@/composables/useApplying/type'
 import { JobData, useHelper } from '@/composables/useHelper'
+import { useResume } from '@/composables/useResume'
 
 const helper = useHelper()
+const resume = useResume()
 
 const props = defineProps<{
   job: JobData
@@ -14,6 +16,8 @@ const props = defineProps<{
 const jobResult = computed(() => {
   return helper.jobResultMaps.get(props.job.key)
 })
+
+const jobMatch = computed(() => resume.matchJob(props.job))
 
 const stateMaps: Record<JobStatus, string> = {
   pending: '#CECECE',
@@ -85,6 +89,26 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
     <h3 class="card-salary">
       {{ job.salary }}
     </h3>
+    <div v-if="jobMatch" class="mt-2 flex flex-col gap-1 text-xs leading-5 text-muted">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <UBadge
+          :color="jobMatch.hardMismatches.length ? 'warning' : 'success'"
+          size="sm"
+          variant="subtle"
+        >
+          匹配 {{ jobMatch.score }} 分
+        </UBadge>
+        <span v-if="jobMatch.matched.length"
+          >命中项：{{ jobMatch.matched.slice(0, 3).join('、') }}</span
+        >
+      </div>
+      <span v-if="jobMatch.hardMismatches.length" class="text-error">
+        硬条件：{{ jobMatch.hardMismatches.join('；') }}
+      </span>
+      <span v-else-if="jobMatch.missing.length">
+        不匹配项：{{ jobMatch.missing.slice(0, 3).join('、') }}
+      </span>
+    </div>
     <div
       v-show="showDescription"
       class="card-content"

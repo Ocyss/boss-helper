@@ -20,6 +20,7 @@ export type TaskPipeline<C extends HelperContext<C, T, S>, T, S> = Array<Task<C,
 export type TaskContext<C extends HelperContext<C, T, S>, T = any, S = any> = {
   now: Date
   helper: C
+  mode?: 'run' | 'simulate'
 }
 
 export const jobStatusList = [
@@ -56,6 +57,39 @@ export type TaskResult = {
   status?: JobStatus
   msg?: string
   isCache?: boolean
+}
+
+export type PreflightStatus = 'success' | 'warning' | 'error'
+
+export interface PreflightCheck {
+  key: string
+  label: string
+  status: PreflightStatus
+  message: string
+}
+
+export interface PreflightReport {
+  ok: boolean
+  checkedAt: number
+  durationMs: number
+  checks: PreflightCheck[]
+}
+
+export interface SimulationJobResult {
+  jobKey: string
+  jobName: string
+  status: 'passed' | 'filtered' | 'failed'
+  reason?: string
+}
+
+export interface SimulationResult {
+  total: number
+  passed: number
+  filtered: number
+  failed: number
+  startedAt: number
+  durationMs: number
+  jobs: SimulationJobResult[]
 }
 
 export type Handler<C extends HelperContext<C, T, S>, T, S> = (

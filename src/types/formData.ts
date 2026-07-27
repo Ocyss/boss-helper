@@ -1,11 +1,24 @@
 export interface Statistics {
   date: string
+  /** 成功建立沟通，保留 success 字段名以兼容历史数据。 */
   success: number
+  /** 招呼消息成功提交到聊天通道。 */
+  greetingSuccess: number
   total: number
   repeat: number
   activityFilter: number
   tasks: {
     [key: string]: { [key: string]: number }
+  }
+  tracking?: {
+    total: string[]
+    success: string[]
+    greetingSuccess: string[]
+    repeat: string[]
+    activityFilter: string[]
+    tasks: {
+      [taskId: string]: { [status: string]: string[] }
+    }
   }
 }
 const ConfigLevels = ['beginner', 'intermediate', 'advanced', 'expert'] as const

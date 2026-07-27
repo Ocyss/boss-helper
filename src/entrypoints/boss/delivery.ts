@@ -1,5 +1,11 @@
-import { TaskRegistry, taskResult } from '@/composables/useApplying/handles'
+import {
+  recordSuccessfulDelivery,
+  TaskRegistry,
+  taskResult,
+} from '@/composables/useApplying/handles'
 import { defineTaskHandler, defineTaskWorkflow } from '@/composables/useApplying/type'
+import { useResume } from '@/composables/useResume'
+import { logger } from '@/utils/logger'
 
 import { BossHelperCtx } from '.'
 import { getBossData, sendPublishReq } from './requests'
@@ -49,6 +55,9 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.jobAddress({ deps: ['岗位详情获取'] }), // 工作地址筛选
   tasks.jobFriendStatus({ deps: ['岗位详情获取'] }), // 好友状态过滤
   tasks.jobContent({ deps: ['岗位详情获取'] }), // 工作内容筛选
+  tasks.ResumeJobDuplicate({ deps: ['岗位详情获取'] }), // 简历岗位去重
+  tasks.ResumePreferences({ deps: ['岗位详情获取'] }), // 简历硬条件
+  tasks.ResumeMatch({ deps: ['岗位详情获取'] }), // 简历匹配评分
 
   defineTaskHandler(
     '金牌面试官',
@@ -72,11 +81,29 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.amap({ deps: ['岗位详情获取'] }), // 高德地图
   tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
 
-  defineTaskHandler('岗位投递', () => async (_, { rawData }) => {
+  defineTaskHandler('岗位投递', () => async (ctx, { rawData, jobData }) => {
     await sendPublishReq({
       securityId: rawData.jobitem.securityId,
       encryptJobId: rawData.jobitem.encryptJobId,
     })
+    try {
+      const resume = useResume()
+      await Promise.all([
+        recordSuccessfulDelivery(ctx.helper.uid, jobData, {
+          company: ctx.helper.conf.formData.sameCompanyFilter.value,
+          hr: ctx.helper.conf.formData.sameHrFilter.value,
+        }),
+        ...(resume.isAutoApplyActive() ? [resume.recordDeliveredJob(jobData.key)] : []),
+      ])
+    } catch (error) {
+      logger.error('投递成功，但去重记录保存失败', error)
+      ctx.helper.logs.step(
+        jobData,
+        '去重记录',
+        'warning',
+        error instanceof Error ? error.message : String(error),
+      )
+    }
     return {
       status: 'success',
       msg: '投递成功',

@@ -4,7 +4,7 @@ import { reactive, ref, toRaw } from 'vue'
 import { counter } from '@/message'
 import { ExtStorage } from '@/message'
 import type { ConfigLevel, FormData } from '@/types/formData'
-import deepmerge, { jsonClone } from '@/utils/deepmerge'
+import deepmerge, { isJsonEqual, jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
 
@@ -33,7 +33,8 @@ export const appearanceConf = useStorageAsync(
   { mergeDefaults: true },
 )
 const isLoading = ref(true)
-const formData: FormData = reactive(defaultFormData)
+const isSaving = ref(false)
+const formData: FormData = reactive(jsonClone(defaultFormData))
 const formDataPreset = ref('default')
 const formDataPresets = ref([
   {
@@ -155,6 +156,12 @@ export const useConf = () => {
     return from
   }
 
+  async function loadFormData() {
+    let stored = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
+    stored = (await formDataHandler(stored)) ?? stored
+    return deepmerge<FormData>(jsonClone(defaultFormData), stored)
+  }
+
   async function init() {
     isLoading.value = true
     try {
@@ -168,9 +175,7 @@ export const useConf = () => {
       formDataPreset.value = rawFormDataPreset
       formDataPresets.value = rawFormDataPresets
 
-      let from = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
-      from = (await formDataHandler(from)) ?? from
-      const data = deepmerge<FormData>(defaultFormData, from)
+      const data = await loadFormData()
       Object.assign(formData, data)
     } catch (e) {
       toast.add({
@@ -184,13 +189,20 @@ export const useConf = () => {
   }
 
   async function confSaving() {
+    if (isSaving.value) return
+    isSaving.value = true
     const v = jsonClone(formData)
     try {
       await counter.storageSet(formDataKey(), v)
       await counter.storageSet(formDataPresetKey, formDataPreset.value)
       await counter.storageSet(formDataPresetsKey, formDataPresets.value)
 
-      logger.debug('formData保存', v)
+      const saved = await counter.storageGet<Partial<FormData> | null>(formDataKey())
+      if (saved == null || !isJsonEqual(saved, v)) {
+        throw new Error('浏览器存储回读校验失败')
+      }
+
+      logger.debug('formData保存成功', { key: formDataKey(), version: v.version })
       toast.add({
         title: '保存成功',
         color: 'success',
@@ -201,14 +213,16 @@ export const useConf = () => {
         color: 'error',
       })
       throw error
+    } finally {
+      isSaving.value = false
     }
     // const helper = useHelper()
     // helper.workflow?.rebuild()
   }
 
   async function confReload() {
-    const v = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
-    deepmerge(formData, v, { clone: false })
+    const v = await loadFormData()
+    Object.assign(formData, v)
     logger.debug('formData已重置')
     toast.add({
       title: '重置成功',
@@ -251,6 +265,7 @@ export const useConf = () => {
         },
         {} as Record<string, any>,
       ),
+      { clone: false },
     )
     logger.debug('formData推荐配置已应用')
     toast.add({
@@ -260,7 +275,7 @@ export const useConf = () => {
   }
 
   function confDelete() {
-    deepmerge(formData, defaultFormData)
+    Object.assign(formData, jsonClone(defaultFormData))
     logger.debug('formData已清空')
     toast.add({
       title: '配置清空成功, 不会自动保存, 请手动保存或重载恢复',
@@ -313,12 +328,13 @@ export const useConf = () => {
     }
   }
 
-  async function switchPreset(value: string) {
+  async function switchPreset(value?: string) {
+    if (!value || value === formDataPreset.value) return
     isLoading.value = true
     try {
       formDataPreset.value = value
-      counter.storageSet(formDataPresetKey, value)
-      await init()
+      await counter.storageSet(formDataPresetKey, value)
+      Object.assign(formData, await loadFormData())
     } catch (e) {
       toast.add({
         title: `预设切换失败: ${String(e)}`,
@@ -347,5 +363,6 @@ export const useConf = () => {
     createPreset,
     switchPreset,
     isLoading,
+    isSaving,
   }
 }

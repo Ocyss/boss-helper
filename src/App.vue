@@ -11,6 +11,7 @@ import Ai from '@/components/Tabs/AI.vue'
 import Config from '@/components/Tabs/Config.vue'
 import Filter from '@/components/Tabs/Filter.vue'
 import Logs from '@/components/Tabs/Logs.vue'
+import Resume from '@/components/Tabs/Resume.vue'
 import Statistics from '@/components/Tabs/Statistics.vue'
 import { useConf, appearanceConf } from '@/composables/conf'
 import { useModel } from '@/composables/useModel'
@@ -29,6 +30,7 @@ const items = computed<TabsItem[]>(() => {
     { slot: 'filter', label: '筛选' },
     { slot: 'config', label: '配置', help: '好好看，好好学' },
     { slot: 'ai', label: 'AI', help: 'AI时代，脚本怎么能落伍!' },
+    { slot: 'resume', label: '简历推荐', help: '上传简历并生成岗位搜索词' },
     { slot: 'logs', label: '日志', help: '反正你也不看' },
     { slot: 'about', label: '关于&赞赏', help: '项目是写不完美的,但总要去追求完美' },
   ] satisfies (TabsItem | boolean | null | undefined | '')[]
@@ -115,6 +117,7 @@ onMounted(() => {
   root = (container.value?.getRootNode() as ShadowRoot) ?? document
   void conf.confInit()
   void model.initModel()
+  void helper.logs.init()
   chatOpen.value = appearanceConf.value.defaultShowChatBox
 })
 
@@ -191,7 +194,8 @@ function onPointerMove(ev: PointerEvent) {
               </UButton>
             </UChip>
             <span v-if="todayData.total > 0" style="margin-right: 15px">
-              今日投递: {{ todayData.success }}/{{ conf.formData.deliveryLimit.value }}
+              今日沟通: {{ todayData.success }}/{{ conf.formData.deliveryLimit.value }} · 招呼成功:
+              {{ todayData.greetingSuccess }}
             </span>
             <span v-if="helper.workflow && helper.workflow.total.value > 0">
               当前页面处理: {{ helper.workflow.current.value + 1 }}/{{
@@ -225,6 +229,7 @@ function onPointerMove(ev: PointerEvent) {
             </template>
             <template #config><Config /></template>
             <template #ai><Ai /></template>
+            <template #resume><Resume /></template>
             <template #logs><Logs /></template>
             <template #about><About /></template>
             <template #list-trailing>

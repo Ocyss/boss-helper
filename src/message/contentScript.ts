@@ -31,7 +31,7 @@ export class ContentCounter implements BackgroundCounter {
   async callRouterHooks(path: string) {
     for (const hook of this.routerHooks) {
       try {
-        void hook(path)
+        hook(path)
       } catch (e) {
         console.error('调用路由hook失败', e)
       }

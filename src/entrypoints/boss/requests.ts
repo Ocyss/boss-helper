@@ -1,6 +1,7 @@
 // import axios from 'axios'
 
 import {
+  AuthenticationError,
   GreetError,
   BossHelperError,
   LimitError,
@@ -17,6 +18,10 @@ const toast = useToast()
 export const sameCompanyKey = 'local:sameCompany'
 export const sameHrKey = 'local:sameHr'
 
+function isAuthenticationMessage(message: string) {
+  return /未登录|登录失效|重新登录|身份失效|认证失效|token|账号异常/i.test(message)
+}
+
 export async function getJobDetail(params: { securityId: string; lid: string }): Promise<{
   code: number
   message: string
@@ -28,7 +33,7 @@ export async function getJobDetail(params: { securityId: string; lid: string }):
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
-    throw new PublishError('没有获取到token')
+    throw new AuthenticationError('没有获取到token，请刷新页面后重新登录')
   }
   const url = new URL('https://www.zhipin.com/wapi/zpgeek/job/detail.json')
   url.searchParams.set('securityId', params.securityId)
@@ -63,7 +68,7 @@ export async function sendPublishReq(
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
-    throw new PublishError('没有获取到token')
+    throw new AuthenticationError('没有获取到token，请刷新页面后重新登录')
   }
   try {
     const res = await fetch(url, {
@@ -77,6 +82,9 @@ export async function sendPublishReq(
       const content = String(
         res?.zpData?.bizData?.chatRemindDialog?.content || res.message || '未知错误',
       )
+      if (isAuthenticationMessage(content)) {
+        throw new AuthenticationError(content)
+      }
       // 命中限额弹窗 → 立刻发送确认请求
       if (content.includes('您今天已与120位BOSS沟通')) {
         try {
@@ -101,6 +109,9 @@ export async function sendPublishReq(
 
       throw new PublishError(content)
     } else if (res.code !== 0) {
+      if (isAuthenticationMessage(String(res.message))) {
+        throw new AuthenticationError(String(res.message))
+      }
       throw new PublishError(`未知错误状态:${res.message}`)
     }
     return res
@@ -128,7 +139,7 @@ export async function getBossData(
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
-    throw new GreetError('没有获取到token')
+    throw new AuthenticationError('没有获取到token，请刷新页面后重新登录')
   }
   try {
     const body = new FormData()
@@ -147,6 +158,9 @@ export async function getBossData(
     }).then((r) => r.json())
 
     if (res.code !== 0) {
+      if (isAuthenticationMessage(String(res.message))) {
+        throw new AuthenticationError(String(res.message))
+      }
       if (res.message === '非好友关系') {
         return await getBossData(job, '非好友关系', retries - 1)
       }
@@ -154,7 +168,7 @@ export async function getBossData(
     }
     return res.zpData
   } catch (e: any) {
-    if (e instanceof GreetError) {
+    if (e instanceof BossHelperError) {
       throw e
     }
     return getBossData(job, e?.message as string, retries - 1)
@@ -169,7 +183,7 @@ export async function uploadImage(securityId: string, file: File) {
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
-    throw new Error('没有获取到token')
+    throw new AuthenticationError('没有获取到token，请刷新页面后重新登录')
   }
 
   const params = new URLSearchParams()

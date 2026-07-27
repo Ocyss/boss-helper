@@ -79,7 +79,7 @@ const configItems = helper.getConfigItems()
               data-help="达到上限后会自动暂停，默认100次, 当前boss上限为150"
               v-model="conf.formData.deliveryLimit.value"
               :min="1"
-              :max="155"
+              :max="150"
               :step="10"
             />
           </UFormField>
@@ -87,7 +87,12 @@ const configItems = helper.getConfigItems()
       </UForm>
       <div class="flex flex-row *:flex *:flex-row justify-between *:gap-3 mt-3">
         <div>
-          <UButton color="success" data-help="保存配置，会自动刷新页面。" @click="conf.confSaving">
+          <UButton
+            color="success"
+            data-help="保存配置"
+            :loading="conf.isSaving.value"
+            @click="conf.confSaving"
+          >
             保存配置
           </UButton>
           <UButton color="warning" data-help="重新加载本地配置" @click="conf.confReload">
@@ -107,11 +112,12 @@ const configItems = helper.getConfigItems()
             data-help="虽然不维护多账号了, 但是预设还是要有的, 这样使用隐身/第三方扩展依旧能多账号使用. 多账号是一件多助人为乐的事呀"
           >
             <UInputMenu
-              v-model="conf.formDataPreset.value"
+              :model-value="conf.formDataPreset.value"
               :items="conf.formDataPresets.value"
               value-key="value"
               create-item
               @create="conf.createPreset"
+              @update:model-value="conf.switchPreset"
             />
           </UFormField>
           <UButton

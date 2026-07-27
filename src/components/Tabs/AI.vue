@@ -14,9 +14,9 @@ const aiBoxShow = ref(false)
 const aiConfBoxShow = ref(false)
 const aiBox = ref<'aiGreeting' | 'aiFiltering' | 'aiReply' | 'record'>('aiGreeting')
 
-function change(v: Partial<FormDataAi>) {
+async function change(v: Partial<FormDataAi>) {
   v.enable = !v.enable
-  conf.confSaving()
+  await conf.confSaving()
 }
 </script>
 

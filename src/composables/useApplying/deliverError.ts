@@ -44,3 +44,18 @@ export class RateLimitError extends BossHelperError {
     this.name = '操作频繁'
   }
 }
+
+export class AuthenticationError extends BossHelperError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'danger', options)
+    this.name = '登录失效'
+  }
+}
+
+export function isFatalWorkflowError(error: unknown): error is BossHelperError {
+  return (
+    error instanceof LimitError ||
+    error instanceof RateLimitError ||
+    error instanceof AuthenticationError
+  )
+}

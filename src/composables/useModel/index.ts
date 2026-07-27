@@ -1,6 +1,7 @@
-import { ref, toRaw } from 'vue'
+import { ref } from 'vue'
 
 import { counter } from '@/message'
+import { isJsonEqual, jsonClone } from '@/utils/deepmerge'
 import { logger } from '@/utils/logger'
 
 import type { OpenaiLLMConf } from './openai'
@@ -9,7 +10,8 @@ import { openai } from './openai'
 export * from './chatModel'
 
 const toast = useToast()
-export const confModelKey = 'conf-model'
+export const confModelKey = 'local:conf-model'
+const legacyConfModelKey = 'sync:conf-model'
 export const llms = [openai.info]
 
 export type ModelConfData = OpenaiLLMConf
@@ -32,17 +34,38 @@ const modelData = ref<ModelConf[]>([])
 
 export const useModel = () => {
   async function init() {
-    const data = await counter.storageGet<ModelConf[]>(confModelKey, [])
-    logger.debug('ai模型数据', data)
-    modelData.value = data
+    let data = await counter.storageGet<ModelConf[] | null>(confModelKey)
+    if (data == null) {
+      data = await counter.storageGet<ModelConf[]>(legacyConfModelKey, [])
+      if (data.length > 0) {
+        await counter.storageSet(confModelKey, data)
+        await counter.storageRm(legacyConfModelKey)
+      }
+    }
+    logger.debug('AI模型配置已加载', { count: data.length })
+    modelData.value = jsonClone(data)
   }
 
   async function save() {
-    await counter.storageSet(confModelKey, toRaw(modelData.value))
-    toast.add({
-      title: '保存成功',
-      color: 'success',
-    })
+    const data = jsonClone(modelData.value)
+    try {
+      await counter.storageSet(confModelKey, data)
+      const saved = await counter.storageGet<ModelConf[] | null>(confModelKey)
+      if (saved == null || !isJsonEqual(saved, data)) {
+        throw new Error('浏览器存储回读校验失败')
+      }
+      toast.add({
+        title: '保存成功',
+        color: 'success',
+      })
+    } catch (error) {
+      logger.error('AI模型配置保存失败', error)
+      toast.add({
+        title: `保存失败: ${error instanceof Error ? error.message : String(error)}`,
+        color: 'error',
+      })
+      throw error
+    }
   }
 
   return {

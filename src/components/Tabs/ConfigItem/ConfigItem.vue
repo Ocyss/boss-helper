@@ -6,7 +6,7 @@ import { type ConfigItem } from '@/composables/useHelper/type'
 import Address from './Address.vue'
 import Appearance from './Appearance.vue'
 import CustomGreeting from './CustomGreeting.vue'
-import SalaryRangeComponent from './Form/SalaryRange.vue'
+import SalaryRangeComponent from './Form/SalaryRangeInput.vue'
 import SalaryRange from './SalaryRange.vue'
 
 const props = defineProps<{

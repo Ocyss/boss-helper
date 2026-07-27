@@ -2,9 +2,16 @@ import { ref } from 'vue'
 
 import { defineUnlistedScript } from '#imports'
 import { appearanceConf, useConf } from '@/composables/conf'
-import { createLazyObject, isInitialized, WorkflowData } from '@/composables/useApplying/type'
-import { HelperContext, JobData } from '@/composables/useHelper'
-import { AlertItem, ConfigAccordionItem } from '@/composables/useHelper/type'
+import { createLazyObject, isInitialized } from '@/composables/useApplying/type'
+import type {
+  PreflightCheck,
+  PreflightReport,
+  SimulationResult,
+  WorkflowData,
+} from '@/composables/useApplying/type'
+import { HelperContext } from '@/composables/useHelper'
+import type { JobData } from '@/composables/useHelper'
+import type { AlertItem, ConfigAccordionItem } from '@/composables/useHelper/type'
 import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
 import { run } from '@/index'
 import { counter } from '@/message'
@@ -90,6 +97,7 @@ function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
 
     // 招聘者信息
     boss: {
+      key: item.encryptBossId,
       link: `https://www.zhipin.com/boss_detail/${item.encryptBossId}.html`,
       name: item.bossName,
       title: item.bossTitle,
@@ -102,6 +110,7 @@ function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
 
     // 公司品牌信息
     brand: {
+      key: item.encryptBrandId,
       link: `https://www.zhipin.com/gongsi/${item.encryptBrandId}.html`,
       name: item.brandName,
       logo: item.brandLogo,
@@ -206,14 +215,240 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   }
 
   async start() {
+    if (this.workflowRunning.value || this.preflightRunning.value || this.simulationRunning.value) {
+      return
+    }
     if (!this.workflow) {
       this.workflow = await bossWorkflow(this)
+    }
+    const report = await this.preflight()
+    if (!report.ok) {
+      await this.notification('运行前自检未通过，请查看检查结果', {
+        toast: { color: 'error' },
+      })
+      return
     }
     await this.workflow.executeAll(this._jobDataMap)
   }
 
+  async preflight(): Promise<PreflightReport> {
+    const startedAt = Date.now()
+    const checks: PreflightCheck[] = []
+    const add = (key: string, label: string, status: PreflightCheck['status'], message: string) =>
+      checks.push({ key, label, status, message })
+
+    this.preflightRunning.value = true
+    try {
+      await this.statistics.updateStatistics()
+
+      const token = window.Cookie?.get?.('bst')
+      const userId = window._PAGE?.encryptUserId
+      add(
+        'login',
+        '登录状态',
+        token && userId ? 'success' : 'error',
+        token && userId ? '已获取登录身份和请求令牌' : '登录信息不完整，请刷新页面或重新登录',
+      )
+
+      add(
+        'jobs',
+        '岗位数据',
+        this.jobList.value.length > 0 ? 'success' : 'error',
+        this.jobList.value.length > 0
+          ? `当前页面已加载 ${this.jobList.value.length} 个岗位`
+          : '当前页面没有可处理岗位',
+      )
+
+      const limit = this.conf.formData.deliveryLimit.value
+      const delivered = this.statistics.todayData.success
+      const limitValid = Number.isFinite(limit) && limit > 0 && limit <= 150
+      add(
+        'limit',
+        '投递上限',
+        !limitValid || delivered >= limit ? 'error' : 'success',
+        !limitValid
+          ? `投递上限无效: ${limit}`
+          : delivered >= limit
+            ? `今日已沟通 ${delivered} 次，达到设置上限 ${limit}`
+            : `今日已沟通 ${delivered}/${limit}，剩余 ${limit - delivered} 次`,
+      )
+
+      if (!this.workflow) {
+        this.workflow = await bossWorkflow(this)
+      }
+      await this.workflow.rebuild()
+      const failedNodes = this.workflow.nodes.value.filter((node) => node.status === 'failed')
+      add(
+        'pipeline',
+        '任务管线',
+        failedNodes.length === 0 ? 'success' : 'error',
+        failedNodes.length === 0
+          ? `已启用 ${this.workflow.pipeline.value.length} 个步骤`
+          : failedNodes
+              .map((node) => {
+                const message = (node.error as { message?: string } | undefined)?.message
+                return `${node.label}: ${message ?? String(node.error)}`
+              })
+              .join('；'),
+      )
+
+      const customGreeting = this.conf.formData.customGreeting
+      const aiGreeting = this.conf.formData.aiGreeting
+      const greetingConflict = customGreeting.enable && aiGreeting.enable
+      add(
+        'greeting-mode',
+        '招呼方式',
+        greetingConflict ? 'error' : 'success',
+        greetingConflict
+          ? '自定义招呼和 AI 招呼不能同时启用，请选择一种'
+          : aiGreeting.enable
+            ? '使用 AI 招呼'
+            : customGreeting.enable
+              ? '使用自定义招呼'
+              : '未启用自动招呼',
+      )
+
+      if (customGreeting.enable) {
+        const messages = Array.isArray(customGreeting.value)
+          ? customGreeting.value
+          : [{ type: 'text' as const, content: customGreeting.value }]
+        const valid = messages.some((message) =>
+          message.type === 'text' ? Boolean(message.content.trim()) : Boolean(message.image),
+        )
+        add(
+          'custom-greeting',
+          '自定义招呼内容',
+          valid ? 'success' : 'error',
+          valid ? `已配置 ${messages.length} 条消息` : '招呼内容为空',
+        )
+      }
+
+      const aiFeatures = [
+        { key: 'ai-filtering', label: 'AI筛选', data: this.conf.formData.aiFiltering },
+        { key: 'ai-greeting', label: 'AI招呼', data: this.conf.formData.aiGreeting },
+      ].filter((item) => item.data.enable)
+      const modelsToTest = new Map<string, string>()
+      for (const feature of aiFeatures) {
+        const promptValid = feature.data.prompt.some((item) => item.content.trim())
+        const model = this.models.modelData.value.find((item) => item.key === feature.data.model)
+        const modelValid = Boolean(
+          model?.data?.base_url && model.data.api_key && model.data.model && feature.data.model,
+        )
+        add(
+          `${feature.key}-config`,
+          `${feature.label}配置`,
+          promptValid && modelValid ? 'success' : 'error',
+          !promptValid
+            ? 'Prompt 为空'
+            : !modelValid
+              ? '模型、API 地址、API Key 或模型名称未完整配置'
+              : `使用模型 ${model?.name}`,
+        )
+        if (promptValid && modelValid && feature.data.model) {
+          modelsToTest.set(feature.data.model, model?.name ?? feature.data.model)
+        }
+      }
+      if (aiFeatures.length === 0) {
+        add('ai-config', 'AI配置', 'success', '未启用 AI 功能，无需检查模型')
+      }
+
+      for (const [modelKey, modelName] of modelsToTest) {
+        try {
+          await this.chatModel.testConnection(modelKey)
+          add(`model-api-${modelKey}`, `${modelName} API`, 'success', '模型接口连接成功')
+        } catch (error) {
+          add(
+            `model-api-${modelKey}`,
+            `${modelName} API`,
+            'error',
+            error instanceof Error ? error.message : String(error),
+          )
+        }
+      }
+
+      const needsChat = customGreeting.enable || aiGreeting.enable
+      if (needsChat && !this.geek?.client?.connected) {
+        const deadline = Date.now() + 5000
+        while (!this.geek?.client?.connected && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
+      }
+      add(
+        'chat',
+        '聊天通道',
+        !needsChat || this.geek?.client?.connected ? 'success' : 'error',
+        !needsChat
+          ? '未启用自动招呼，无需连接聊天通道'
+          : this.geek?.client?.connected
+            ? '聊天通道已连接'
+            : '聊天通道未连接，请刷新页面后重试',
+      )
+
+      if (this.conf.formData.amap.enable) {
+        const amapValid = Boolean(this.conf.formData.amap.key && this.conf.formData.amap.origins)
+        add(
+          'amap',
+          '高德地图 API',
+          amapValid ? 'success' : 'error',
+          amapValid ? 'Key 和起点已配置' : '缺少 Key 或起点坐标',
+        )
+      }
+    } catch (error) {
+      add('unexpected', '自检执行', 'error', error instanceof Error ? error.message : String(error))
+    } finally {
+      this.preflightRunning.value = false
+    }
+
+    const report: PreflightReport = {
+      ok: checks.every((check) => check.status !== 'error'),
+      checkedAt: Date.now(),
+      durationMs: Date.now() - startedAt,
+      checks,
+    }
+    this.preflightReport.value = report
+    checks.forEach((check) => {
+      this.logs.info('运行自检', `${check.label}：${check.message}`)
+    })
+    this.logs.info('运行自检', report.ok ? '全部检查通过' : '检查未通过，已阻止执行')
+    return report
+  }
+
+  async simulate(): Promise<SimulationResult | null> {
+    if (this.workflowRunning.value || this.preflightRunning.value || this.simulationRunning.value) {
+      return null
+    }
+    if (!this.workflow) {
+      this.workflow = await bossWorkflow(this)
+    }
+
+    const report = await this.preflight()
+    if (!report.ok) {
+      await this.notification('模拟筛选前自检未通过', { toast: { color: 'error' } })
+      return null
+    }
+
+    this.simulationRunning.value = true
+    try {
+      const result = await this.workflow.simulate(this._jobDataMap)
+      this.simulationResult.value = result
+      await this.notification(
+        `模拟完成：通过 ${result.passed}，过滤 ${result.filtered}，失败 ${result.failed}`,
+        { toast: { color: result.failed > 0 ? 'warning' : 'success' } },
+      )
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.logs.info('模拟筛选', `执行失败：${message}`)
+      await this.notification(`模拟筛选失败：${message}`, { toast: { color: 'error' } })
+      return null
+    } finally {
+      this.simulationRunning.value = false
+    }
+  }
+
   async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
     logger.info('发送消息', { jobKey: data.jobData.key, msg: msgs })
+    const startedAt = Date.now()
 
     const stanza = {
       uid: Number(data.rawData.boss.data.bossId),
@@ -225,35 +460,73 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     if (typeof msgs === 'string') {
       msgs = [{ type: 'text', content: msgs }]
     }
-    for (const msg of msgs) {
-      var m
-      if (msg.type === 'image') {
-        const response = await counter.getImage(msg.image)
-        if (!response.success) {
-          throw new Error('图片未上传或已过期')
-        }
-        const u8Array = new Uint8Array(response.buffer)
-        const file = new File([u8Array.buffer], response.name, { type: response.type })
-        const img = await uploadImage(data.rawData.boss.data.securityId, file)
-
-        m = this.geek.msgBuilder.createImageMessage(stanza, {
-          content: {
-            iid: 0,
-            ...img,
-          },
-        })
-      } else if (msg.type === 'text') {
-        m = this.geek.msgBuilder.createTextMessage(stanza, {
-          text: msg.content,
-        })
-      } else {
-        throw new Error('不支持的消息类型:' + msg['type'])
+    this.logs.step(data.jobData, '消息发送', 'info', `准备发送 ${msgs.length} 条消息`)
+    try {
+      if (!this.geek.client?.connected) {
+        throw new Error('聊天通道未连接')
       }
-      this.geek.client.publish('chat', this.geek.msgBuilder.encode(m), {
-        qos: 1,
-        retain: true,
-      })
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      for (const msg of msgs) {
+        let m: ReturnType<GeekChatClientManager['msgBuilder']['createTextMessage']>
+        if (msg.type === 'image') {
+          const response = await counter.getImage(msg.image)
+          if (!response.success) {
+            throw new Error('图片未上传或已过期')
+          }
+          const u8Array = new Uint8Array(response.buffer)
+          const file = new File([u8Array.buffer], response.name, { type: response.type })
+          const img = await uploadImage(data.rawData.boss.data.securityId, file)
+
+          m = this.geek.msgBuilder.createImageMessage(stanza, {
+            content: {
+              iid: 0,
+              ...img,
+            },
+          })
+        } else if (msg.type === 'text') {
+          m = this.geek.msgBuilder.createTextMessage(stanza, {
+            text: msg.content,
+          })
+        } else {
+          throw new Error('不支持的消息类型:' + msg['type'])
+        }
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('消息发送确认超时')), 10000)
+          this.geek.client.publish(
+            'chat',
+            this.geek.msgBuilder.encode(m),
+            {
+              qos: 1,
+              retain: true,
+            },
+            (error) => {
+              clearTimeout(timeout)
+              if (error) {
+                reject(error)
+              } else {
+                resolve()
+              }
+            },
+          )
+        })
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+      this.logs.step(
+        data.jobData,
+        '消息发送',
+        'success',
+        `已提交 ${msgs.length} 条消息到聊天通道`,
+        Date.now() - startedAt,
+      )
+      this.statistics.recordSummary('greetingSuccess', data.jobData.key)
+    } catch (error) {
+      this.logs.step(
+        data.jobData,
+        '消息发送',
+        'danger',
+        error instanceof Error ? error.message : String(error),
+        Date.now() - startedAt,
+      )
+      throw error
     }
   }
 
@@ -566,7 +839,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     this.jobMaps.set(key, job)
   }
   async _initJobList() {
-    useHookVueData(
+    await useHookVueData(
       '#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main',
       'jobList',
       this._jobList,
@@ -715,7 +988,9 @@ export default defineUnlistedScript(async () => {
       fullPath: string
     }) => {
       // hookChatSocket()
-      bossHelpCtx.onMount(to.path)
+      void bossHelpCtx.onMount(to.path).catch((error) => {
+        logger.error('页面切换初始化失败', error)
+      })
     },
   )
 

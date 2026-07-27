@@ -1,6 +1,8 @@
+import { useResume } from '@/composables/useResume'
 import { counter } from '@/message'
 import { renderTemplate } from '@/utils/ai'
 import { HelperContext } from '~/composables/useHelper'
+import type { JobData } from '~/composables/useHelper'
 
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
 import { defineTaskHandler, JobStatus, TaskContext, TaskResult } from './type'
@@ -71,36 +73,116 @@ export const taskResult = {
   }),
 }
 
+const duplicateSetCache = new Map<string, Promise<Set<string>>>()
+
+function duplicateCacheKey(storageKey: string, uid: string) {
+  return `${storageKey}:${uid}`
+}
+
+async function getDuplicateSet(storageKey: string, uid: string) {
+  const cacheKey = duplicateCacheKey(storageKey, uid)
+  let cached = duplicateSetCache.get(cacheKey)
+  if (!cached) {
+    cached = counter
+      .storageGet<Record<string, string[]>>(storageKey, {})
+      .then((data) => new Set(data[uid] ?? []))
+    duplicateSetCache.set(cacheKey, cached)
+  }
+  return cached
+}
+
+export function companyDuplicateKey(job: JobData) {
+  const value = job.brand.key || job.brand.name
+  return value ? `company:${value.trim().toLowerCase()}` : null
+}
+
+export function hrDuplicateKey(job: JobData) {
+  const value =
+    job.boss.key ||
+    job.boss.link ||
+    [job.brand.key || job.brand.name, job.boss.name, job.boss.title].filter(Boolean).join(':')
+  return value ? `hr:${value.trim().toLowerCase()}` : null
+}
+
+async function recordDuplicate(storageKey: string, uid: string, value: string | null) {
+  if (!value) return
+
+  const values = await getDuplicateSet(storageKey, uid)
+  if (values.has(value)) return
+
+  values.add(value)
+  const stored = await counter.storageGet<Record<string, string[]>>(storageKey, {})
+  await counter.storageSet(storageKey, {
+    ...stored,
+    [uid]: Array.from(values),
+  })
+}
+
+export async function recordSuccessfulDelivery(
+  uid: string,
+  job: JobData,
+  options: { company: boolean; hr: boolean },
+) {
+  const writes: Promise<void>[] = []
+  if (options.company) {
+    writes.push(recordDuplicate(sameCompanyKey, uid, companyDuplicateKey(job)))
+  }
+  if (options.hr) {
+    writes.push(recordDuplicate(sameHrKey, uid, hrDuplicateKey(job)))
+  }
+  await Promise.all(writes)
+}
+
 export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
+  ResumeJobDuplicate = defineTaskHandler<C, T, S>('简历岗位去重', () => {
+    const resume = useResume()
+    if (!resume.isAutoApplyActive()) return
+    return async (_, { jobData }) => {
+      if (resume.isDeliveredJob(jobData.key)) {
+        return taskResult.skip('简历自动投递已处理过该岗位')
+      }
+    }
+  })
+
+  ResumePreferences = defineTaskHandler<C, T, S>('简历硬条件', () => {
+    const resume = useResume()
+    if (!resume.isAutoApplyActive()) return
+    return async (_, { jobData }) => {
+      const match = resume.matchJob(jobData)
+      if (match?.hardMismatches.length) {
+        return taskResult.skip(match.hardMismatches.join('；'))
+      }
+    }
+  })
+
+  ResumeMatch = defineTaskHandler<C, T, S>('简历匹配评分', () => {
+    const resume = useResume()
+    if (!resume.isAutoApplyActive()) return
+    return async (_, { jobData }) => {
+      const match = resume.matchJob(jobData)
+      if (!match) return
+      const threshold = resume.profile.value.preferences.matchThreshold
+      if (match.score < threshold) {
+        return taskResult.skip(`简历匹配 ${match.score} 分，低于阈值 ${threshold} 分`)
+      }
+      return { msg: `简历匹配 ${match.score} 分` }
+    }
+  })
+
   SameCompanyFilter = defineTaskHandler<C, T, S>(
     '重复沟通-相同公司',
     async (ctx) => {
       if (!ctx.helper.conf.formData.sameCompanyFilter.value) {
         return
       }
-      const someSet: Set<string> = new Set<string>()
-      const data = await counter.storageGet<Record<string, string[]>>(sameCompanyKey, {})
-      for (const id of data[ctx.helper.uid] ?? []) {
-        someSet.add(id)
-      }
+      const duplicateSet = await getDuplicateSet(sameCompanyKey, ctx.helper.uid)
       return {
-        fn: async (_, { jobData: data }) => {
-          if (someSet.has(data.key)) {
-            return taskResult.skip('相同公司已投递')
+        fn: async (_, { jobData }) => {
+          const key = companyDuplicateKey(jobData)
+          if (key && duplicateSet.has(key)) {
+            return taskResult.skip(`相同公司已投递: ${jobData.brand.name}`)
           }
         },
-        after: [
-          async (ctx, { jobData: data }) => {
-            someSet.add(data.key)
-            if (someSet.size % 3 === 0) {
-              const oldData = await counter.storageGet<Record<string, string[]>>(sameCompanyKey, {})
-              await counter.storageSet(sameCompanyKey, {
-                ...oldData,
-                [ctx.helper.uid]: Array.from(someSet ?? []),
-              })
-            }
-          },
-        ],
       }
     },
     { label: '相同公司' },
@@ -112,30 +194,15 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameHrFilter.value) {
         return
       }
-      const someSet: Set<string> | null = new Set<string>()
-      const data = await counter.storageGet<Record<string, string[]>>(sameHrKey, {})
-      for (const id of data[ctx.helper.uid] ?? []) {
-        someSet.add(id)
-      }
+      const duplicateSet = await getDuplicateSet(sameHrKey, ctx.helper.uid)
 
       return {
-        fn: async (_, { jobData: data }) => {
-          if (data.key != null && someSet.has(data.key)) {
-            return taskResult.skip('相同hr已投递')
+        fn: async (_, { jobData }) => {
+          const key = hrDuplicateKey(jobData)
+          if (key && duplicateSet.has(key)) {
+            return taskResult.skip(`相同HR已投递: ${jobData.boss.name}`)
           }
         },
-        after: [
-          async (ctx, { jobData: data }) => {
-            someSet.add(data.key)
-            if (someSet.size % 3 === 0) {
-              const oldData = await counter.storageGet<Record<string, string[]>>(sameHrKey, {})
-              await counter.storageSet(sameHrKey, {
-                ...oldData,
-                [ctx.helper.uid]: Array.from(someSet ?? []),
-              })
-            }
-          },
-        ],
       }
     },
     { label: '相同HR' },
@@ -182,14 +249,14 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   company = defineTaskHandler<C, T, S>('公司名', (ctx) => {
     if (!ctx.helper.conf.formData.company.enable) return
     return async (_ctx, { jobData: data }) => {
-      const text = data.brand.name
+      const text = data.brand.name.toLowerCase()
       if (!text) return taskResult.skip('公司名为空')
 
       for (const x of ctx.helper.conf.formData.company.value) {
         if (!x) {
           continue
         }
-        if (text.includes(x)) {
+        if (text.includes(x.toLowerCase())) {
           if (ctx.helper.conf.formData.company.include) {
             return
           }
@@ -275,12 +342,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return
     }
     return async (_, { jobData }) => {
-      const content = jobData.boss.title
+      const content = jobData.boss.title?.trim().toLowerCase()
       for (const x of ctx.helper.conf.formData.hrPosition.value) {
         if (!x) {
           continue
         }
-        if (content != null && content.trim() === x) {
+        if (content != null && content === x.trim().toLowerCase()) {
           if (ctx.helper.conf.formData.hrPosition.include) {
             return
           }
@@ -354,7 +421,9 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiFiltering.model', 'AI筛选模型未配置')
       }
       return async (ctx, data) => {
-        const content = await ctx.helper.chatModel.chat('filtering', data).then((r) => r.text)
+        const content = await ctx.helper.chatModel
+          .chat('filtering', data, { disableMessages: ctx.mode === 'simulate' })
+          .then((r) => r.text)
         const { message, rating } = parseFiltering(content)
         if (rating < (ctx.helper.conf.formData.aiFiltering.score ?? 10)) {
           return taskResult.skip(message)
@@ -392,7 +461,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   })
 
   customGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+    '自定义招呼',
     (ctx) => {
       if (!ctx.helper.conf.formData.customGreeting.enable) {
         return
@@ -439,7 +508,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   )
 
   aiGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+    'AI招呼',
     (ctx) => {
       if (!ctx.helper.conf.formData.aiGreeting.enable) {
         return
@@ -448,7 +517,31 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
       return async (ctx, data) => {
-        const msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
+        const startedAt = Date.now()
+        ctx.helper.logs.step(data.jobData, 'AI生成', 'info', '开始请求模型')
+        let msg: string
+        try {
+          msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
+          if (!msg.trim()) {
+            throw new Error('AI模型未生成招呼语内容')
+          }
+          ctx.helper.logs.step(
+            data.jobData,
+            'AI生成',
+            'success',
+            `生成完成，共 ${msg.length} 个字符`,
+            Date.now() - startedAt,
+          )
+        } catch (error) {
+          ctx.helper.logs.step(
+            data.jobData,
+            'AI生成',
+            'danger',
+            error instanceof Error ? error.message : String(error),
+            Date.now() - startedAt,
+          )
+          throw error
+        }
         await ctx.helper.sendMessage?.(data, msg)
       }
     },

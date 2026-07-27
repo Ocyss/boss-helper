@@ -1,6 +1,5 @@
-import { AccordionItem, FormFieldProps, InputNumberProps } from '@nuxt/ui'
+import type { AccordionItem, AlertProps, FormFieldProps, InputNumberProps } from '@nuxt/ui'
 
-import { ExtendedAlertProps } from '@/components/Alert.vue'
 import { BossZpBossData } from '@/entrypoints/boss/types'
 import type { amapDistance, amapGeocode } from '@/utils/amap'
 
@@ -51,6 +50,8 @@ export type JobData = JobBaseData & {
 
   /** 招聘者信息 */
   boss: {
+    /** 招聘者稳定标识，用于去重。 */
+    key?: string
     link?: string
     /** 招聘者姓名，例如：'张经理' */
     name: string
@@ -74,6 +75,8 @@ export type JobData = JobBaseData & {
 
   /** 公司品牌信息 */
   brand: {
+    /** 公司稳定标识，用于去重。 */
+    key?: string
     link?: string
     /** 公司名称，例如：'北京科技有限公司' */
     name: string
@@ -112,18 +115,25 @@ export interface LogData {
   aiGreetingA?: string
 }
 
-type logState = 'info' | 'success' | 'warning' | 'danger'
+export type LogState = 'info' | 'success' | 'warning' | 'danger'
 
 export interface Log {
+  id?: string
+  timestamp?: number
   job?: JobData
+  jobKey?: string
   title: string // 标题
-  state: logState // 信息,成功,过滤,出错
+  step?: string
+  durationMs?: number
+  state: LogState // 信息,成功,过滤,出错
   state_name: string // 标签文本
   message?: string // 显示消息
   data?: LogData
 }
 
-export type AlertItem = ExtendedAlertProps & {
+export type AlertItem = AlertProps & {
+  id?: string
+  showIcon?: boolean
   type: 'alert'
 }
 

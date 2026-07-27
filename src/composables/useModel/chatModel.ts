@@ -11,6 +11,7 @@ import {
   createIdGenerator,
   isReasoningUIPart,
   isTextUIPart,
+  streamText,
 } from 'ai'
 import { ShallowReactive } from 'vue'
 
@@ -119,17 +120,49 @@ export class ChatModel {
       provider = createOpenAI({
         baseURL: conf.data?.base_url,
         apiKey: conf.data?.api_key,
+        headers: conf.data?.advanced?.extra_headers,
       })
     }
     this.providers.set(model.model, provider)
 
     const agent = new ToolLoopAgent({
-      model: provider.chat(conf.data?.model || 'gpt-4o'),
+      model: conf.data?.responses
+        ? provider.responses(conf.data?.model || 'gpt-4o')
+        : provider.chat(conf.data?.model || 'gpt-4o'),
       output: opt?.json ? Output.json() : Output.text(),
       allowSystemInMessages: true,
     })
     this.agents.set(name, [agent, conf, model])
     return true
+  }
+
+  async testConnection(modelKey: string) {
+    const conf = this.ctx.models.modelData.value.find((model) => model.key === modelKey)
+    if (!conf?.data) {
+      throw new Error('模型配置不存在')
+    }
+
+    const provider = createOpenAI({
+      baseURL: conf.data.base_url,
+      apiKey: conf.data.api_key,
+      headers: conf.data.advanced?.extra_headers,
+    })
+    const model = conf.data.responses
+      ? provider.responses(conf.data.model)
+      : provider.chat(conf.data.model)
+    const result = streamText({
+      model,
+      prompt: 'Reply with OK only.',
+      maxOutputTokens: 8,
+      abortSignal: AbortSignal.timeout(
+        Math.max(1000, Math.min(conf.data.other?.timeout ?? 15000, 15000)),
+      ),
+    })
+    const text = await result.text
+    if (!text.trim()) {
+      throw new Error('模型返回内容为空')
+    }
+    return text.trim()
   }
 
   async chat(
@@ -156,9 +189,9 @@ export class ChatModel {
     } else {
       messages = jsonClone(model.prompt)
     }
-    for (const i in messages) {
-      if (typeof messages[i].content === 'string') {
-        messages[i].content = renderTemplate(messages[i].content, data)
+    for (const message of messages) {
+      if (typeof message.content === 'string') {
+        message.content = renderTemplate(message.content, data)
       }
     }
     let state: VueChatState<Message>
@@ -272,7 +305,7 @@ ${data.jobData.jobDescription}`,
             return err.message
           }
           logger.error('Unknown error during chat streaming', err)
-          return `Unknown error: ${err}`
+          return `Unknown error: ${String(err)}`
         },
       })) {
         let part: (typeof msg.parts)[number] | null = null
@@ -286,7 +319,7 @@ ${data.jobData.jobDescription}`,
             }
             break
           case 'reasoning-end':
-            if (isReasoningUIPart(lastPart)) {
+            if (lastPart && isReasoningUIPart(lastPart)) {
               lastPart.state = 'done'
             }
             break
@@ -298,7 +331,7 @@ ${data.jobData.jobDescription}`,
             }
             break
           case 'text-end':
-            if (isTextUIPart(lastPart)) {
+            if (lastPart && isTextUIPart(lastPart)) {
               lastPart.state = 'done'
             }
             break

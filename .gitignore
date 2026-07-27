@@ -26,6 +26,7 @@ dist-ssr
 *.sw?
 
 .output
+/output/playwright/
 
 logapi.zhipin.*.pem
 

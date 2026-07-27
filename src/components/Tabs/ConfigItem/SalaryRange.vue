@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { formInfoData, useConf } from '@/composables/conf'
 
-import SalaryRangeComponent from './Form/SalaryRange.vue'
+import SalaryRangeComponent from './Form/SalaryRangeInput.vue'
 
 const conf = useConf()
 

@@ -15,6 +15,7 @@ export default defineConfig({
 
   vite: () => ({
     define: {
+      'import.meta.dev': 'false',
       __APP_VERSION__: JSON.stringify(version),
     },
     ssr: {
@@ -29,8 +30,12 @@ export default defineConfig({
     plugins: [
       vueJsx(),
       ui({
-        // autoImport: false,
-        // components: false,
+        autoImport: {
+          dts: 'nuxt-ui-imports.d.ts',
+        },
+        components: {
+          dts: 'nuxt-ui-components.d.ts',
+        },
         colorMode: false,
         router: false,
         prose: false,
@@ -112,7 +117,7 @@ export default defineConfig({
     permissions: ['storage', 'cookies', 'notifications'],
     web_accessible_resources: [
       {
-        resources: ['boss.js'],
+        resources: ['boss.js', 'assets/*'],
         matches,
       },
     ],

@@ -13,6 +13,7 @@ const statistics = useStatistics()
 // const { next, page } = usePager()
 const conf = useConf()
 const statisticCycle = ref(1)
+const diagnosticsOpen = ref(false)
 
 const statisticCycleData = [
   {
@@ -51,9 +52,71 @@ const cycle = computed(() => {
   return ans
 })
 
+const greetingCycle = computed(() => {
+  const date = statisticCycleData[statisticCycle.value].date
+  let ans = 0
+  for (
+    let i = 0;
+    (date === -1 || i < date - 1) && i < statistics.statisticsData.value.length;
+    i++
+  ) {
+    ans += statistics.statisticsData.value[i].greetingSuccess ?? 0
+  }
+  return ans
+})
+
 const deliveryLimit = computed(() => {
   return conf.formData.deliveryLimit.value
 })
+
+const percentage = (value: number, total: number) => {
+  if (total <= 0) return '0.0'
+  return ((value / total) * 100).toFixed(1)
+}
+
+const filterPercentage = computed(() => {
+  const { success, total } = statistics.todayData
+  return percentage(Math.max(total - success, 0), total)
+})
+
+const repeatPercentage = computed(() => {
+  const { repeat, total } = statistics.todayData
+  return percentage(repeat, total)
+})
+
+const activityPercentage = computed(() => {
+  const { activityFilter, total } = statistics.todayData
+  return percentage(activityFilter, total)
+})
+
+const preflightColors = {
+  success: 'success',
+  warning: 'warning',
+  error: 'error',
+} as const
+
+const simulationColors = {
+  passed: 'success',
+  filtered: 'warning',
+  failed: 'error',
+} as const
+
+async function runPreflight() {
+  diagnosticsOpen.value = true
+  await ctx.preflight()
+}
+
+async function runSimulation() {
+  diagnosticsOpen.value = true
+  await ctx.simulate()
+}
+
+async function start() {
+  await ctx.start()
+  if (ctx.preflightReport.value && !ctx.preflightReport.value.ok) {
+    diagnosticsOpen.value = true
+  }
+}
 
 onMounted(() => {
   statistics.updateStatistics()
@@ -68,44 +131,47 @@ onMounted(() => {
       color="warning"
       show-icon
     />
-    <div v-if="conf.configLevel.intermediate" class="grid grid-cols-5 gap-4">
+    <div
+      v-if="conf.configLevel.intermediate"
+      class="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7"
+    >
       <div data-help="统计当天脚本扫描过的所有岗位">
         <div class="text-sm text-gray-500">岗位总数：</div>
         <div class="text-2xl font-semibold">
           {{ statistics.todayData.total }} <span class="text-sm text-gray-400">份</span>
         </div>
       </div>
+      <div data-help="统计当天成功建立沟通的岗位数量">
+        <div class="text-sm text-gray-500">沟通成功：</div>
+        <div class="text-2xl font-semibold">
+          {{ statistics.todayData.success }} <span class="text-sm text-gray-400">份</span>
+        </div>
+      </div>
+      <div data-help="统计当天成功提交招呼消息的岗位数量">
+        <div class="text-sm text-gray-500">招呼成功：</div>
+        <div class="text-2xl font-semibold">
+          {{ statistics.todayData.greetingSuccess }}
+          <span class="text-sm text-gray-400">份</span>
+        </div>
+      </div>
       <div data-help="统计当天岗位过滤的比例,被过滤/总数">
         <div class="text-sm text-gray-500">过滤比例：</div>
         <div class="text-2xl font-semibold">
-          {{
-            (
-              ((statistics.todayData.total - statistics.todayData.success) /
-                statistics.todayData.total) *
-              deliveryLimit
-            ).toFixed(1)
-          }}
+          {{ filterPercentage }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
       <div data-help="统计当天刷到了多少处理过的岗位,重复/总数">
         <div class="text-sm text-gray-500">重复比例：</div>
         <div class="text-2xl font-semibold">
-          {{
-            ((statistics.todayData.repeat / statistics.todayData.total) * deliveryLimit).toFixed(1)
-          }}
+          {{ repeatPercentage }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
       <div data-help="统计当天岗位中的活跃情况,不活跃/总数">
-        <div class="text-sm text-gray-500">活跃比例：</div>
+        <div class="text-sm text-gray-500">不活跃比例：</div>
         <div class="text-2xl font-semibold">
-          {{
-            (
-              (statistics.todayData.activityFilter / statistics.todayData.total) *
-              deliveryLimit
-            ).toFixed(1)
-          }}
+          {{ activityPercentage }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
@@ -131,6 +197,9 @@ onMounted(() => {
         <div class="text-2xl font-semibold">
           {{ cycle + statistics.todayData.success }} <span class="text-sm text-gray-400">份</span>
         </div>
+        <div class="text-xs text-gray-400">
+          招呼 {{ greetingCycle + statistics.todayData.greetingSuccess }} 份
+        </div>
       </div>
     </div>
     <div class="flex flex-row gap-2 items-center justify-center">
@@ -138,8 +207,9 @@ onMounted(() => {
         <UButton
           color="primary"
           data-help="点击开始就会开始投递"
-          :loading="ctx.workflow?.status.value === 'running'"
-          @click="ctx.start()"
+          :loading="ctx.workflow?.status.value === 'running' || ctx.preflightRunning.value"
+          :disabled="ctx.simulationRunning.value"
+          @click="start"
         >
           {{ ctx.workflow?.status.value === 'stop' ? '继续' : '开始' }}
         </UButton>
@@ -159,6 +229,26 @@ onMounted(() => {
         >
           暂停
         </UButton>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-shield-check"
+          :loading="ctx.preflightRunning.value"
+          :disabled="ctx.workflow?.status.value === 'running' || ctx.simulationRunning.value"
+          @click="runPreflight"
+        >
+          运行自检
+        </UButton>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-flask-conical"
+          :loading="ctx.simulationRunning.value"
+          :disabled="ctx.workflow?.status.value === 'running' || ctx.preflightRunning.value"
+          @click="runSimulation"
+        >
+          模拟筛选
+        </UButton>
       </UFieldGroup>
       <UProgress
         data-help="我会统计当天脚本投递的数量,该记录并不准确"
@@ -166,6 +256,102 @@ onMounted(() => {
         :value="Number(((statistics.todayData.success / deliveryLimit) * 100).toFixed(1))"
       />
     </div>
+
+    <UModal
+      v-model:open="diagnosticsOpen"
+      title="运行检查与模拟结果"
+      :ui="{ content: 'sm:max-w-3xl' }"
+    >
+      <template #body>
+        <div class="max-h-[65vh] space-y-5 overflow-y-auto pr-1">
+          <section>
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <h3 class="text-sm font-semibold">运行前自检</h3>
+              <UBadge
+                v-if="ctx.preflightReport.value"
+                :color="ctx.preflightReport.value.ok ? 'success' : 'error'"
+                variant="subtle"
+              >
+                {{ ctx.preflightReport.value.ok ? '通过' : '未通过' }}
+              </UBadge>
+            </div>
+            <div v-if="ctx.preflightRunning.value" class="py-6 text-center text-sm text-muted">
+              正在检查...
+            </div>
+            <div
+              v-else-if="ctx.preflightReport.value"
+              class="divide-y divide-default border-y border-default"
+            >
+              <div
+                v-for="check in ctx.preflightReport.value.checks"
+                :key="check.key"
+                class="grid grid-cols-1 items-start gap-2 py-2.5 text-sm sm:grid-cols-[7rem_5rem_minmax(0,1fr)] sm:gap-3"
+              >
+                <span class="font-medium">{{ check.label }}</span>
+                <UBadge
+                  :color="preflightColors[check.status]"
+                  variant="subtle"
+                  class="justify-self-start"
+                >
+                  {{
+                    check.status === 'success'
+                      ? '通过'
+                      : check.status === 'warning'
+                        ? '提醒'
+                        : '失败'
+                  }}
+                </UBadge>
+                <span class="break-words text-muted">{{ check.message }}</span>
+              </div>
+            </div>
+            <div v-else class="py-6 text-center text-sm text-muted">尚未运行自检</div>
+          </section>
+
+          <section v-if="ctx.simulationRunning.value || ctx.simulationResult.value">
+            <h3 class="mb-2 text-sm font-semibold">模拟筛选</h3>
+            <div v-if="ctx.simulationRunning.value" class="py-6 text-center text-sm text-muted">
+              正在模拟筛选当前页面岗位...
+            </div>
+            <template v-else-if="ctx.simulationResult.value">
+              <div class="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                <span>总数 {{ ctx.simulationResult.value.total }}</span>
+                <span class="text-success">通过 {{ ctx.simulationResult.value.passed }}</span>
+                <span class="text-warning">过滤 {{ ctx.simulationResult.value.filtered }}</span>
+                <span class="text-error">失败 {{ ctx.simulationResult.value.failed }}</span>
+              </div>
+              <div class="divide-y divide-default border-y border-default">
+                <div
+                  v-for="job in ctx.simulationResult.value.jobs"
+                  :key="job.jobKey"
+                  class="grid grid-cols-1 items-start gap-2 py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,1.4fr)] sm:gap-3"
+                >
+                  <span class="truncate" :title="job.jobName">{{ job.jobName }}</span>
+                  <UBadge
+                    :color="simulationColors[job.status]"
+                    variant="subtle"
+                    class="justify-self-start"
+                  >
+                    {{
+                      job.status === 'passed'
+                        ? '预计通过'
+                        : job.status === 'filtered'
+                          ? '已过滤'
+                          : '检查失败'
+                    }}
+                  </UBadge>
+                  <span class="break-words text-muted">{{ job.reason ?? '-' }}</span>
+                </div>
+              </div>
+            </template>
+          </section>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="outline" @click="diagnosticsOpen = false">关闭</UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
 
