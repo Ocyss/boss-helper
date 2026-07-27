@@ -7,18 +7,18 @@ BossHelper 将岗位筛选、批量投递、简历分析、多搜索词、投递
 
 当前版本：`0.5.3`
 
-当前仓库：[jisjudjhj/boss-helper](https://github.com/jisjudjhj/boss-helper)
-问题反馈：[GitHub Issues](https://github.com/jisjudjhj/boss-helper/issues)
+当前仓库：[HardworkingChen/boss-helper](https://github.com/HardworkingChen/boss-helper)
+问题反馈：[GitHub Issues](https://github.com/HardworkingChen/boss-helper/issues)
 
 ## 下载与安装
 
-三个浏览器版本都发布在 [0.5.3 Release](https://github.com/jisjudjhj/boss-helper/releases/tag/0.5.3)。下载 ZIP 后先解压，再按对应浏览器的方式加载。
+三个浏览器版本都发布在 [0.5.3 Release](https://github.com/HardworkingChen/boss-helper/releases/tag/0.5.3)。下载 ZIP 后先解压，再按对应浏览器的方式加载。
 
-| 浏览器  | 开发者加载方式                                                                                     | 解压后的目录                        | 下载                                                                                                               |
-| ------- | -------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Chrome  | 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”                           | `.output/chrome-mv3`                | [下载 Chrome ZIP](https://github.com/jisjudjhj/boss-helper/releases/download/0.5.3/boss-helper-0.5.3-chrome.zip)   |
-| Edge    | 打开 `edge://extensions`，开启“开发人员模式”，点击“加载解压缩的扩展”                               | `.output/edge-mv3`                  | [下载 Edge ZIP](https://github.com/jisjudjhj/boss-helper/releases/download/0.5.3/boss-helper-0.5.3-edge.zip)       |
-| Firefox | 打开 `about:debugging#/runtime/this-firefox`，点击“临时载入附加组件”，选择目录中的 `manifest.json` | `.output/firefox-mv2/manifest.json` | [下载 Firefox ZIP](https://github.com/jisjudjhj/boss-helper/releases/download/0.5.3/boss-helper-0.5.3-firefox.zip) |
+| 浏览器  | 开发者加载方式                                                                                     | 解压后的目录                        | 下载                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Chrome  | 打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”                           | `.output/chrome-mv3`                | [下载 Chrome ZIP](https://github.com/HardworkingChen/boss-helper/releases/download/0.5.3/boss-helper-0.5.3-chrome.zip)   |
+| Edge    | 打开 `edge://extensions`，开启“开发人员模式”，点击“加载解压缩的扩展”                               | `.output/edge-mv3`                  | [下载 Edge ZIP](https://github.com/HardworkingChen/boss-helper/releases/download/0.5.3/boss-helper-0.5.3-edge.zip)       |
+| Firefox | 打开 `about:debugging#/runtime/this-firefox`，点击“临时载入附加组件”，选择目录中的 `manifest.json` | `.output/firefox-mv2/manifest.json` | [下载 Firefox ZIP](https://github.com/HardworkingChen/boss-helper/releases/download/0.5.3/boss-helper-0.5.3-firefox.zip) |
 
 加载或更新扩展后，请刷新 BOSS 直聘页面。扩展入口会显示在页面右侧。
 
@@ -182,8 +182,8 @@ BossHelper 将岗位筛选、批量投递、简历分析、多搜索词、投递
 
 ## 相关链接
 
-- 当前仓库与 Release：[jisjudjhj/boss-helper](https://github.com/jisjudjhj/boss-helper)
-- 当前问题反馈：[GitHub Issues](https://github.com/jisjudjhj/boss-helper/issues)
+- 当前仓库与 Release：[HardworkingChen/boss-helper](https://github.com/HardworkingChen/boss-helper)
+- 当前问题反馈：[GitHub Issues](https://github.com/HardworkingChen/boss-helper/issues)
 - 上游开源项目：[Ocyss/boss-helper](https://github.com/Ocyss/boss-helper)
 - 旧版 Greasyfork 脚本：[0.2 版本](https://greasyfork.org/zh-CN/scripts/491340)
 - 历史反馈问卷：[飞书表单](https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g)
@@ -194,7 +194,7 @@ BossHelper 将岗位筛选、批量投递、简历分析、多搜索词、投递
 需要 Node.js LTS，推荐 Node.js 20 或更高版本。
 
 ```bash
-git clone https://github.com/jisjudjhj/boss-helper.git
+git clone https://github.com/HardworkingChen/boss-helper.git
 cd boss-helper
 npm install
 npm run dev
@@ -247,10 +247,10 @@ npm run zip
 
 ## Star 趋势
 
-<a href="https://star-history.com/#jisjudjhj/boss-helper&Date">
+<a href="https://star-history.com/#HardworkingChen/boss-helper&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jisjudjhj/boss-helper&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jisjudjhj/boss-helper&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jisjudjhj/boss-helper&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=HardworkingChen/boss-helper&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=HardworkingChen/boss-helper&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=HardworkingChen/boss-helper&type=Date" />
  </picture>
 </a>

@@ -4,30 +4,30 @@
   "store": {
     "chrome": [
       "Chrome 解压安装包",
-      "https://github.com/jisjudjhj/boss-helper/releases/latest",
-      "https://img.shields.io/github/v/release/jisjudjhj/boss-helper?label="
+      "https://github.com/HardworkingChen/boss-helper/releases/latest",
+      "https://img.shields.io/github/v/release/HardworkingChen/boss-helper?label="
     ],
     "crx": [
       "全部安装包下载",
-      "https://github.com/jisjudjhj/boss-helper/releases/latest",
-      "https://img.shields.io/github/v/release/jisjudjhj/boss-helper?label="
+      "https://github.com/HardworkingChen/boss-helper/releases/latest",
+      "https://img.shields.io/github/v/release/HardworkingChen/boss-helper?label="
     ],
     "edge": [
       "Edge 解压安装包",
-      "https://github.com/jisjudjhj/boss-helper/releases/latest",
-      "https://img.shields.io/github/v/release/jisjudjhj/boss-helper?label="
+      "https://github.com/HardworkingChen/boss-helper/releases/latest",
+      "https://img.shields.io/github/v/release/HardworkingChen/boss-helper?label="
     ],
     "firefox": [
       "Firefox 临时安装包",
-      "https://github.com/jisjudjhj/boss-helper/releases/latest",
-      "https://img.shields.io/github/v/release/jisjudjhj/boss-helper?label="
+      "https://github.com/HardworkingChen/boss-helper/releases/latest",
+      "https://img.shields.io/github/v/release/HardworkingChen/boss-helper?label="
     ],
     "github": [
       "GitHub 仓库与 Release",
-      "https://github.com/jisjudjhj/boss-helper/releases/latest",
-      "https://img.shields.io/github/v/release/jisjudjhj/boss-helper?label="
+      "https://github.com/HardworkingChen/boss-helper/releases/latest",
+      "https://img.shields.io/github/v/release/HardworkingChen/boss-helper?label="
     ]
   },
   "notification": [],
-  "feedback": "https://github.com/jisjudjhj/boss-helper/issues"
+  "feedback": "https://github.com/HardworkingChen/boss-helper/issues"
 }

@@ -63,7 +63,7 @@ async function netNotification(
 
 export async function initNetConf() {
   const response = await fetch(
-    'https://testingcf.jsdelivr.net/gh/jisjudjhj/boss-helper@main/net-conf.json',
+    'https://testingcf.jsdelivr.net/gh/HardworkingChen/boss-helper@main/net-conf.json',
   )
   const data: NetConf = await response.json()
   const now = Date.now()
