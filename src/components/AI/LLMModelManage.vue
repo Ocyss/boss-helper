@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
 
-import Alert from '@/components/Alert.vue'
+import { useConf } from '@/composables/conf'
 import type { ModelConf } from '@/composables/useModel'
 import { useModel } from '@/composables/useModel'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
@@ -10,16 +10,45 @@ import { exportJson, importJson } from '@/utils/jsonImportExport'
 import CreateLLM from './LLMModelEdit.vue'
 
 const modelStore = useModel()
+const conf = useConf()
 const createBoxShow = ref(false)
 const toast = useToast()
 const open = ref(false)
 
-function del(d: ModelConf) {
+async function del(d: ModelConf) {
   modelStore.modelData.value = modelStore.modelData.value.filter((v) => d.key !== v.key)
-  toast.add({
-    title: '删除成功',
-    color: 'success',
-  })
+
+  for (const key of ['aiFiltering', 'aiGreeting', 'aiReply'] as const) {
+    const aiConfig = conf.formData[key]
+    if (aiConfig?.model === d.key) {
+      aiConfig.model = undefined
+      aiConfig.enable = false
+    }
+  }
+  if (conf.formData.record.model?.includes(d.key)) {
+    conf.formData.record.model = conf.formData.record.model.filter((key) => key !== d.key)
+  }
+
+  try {
+    await Promise.all([modelStore.persistModel(), conf.persistFormData()])
+    toast.add({
+      title: '模型已删除，相关 AI 功能已停用',
+      color: 'success',
+    })
+  } catch (error: any) {
+    const msg = String(error?.message || error)
+    if (msg.includes('context invalidated') || msg.includes('Extension context')) {
+      toast.add({
+        title: '扩展已更新，请刷新页面后重试',
+        color: 'warning',
+      })
+    } else {
+      toast.add({
+        title: `删除失败: ${msg}`,
+        color: 'error',
+      })
+    }
+  }
 }
 
 function copy(d: ModelConf) {
@@ -63,6 +92,25 @@ function create(d: ModelConf) {
 function close() {
   modelStore.initModel()
   open.value = false
+}
+
+async function save() {
+  try {
+    await modelStore.saveModel()
+  } catch (error: any) {
+    const msg = String(error?.message || error)
+    if (msg.includes('context invalidated') || msg.includes('Extension context')) {
+      toast.add({
+        title: '扩展已更新，请刷新页面后重试',
+        color: 'warning',
+      })
+    } else {
+      toast.add({
+        title: `保存失败: ${msg}`,
+        color: 'error',
+      })
+    }
+  }
 }
 
 function exportllm() {
@@ -138,7 +186,7 @@ function importllm() {
         <UButton color="success" @click="exportllm"> 导出 </UButton>
         <UButton color="success" @click="importllm"> 导入 </UButton>
         <UButton @click="newllm"> 新建 </UButton>
-        <UButton @click="modelStore.saveModel"> 保存 </UButton>
+        <UButton @click="save"> 保存 </UButton>
       </div>
     </template>
   </UModal>

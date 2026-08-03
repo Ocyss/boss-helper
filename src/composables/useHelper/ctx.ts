@@ -37,9 +37,8 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
     clear: () => void
     value: Log[]
   }
-  pendingMessages: Ref<string | undefined>
+
   constructor() {
-    this.pendingMessages = ref()
     this.conf = useConf()
     this.models = useModel()
     this.statistics = useStatistics()
@@ -49,8 +48,10 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
       add: (job: JobData, err?: BossHelperError, logdata?: LogData, msg?: string) => {
         const state = !err ? 'success' : err.state
         const message = msg ?? (err ? err.message : undefined)
+        if (this._logs.value.length >= 500) this._logs.value.shift()
         this._logs.value.push({
           job,
+          time: new Date().toLocaleTimeString(),
           title: job.jobName,
           state,
           state_name: err?.name ?? '投递成功',
@@ -59,7 +60,9 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
         })
       },
       info: (title: string, message: string) => {
+        if (this._logs.value.length >= 500) this._logs.value.shift()
         this._logs.value.push({
+          time: new Date().toLocaleTimeString(),
           title,
           state: 'info',
           state_name: '消息',

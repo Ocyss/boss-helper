@@ -1,5 +1,6 @@
 import { shallowRef, ref } from 'vue'
 
+import { BossHelperError } from '@/composables/useApplying/deliverError'
 import { PipelineCacheManager } from '@/composables/usePipelineCache'
 import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
 
@@ -63,7 +64,7 @@ export type DeliveryWorkflow<C extends HelperContext<C, T, S>, T, S> = Awaited<
 >
 
 function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskResult | void {
-  if (!res) return
+  if (!res) return {}
   if (Array.isArray(res)) {
     if (res.length === 0) return
     return res.reduce((acc: TaskResult, r) => {
@@ -77,7 +78,6 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
         }
       }
       return {
-        id: acc.id || r.id,
         isSkip: acc.isSkip || r.isSkip,
         reason: [acc.reason, r.reason].filter(Boolean).join('\n') || undefined,
         status: mergedStatus,
@@ -109,6 +109,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   >([])
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
+  const countedJobs = new Set<string>()
 
   const rebuild = async () => {
     const _ctx: TaskContext<C, T, S> = { helper, now: new Date() }
@@ -230,6 +231,9 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
 
   const execute = async (data: WorkflowData<T, S>) => {
     const isStop = () => status.value === 'stop'
+    let finalTaskId: string | undefined
+    let finalResult: TaskResult | undefined
+    let delivered = false
     try {
       let skipPipeline = false
       for (const t of pipeline.value) {
@@ -242,8 +246,11 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           })
           res = await executeTask(t, data)
           if (res != null) {
+            finalTaskId = t.id
+            finalResult = res
             res.msg ??= t.label ?? t.id
             res.status ??= res.isSkip ? 'warn' : undefined
+            if (t.id === '岗位投递' && res.status === 'success') delivered = true
             if (res.isSkip) {
               skipPipeline = true
               break
@@ -257,6 +264,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             reason: `任务${t.label ?? t.id}执行失败: ${e instanceof Error ? e.message : e}`,
             msg: `报错/${t.label ?? t.id}`,
           }
+          finalTaskId = t.id
+          finalResult = res
           logger.error(`任务${t.label ?? t.id}执行失败`, e)
           skipPipeline = true
           break
@@ -279,6 +288,39 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           status: 'success',
           msg: '投递成功',
         })
+      }
+
+      if (!isStop() && !countedJobs.has(data.jobData.key)) {
+        countedJobs.add(data.jobData.key)
+        helper.statistics.todayData.total += 1
+        if (delivered || !skipPipeline) helper.statistics.todayData.success += 1
+        if (finalResult?.isCache || finalTaskId?.startsWith('重复沟通-')) {
+          helper.statistics.todayData.repeat += 1
+        }
+        if (finalResult?.isSkip && finalTaskId === '活跃度过滤') {
+          helper.statistics.todayData.activityFilter += 1
+        }
+
+        if (finalResult?.isSkip) {
+          const logError = new BossHelperError(
+            finalResult.reason ?? finalResult.msg ?? '岗位已过滤',
+            finalResult.status === 'error' ? 'danger' : 'warning',
+          )
+          logError.name = finalResult.status === 'error' ? '处理出错' : '已过滤'
+          helper.logs.add(data.jobData, logError, {
+            jobData: data.jobData,
+            aiFilteringAtext: data.state.aiFilteringAtext,
+            aiGreetingA: data.state.aiGreetingA,
+            err: finalResult.status === 'error' ? finalResult.reason : undefined,
+            message: finalResult.reason,
+          })
+        } else {
+          helper.logs.add(data.jobData, undefined, {
+            jobData: data.jobData,
+            aiFilteringAtext: data.state.aiFilteringAtext,
+            aiGreetingA: data.state.aiGreetingA,
+          })
+        }
       }
     } catch (e) {
       status.value = 'error'

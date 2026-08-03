@@ -1,6 +1,6 @@
-import { reactiveComputed, watchThrottled } from '@vueuse/core'
+import { watchThrottled } from '@vueuse/core'
 
-import { ref } from '#imports'
+import { reactive, ref } from '#imports'
 import { counter } from '@/message'
 import type { Statistics } from '@/types/formData'
 import { getCurDay } from '@/utils'
@@ -10,23 +10,30 @@ import { logger } from '@/utils/logger'
 export const todayKey = 'local:web-geek-job-Today'
 export const statisticsKey = 'local:web-geek-job-Statistics'
 
+function createTodayData(date = getCurDay()): Statistics {
+  return {
+    date,
+    success: 0,
+    total: 0,
+    repeat: 0,
+    activityFilter: 0,
+    tasks: {},
+  }
+}
+
+const todayData = reactive<Statistics>(createTodayData())
+const statisticsData = ref<Statistics[]>([])
+let updateQueue = Promise.resolve<Statistics>(jsonClone(todayData))
+
+watchThrottled(
+  todayData,
+  (value) => {
+    void counter.storageSet(todayKey, jsonClone(value))
+  },
+  { throttle: 200 },
+)
+
 export const useStatistics = () => {
-  const date = getCurDay()
-
-  const todayData = reactiveComputed<Statistics>(() => {
-    const current = {
-      date,
-      success: 0,
-      total: 0,
-      repeat: 0,
-      activityFilter: 0,
-      tasks: {},
-    }
-    return current
-  })
-
-  const statisticsData = ref<Statistics[]>([])
-
   async function getStatistics(): Promise<string> {
     await updateStatistics()
     return JSON.stringify(jsonClone({ t: todayData, s: statisticsData.value }))
@@ -40,32 +47,34 @@ export const useStatistics = () => {
     await counter.storageSet(statisticsKey, s)
   }
 
-  watchThrottled(
-    todayData,
-    (v) => {
-      void counter.storageSet(todayKey, jsonClone(v))
-    },
-    { throttle: 200 },
-  )
+  function updateStatistics() {
+    const run = async () => {
+      const current = createTodayData()
+      const [storedToday, storedStatistics] = await Promise.all([
+        counter.storageGet<Statistics>(todayKey, current),
+        counter.storageGet<Statistics[]>(statisticsKey, []),
+      ])
 
-  async function updateStatistics(curData = jsonClone(todayData)) {
-    void counter.storageGet<Statistics[]>(statisticsKey, []).then((data) => {
-      statisticsData.value = data
-    })
+      logger.debug('统计数据:', current.date, storedToday)
+      if (storedToday.date === current.date) {
+        deepmerge(todayData, current, { clone: false })
+        deepmerge(todayData, storedToday, { clone: false })
+        statisticsData.value = storedStatistics
+        return jsonClone(todayData)
+      }
 
-    const g = await counter.storageGet(todayKey, curData)
-    logger.debug('统计数据:', date, g)
-    if (g.date === date) {
-      deepmerge(todayData, g, { clone: false })
-      return g
+      const newStatistics = storedToday.date ? [storedToday, ...storedStatistics] : storedStatistics
+      deepmerge(todayData, current, { clone: false })
+      statisticsData.value = newStatistics
+      await Promise.all([
+        counter.storageSet(statisticsKey, newStatistics),
+        counter.storageSet(todayKey, jsonClone(todayData)),
+      ])
+      return jsonClone(todayData)
     }
 
-    const statistics = await counter.storageGet(statisticsKey, [])
-
-    const newStatistics = [g, ...statistics]
-    await counter.storageSet(statisticsKey, newStatistics)
-    await counter.storageSet(todayKey, curData)
-    statisticsData.value = newStatistics
+    updateQueue = updateQueue.then(run, run)
+    return updateQueue
   }
 
   return {

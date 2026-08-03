@@ -31,7 +31,26 @@ const createColor = ref(props.model?.color || color16())
 const testShow = ref(false)
 
 const llmFormData = reactive(
-  props.model?.data ?? ({ mode: 'openai', advanced: {}, other: {} } as OpenaiLLMConf),
+  props.model?.data ??
+    ({
+      mode: 'openai',
+      avatar: '',
+      base_url: '',
+      api_key: '',
+      model: '',
+      responses: false,
+      other: { timeout: 18000 },
+      advanced: {
+        json: true,
+        stream: false,
+        temperature: undefined,
+        top_p: undefined,
+        presence_penalty: 0,
+        frequency_penalty: undefined,
+        extra_headers: undefined,
+        extra_body: undefined,
+      },
+    } as OpenaiLLMConf),
 )
 
 const testIn = ref('')
@@ -130,6 +149,9 @@ function create() {
   data.name = createName.value
   data.data = jsonClone(llmFormData) as ModelConf['data'] & {}
   data.data.mode = 'openai'
+  // Ensure other and advanced are at least empty objects
+  if (!data.data.other) data.data.other = { timeout: 18000 } as any
+  if (!data.data.advanced) data.data.advanced = {} as any
   data.color = createColor.value
   emit('create', data)
 }

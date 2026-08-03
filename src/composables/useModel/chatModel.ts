@@ -1,4 +1,3 @@
-import { createOpenAI, OpenAIProvider } from '@ai-sdk/openai'
 import { ChatMessageProps } from '@nuxt/ui'
 import {
   APICallError,
@@ -20,6 +19,7 @@ import { renderTemplate } from '@/utils/ai'
 import { ModelConf } from '.'
 import { WorkflowData } from '../useApplying/type'
 import { HelperContext } from '../useHelper'
+import { openai } from './openai'
 
 const role = ['system', 'user', 'assistant', 'boss', 'jd', 'filtering', 'greetings'] as const
 type MessageRole = (typeof role)[number]
@@ -86,7 +86,6 @@ export class ChatModel {
 
   jobs = ref<string[]>([])
 
-  providers: Map<string, OpenAIProvider> = new Map()
   agents: Map<MessageRole, [ToolLoopAgent, ModelConf, FormDataAi]> = new Map()
   generateId: { [key in MessageRole]: () => string }
 
@@ -114,19 +113,17 @@ export class ChatModel {
     if (!conf || !model.model) {
       return false
     }
-    let provider = this.providers.get(model.model)
-    if (!provider) {
-      provider = createOpenAI({
-        baseURL: conf.data?.base_url,
-        apiKey: conf.data?.api_key,
-      })
-    }
-    this.providers.set(model.model, provider)
+    if (!conf.data) return false
 
+    const advanced = conf.data.advanced ?? {}
     const agent = new ToolLoopAgent({
-      model: provider.chat(conf.data?.model || 'gpt-4o'),
+      model: openai.createModel(conf.data),
       output: opt?.json ? Output.json() : Output.text(),
       allowSystemInMessages: true,
+      temperature: advanced.temperature,
+      topP: advanced.top_p,
+      presencePenalty: advanced.presence_penalty,
+      frequencyPenalty: advanced.frequency_penalty,
     })
     this.agents.set(name, [agent, conf, model])
     return true
@@ -148,7 +145,8 @@ export class ChatModel {
 
     const [agent, modelConf, model] = _agent
 
-    const timeout = modelConf.data?.other?.timeout ?? 60000
+    const idleTimeout = modelConf.data?.other?.timeout ?? 60000
+    const abortController = new AbortController()
     let messages: ModelMessage[]
 
     if (typeof model.prompt === 'string') {
@@ -231,7 +229,7 @@ ${data.jobData.jobDescription}`,
     }
     let index = -1
     const stream = await agent.stream({
-      timeout,
+      abortSignal: abortController.signal,
       messages,
       onStart: (m) => {
         logger.debug('Chat start', m, stream)
@@ -257,6 +255,24 @@ ${data.jobData.jobDescription}`,
       },
     })
 
+    // Idle timeout: reset on every chunk, only fires when no data flows for idleTimeout ms
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+    const resetIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        state.status = 'error'
+        state.error = new Error(`AI 响应超时 (${idleTimeout / 1000}s 无数据)`)
+        abortController.abort()
+      }, idleTimeout)
+    }
+    const clearIdleTimer = () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimer = null
+      }
+    }
+    resetIdleTimer()
+
     state.pushMessage(msg)
     index = state.messages.findIndex((m) => m.id === msg.id)
 
@@ -275,6 +291,7 @@ ${data.jobData.jobDescription}`,
           return `Unknown error: ${err}`
         },
       })) {
+        resetIdleTimer()
         let part: (typeof msg.parts)[number] | null = null
         const lastPart = msg.parts[msg.parts.length - 1]
         switch (chunk.type) {
@@ -324,6 +341,8 @@ ${data.jobData.jobDescription}`,
       state.status = 'error'
       state.error = e as Error
       logger.error('Error during chat streaming', e)
+    } finally {
+      clearIdleTimer()
     }
 
     if (state.error) {

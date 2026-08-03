@@ -42,6 +42,10 @@ export interface WorkflowState {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>
   }
+  aiFilteringAtext?: string
+  aiFilteringRating?: number
+  aiFilteringMessage?: string
+  aiGreetingA?: string
 }
 
 export interface WorkflowData<T, S> {
@@ -56,7 +60,6 @@ export type TaskResult = {
   status?: JobStatus
   msg?: string
   isCache?: boolean
-  id?: string
 }
 
 export type Handler<C extends HelperContext<C, T, S>, T, S> = (

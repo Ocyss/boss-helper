@@ -13,11 +13,19 @@ const enabledFields = reactive<Record<string, boolean>>({})
 
 const initializeEnabledFields = () => {
   const info = openai.info as unknown as LLMInfo<ModelConfData>
+  const formDataAny = formData.value as any
   for (const [key, item] of Object.entries(info)) {
     if (key === 'mode') continue
     const itemAny = item as any
-    if (!itemAny.required && formData.value[key as keyof ModelConfData] !== undefined) {
-      enabledFields[key] = true
+    // Enable field if it has a value OR has a default value OR is not required
+    if (!itemAny.required) {
+      if (formDataAny[key] !== undefined) {
+        enabledFields[key] = true
+      } else if (itemAny.value !== undefined) {
+        // Initialize with default value from info
+        formDataAny[key] = itemAny.value
+        enabledFields[key] = true
+      }
     }
   }
 }

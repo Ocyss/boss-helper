@@ -183,17 +183,21 @@ export const useConf = () => {
     }
   }
 
+  async function persistFormData() {
+    const v = jsonClone(formData)
+    await counter.storageSet(formDataKey(), v)
+    await counter.storageSet(formDataPresetKey, formDataPreset.value)
+    await counter.storageSet(formDataPresetsKey, formDataPresets.value)
+  }
+
   async function confSaving() {
     try {
-      await counter.storageSet(formDataKey(), jsonClone(formData))
-      await counter.storageSet(formDataPresetKey, jsonClone(formDataPreset.value))
-      await counter.storageSet(formDataPresetsKey, jsonClone(formDataPresets.value))
-
+      await persistFormData()
+      logger.debug('formData保存', jsonClone(formData))
       toast.add({
         title: '保存成功',
         color: 'success',
       })
-      logger.debug('formData保存')
     } catch (error: any) {
       toast.add({
         title: `保存失败: ${error.message}`,
@@ -332,6 +336,7 @@ export const useConf = () => {
   return {
     confInit: init,
     confSaving,
+    persistFormData,
     confReload,
     confExport,
     confImport,

@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai'
-import { LanguageModelV3 } from '@ai-sdk/provider'
+import { LanguageModelV4 } from '@ai-sdk/provider'
 
 import { desc, other } from './common'
 import type { LLMConf, LLMInfo } from './type'
@@ -176,7 +176,7 @@ const info: LLMInfo<OpenaiLLMConf> = {
   },
 }
 
-const createModel: (conf: OpenaiLLMConf) => LanguageModelV3 = (conf: OpenaiLLMConf) => {
+const createModel: (conf: OpenaiLLMConf) => LanguageModelV4 = (conf: OpenaiLLMConf) => {
   const openai = createOpenAI({
     baseURL: conf.base_url,
     apiKey: conf.api_key,

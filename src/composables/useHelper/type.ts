@@ -116,6 +116,7 @@ type logState = 'info' | 'success' | 'warning' | 'danger'
 
 export interface Log {
   job?: JobData
+  time: string
   title: string // 标题
   state: logState // 信息,成功,过滤,出错
   state_name: string // 标签文本

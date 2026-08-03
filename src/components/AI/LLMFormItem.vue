@@ -19,7 +19,10 @@ const fromVal = defineModel<any>({
 })
 
 const LLMFormRef = inject<Ref<HTMLDivElement>>('LLMFormRef')
-const isSetVal = ref(fromVal.value !== undefined)
+const isFieldInfo = computed(() => !('alert' in props.info))
+const infoF = computed(() => (isFieldInfo.value ? (props.info as LLMInfoValF<T, any>) : undefined))
+const isSetVal = ref(fromVal.value !== undefined || infoF.value?.value !== undefined)
+const isDisabled = computed(() => infoF.value?.config?.disabled === true)
 </script>
 
 <template>
@@ -56,16 +59,16 @@ const isSetVal = ref(fromVal.value !== undefined)
       >
     </template>
     <UCheckbox
-      v-if="info.config?.disabled || !info.required"
+      v-if="!info.required && !isDisabled"
       v-model="isSetVal"
       @update:model-value="
         (x) => {
           if (!x) fromVal = undefined
+          else if (fromVal === undefined && infoF?.value !== undefined) fromVal = infoF.value
         }
       "
-      :disable="info.config?.disabled"
     />
-    <template v-if="info.required || isSetVal">
+    <template v-if="info.required || isSetVal || isDisabled">
       <UInputNumber
         v-if="info.type === 'input' && info.format === 'number'"
         v-model="fromVal"

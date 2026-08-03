@@ -40,23 +40,34 @@ export function parseFiltering(content: string) {
     reason: string
     score: number
   }
+
   const res = parseGptJson<{
-    negative: Item[]
-    positive: Item[]
+    negative?: Item[] | string
+    positive?: Item[] | string
+    rating?: number
+    message?: string
   }>(content)
 
-  const hand = (acc: { score: number; reason: string }, curr: Item) => ({
-    score: acc.score + Math.abs(curr.score),
-    reason: `${acc.reason}\n${curr.reason}/(${Math.abs(curr.score)}分)`,
-  })
-  const data = {
-    negative: res?.negative?.reduce(hand, { score: 0, reason: '' }),
-    positive: res?.positive?.reduce(hand, { score: 0, reason: '' }),
+  const toItems = (val: any): Item[] => {
+    if (Array.isArray(val)) return val
+    if (typeof val === 'string' && val) return [{ reason: val, score: 0 }]
+    return []
   }
 
-  const rating = (data?.positive?.score ?? 0) - (data?.negative?.score ?? 0)
+  const hand = (acc: { score: number; reason: string }, curr: Item) => ({
+    score: acc.score + (Math.abs(Number(curr.score)) || 0),
+    reason: `${acc.reason}\n${curr.reason ?? ''}/(${Math.abs(Number(curr.score)) || 0}分)`,
+  })
 
-  const message = `分数${rating}\n消极:${data?.negative?.reason}\n\n积极:${data?.positive?.reason}`
+  const negItems = toItems(res?.negative)
+  const posItems = toItems(res?.positive)
 
-  return { res, message, rating, data }
+  const neg = negItems.reduce(hand, { score: 0, reason: '' })
+  const pos = posItems.reduce(hand, { score: 0, reason: '' })
+
+  const rating = res?.rating ?? pos.score - neg.score
+
+  const message = res?.message ?? `分数${rating}\n消极:${neg.reason}\n\n积极:${pos.reason}`
+
+  return { res, message, rating, data: { negative: neg, positive: pos } }
 }

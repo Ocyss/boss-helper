@@ -37,8 +37,12 @@ export const useModel = () => {
     modelData.value = data
   }
 
-  async function save() {
+  async function persist() {
     await counter.storageSet(confModelKey, toRaw(modelData.value))
+  }
+
+  async function save() {
+    await persist()
     toast.add({
       title: '保存成功',
       color: 'success',
@@ -48,6 +52,7 @@ export const useModel = () => {
   return {
     initModel: init,
     modelData,
+    persistModel: persist,
     saveModel: save,
   }
 }

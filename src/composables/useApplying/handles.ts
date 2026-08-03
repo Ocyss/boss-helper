@@ -354,8 +354,15 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiFiltering.model', 'AI筛选模型未配置')
       }
       return async (ctx, data) => {
-        const content = await ctx.helper.chatModel.chat('filtering', data).then((r) => r.text)
+        const stream = await ctx.helper.chatModel.chat('filtering', data)
+        const content = (await stream.text) ?? ''
+        if (!content) {
+          return taskResult.skip('AI 返回内容为空')
+        }
         const { message, rating } = parseFiltering(content)
+        data.state.aiFilteringAtext = content
+        data.state.aiFilteringRating = rating
+        data.state.aiFilteringMessage = message
         if (rating < (ctx.helper.conf.formData.aiFiltering.score ?? 10)) {
           return taskResult.skip(message)
         }
@@ -392,9 +399,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   })
 
   customGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+    '自定义招呼语',
     (ctx) => {
-      if (!ctx.helper.conf.formData.customGreeting.enable) {
+      if (
+        !ctx.helper.conf.formData.customGreeting.enable ||
+        ctx.helper.conf.formData.aiGreeting.enable
+      ) {
         return
       }
       return async (ctx, data) => {
@@ -439,7 +449,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   )
 
   aiGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+    'AI招呼语',
     (ctx) => {
       if (!ctx.helper.conf.formData.aiGreeting.enable) {
         return
@@ -448,7 +458,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
       return async (ctx, data) => {
-        const msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
+        const stream = await ctx.helper.chatModel.chat('greetings', data)
+        const msg = (await stream.text) ?? ''
+        if (!msg) {
+          return taskResult.skip('AI 招呼语为空')
+        }
+        data.state.aiGreetingA = msg
         await ctx.helper.sendMessage?.(data, msg)
       }
     },
