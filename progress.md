@@ -18,3 +18,7 @@
 - `npm run check` 通过；`npm run lint` 通过，仅保留原有非阻断 warning。
 - `npm run build:chrome` 与 `npm run zip:chrome` 通过；ZIP 根目录包含 `manifest.json`。
 - `npm run smoke:v2` 通过；`SHA256SUMS.txt` 已更新为 `CCF6590CB529670BD79B3391E5960369D7BE0CB12A0EFF13ED34E4AF618C8568`，未执行真实 BOSS 投递。
+- 收到反馈：数据已恢复，本轮只删除“关于&赞赏”界面和收款码，并将筛选页的等待文案改为明确的未识别状态。
+- 已从 `App.vue` 移除关于 tab 及组件引用，并删除 `src/components/Tabs/About.vue`；`Filter.vue` 在契约不匹配时显示“未识别 BOSS 原生筛选控件，保存/恢复已停用”。
+- 实际页面只在滚动/下拉后稳定显示 `.expect-and-search` / `.filter-condition`；已让 `Filter.vue` 监听 DOM 变化、滚动和 resize，并区分“发现原生控件但缺少稳定属性”和“未显示控件”。
+- `npm run build:chrome`、`npm run zip:chrome` 和构建包字符串检查通过；新 ZIP SHA256 为 `E11BA1E3D22285021F724FBC3786BC94CCAA03D487345CEC82F9167E68CB1D74`。
