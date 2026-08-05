@@ -3,11 +3,12 @@ import { openDB } from 'idb'
 
 import type { Browser } from '#imports'
 import { browser } from '#imports'
+import { v2StorageKey } from '@/utils/namespace'
 import type { ResponseType } from '@/utils/request'
 
-export const userKey = 'local:conf-user'
+export const userKey = v2StorageKey('conf-user')
 
-const DB_NAME = 'ExtensionGlobalDB'
+const DB_NAME = 'BossHelperV2DB'
 const STORE_NAME = 'images'
 
 async function initDB() {
@@ -27,7 +28,6 @@ export class BackgroundCounter {
     timeout: number
     responseType: ResponseType
   }) {
-    console.log('request', args)
     const signal = AbortSignal.timeout(args.timeout * 1000)
 
     const res = await fetch(args.url, {
@@ -36,8 +36,6 @@ export class BackgroundCounter {
       mode: 'cors',
       credentials: 'include',
     }).then(async (res) => {
-      console.log('request res', res)
-
       if (!res.ok || res.status >= 400) {
         const errorText = await res.text()
         throw new Error(`状态码: ${res.status}: ${errorText}`)

@@ -9,13 +9,14 @@ import {
 } from '@/composables/useApplying/deliverError'
 import { calculateFileMD5 } from '@/utils/file'
 import { logger } from '@/utils/logger'
+import { v2StorageKey } from '@/utils/namespace'
 
 import { BossZpBossData, BossZpDetailData } from './types'
 
 // const { userInfo } = useStore()
 const toast = useToast()
-export const sameCompanyKey = 'local:sameCompany'
-export const sameHrKey = 'local:sameHr'
+export const sameCompanyKey = v2StorageKey('same-company')
+export const sameHrKey = v2StorageKey('same-hr')
 
 export async function getJobDetail(params: { securityId: string; lid: string }): Promise<{
   code: number
@@ -71,7 +72,13 @@ export async function sendPublishReq(
       headers: { Zp_token: token },
     }).then((r) => r.json())
 
-    res.code !== 0 && logger.error(`投递失败`, res)
+    if (res.code !== 0) {
+      // 只记录状态码和短错误消息，禁止把响应对象或 token 相关字段写入日志。
+      logger.error('投递失败', {
+        code: res.code,
+        message: String(res.message ?? '').slice(0, 240),
+      })
+    }
 
     if (res.code === 1) {
       const content = String(

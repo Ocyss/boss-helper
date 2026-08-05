@@ -14,6 +14,7 @@ import {
 } from 'ai'
 import { ShallowReactive } from 'vue'
 
+import { getCandidateProfile } from '@/composables/useApplying/utils'
 import { FormDataAi } from '@/types/formData'
 import { renderTemplate } from '@/utils/ai'
 
@@ -156,9 +157,16 @@ export class ChatModel {
     } else {
       messages = jsonClone(model.prompt)
     }
+    // 画像由本机扩展存储读取，仅注入本次 Prompt，不进入日志或任务结果。
+    const candidateProfile = await getCandidateProfile()
+    // 画像以结构化 JSON 注入模型上下文；不写入扩展日志或任务结果。
+    const templateData = {
+      ...data,
+      candidateProfile: JSON.stringify(candidateProfile, null, 2),
+    }
     for (const i in messages) {
       if (typeof messages[i].content === 'string') {
-        messages[i].content = renderTemplate(messages[i].content, data)
+        messages[i].content = renderTemplate(messages[i].content, templateData)
       }
     }
     let state: VueChatState<Message>
@@ -233,11 +241,11 @@ ${data.jobData.jobDescription}`,
     const stream = await agent.stream({
       timeout,
       messages,
-      onStart: (m) => {
-        logger.debug('Chat start', m, stream)
+      onStart: () => {
+        logger.debug('Chat start', { jobKey: data.jobData.key, agent: agentName })
       },
-      onStepStart: (m) => {
-        logger.debug('Chat onStepStart', m)
+      onStepStart: () => {
+        logger.debug('Chat step start', { jobKey: data.jobData.key, agent: agentName })
       },
       onStepEnd: (message) => {
         if (index > 0) {
@@ -252,8 +260,8 @@ ${data.jobData.jobDescription}`,
         }
         state.status = 'ready'
       },
-      onEnd: (m) => {
-        logger.debug('Chat ended', m)
+      onEnd: () => {
+        logger.debug('Chat ended', { jobKey: data.jobData.key, agent: agentName })
       },
     })
 

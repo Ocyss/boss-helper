@@ -33,7 +33,7 @@ const dropdownItems = computed(() => [
 ])
 
 const protocolShow = ref(false)
-const protocol = 'boss-protocol'
+const protocol = 'boss-helper-v2:protocol'
 const protocolVal = '2026/05/24'
 
 function onProtocol() {

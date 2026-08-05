@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai'
-import { LanguageModelV3 } from '@ai-sdk/provider'
+import { LanguageModelV4 } from '@ai-sdk/provider'
 
 import { desc, other } from './common'
 import type { LLMConf, LLMInfo } from './type'
@@ -46,8 +46,9 @@ const info: LLMInfo<OpenaiLLMConf> = {
     type: 'input',
     // format: 'menu', // TODO: 修复用户体验, 当前创建有问题, 要多次回车/点击
     config: {
-      placeholder: 'https://api.openai.com/v1',
+      placeholder: 'http://fn-i3h510-1.tail0292a9.ts.net:3001/v1',
       items: [
+        'http://fn-i3h510-1.tail0292a9.ts.net:3001/v1',
         'https://api.openai.com/v1',
         'https://openrouter.ai/api/v1',
         'https://api.deepseek.com',
@@ -64,6 +65,7 @@ const info: LLMInfo<OpenaiLLMConf> = {
     config: {
       placeholder: 'gpt-4o-mini',
       items: [
+        'glm5.2',
         'gpt-4o',
         'gpt-5.4',
         'deepseek-chat',
@@ -77,7 +79,7 @@ const info: LLMInfo<OpenaiLLMConf> = {
       ],
       createItem: 'always',
     },
-    value: 'deepseek-chat',
+    value: 'glm5.2',
     type: 'input',
     // format: 'menu',
     required: true,
@@ -176,7 +178,7 @@ const info: LLMInfo<OpenaiLLMConf> = {
   },
 }
 
-const createModel: (conf: OpenaiLLMConf) => LanguageModelV3 = (conf: OpenaiLLMConf) => {
+const createModel: (conf: OpenaiLLMConf) => LanguageModelV4 = (conf: OpenaiLLMConf) => {
   const openai = createOpenAI({
     baseURL: conf.base_url,
     apiKey: conf.api_key,

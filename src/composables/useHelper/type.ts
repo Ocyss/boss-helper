@@ -120,6 +120,8 @@ export interface Log {
   state: logState // 信息,成功,过滤,出错
   state_name: string // 标签文本
   message?: string // 显示消息
+  /** 事件发生时间，用于主列表立即定位问题。 */
+  time?: string
   data?: LogData
 }
 

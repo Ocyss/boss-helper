@@ -88,10 +88,7 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
     //   securityId: rawData.jobitem.securityId,
     //   encryptJobId: rawData.jobitem.encryptJobId,
     // })
-    logger.info('获取Boss信息', {
-      securityId: rawData.jobitem.securityId,
-      encryptJobId: rawData.jobitem.encryptJobId,
-    })
+    logger.info('获取Boss信息', { jobKey: rawData.jobitem.encryptJobId })
     const bossData = await getBossData({
       securityId: rawData.jobitem.securityId,
       encryptUserId: ctx.helper.uid,

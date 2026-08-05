@@ -57,6 +57,12 @@ export type TaskResult = {
   msg?: string
   isCache?: boolean
   id?: string
+  /** AI 筛选结构化分数，仅保存数值元数据，不保存模型原文。 */
+  aiScore?: number
+  /** 招呼语草稿正文只保留在当前页面内供人工确认，不写入日志或统计。 */
+  draft?: string
+  /** 当前任务状态更新时间，仅用于岗位列表定位问题。 */
+  updatedAt?: string
 }
 
 export type Handler<C extends HelperContext<C, T, S>, T, S> = (

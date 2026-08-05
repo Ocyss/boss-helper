@@ -1,6 +1,8 @@
 import ui from '@nuxt/ui/vue-plugin'
 import { createApp } from 'vue'
 
+import { BOSS_HELPER_V2_DOM } from '@/utils/namespace'
+
 import App from './App.vue'
 import AppMenu from './AppMenu.vue'
 import { HelperContext, HelperKey } from './composables/useHelper'
@@ -27,7 +29,7 @@ export async function run<C extends HelperContext<C, T, S>, T, S>(ctx: HelperCon
   }
 
   customElements.define(
-    'boss-helper-job',
+    BOSS_HELPER_V2_DOM.job,
     class extends HTMLElement {
       connectedCallback() {
         _connectedCallback(this, App)
@@ -44,7 +46,7 @@ export async function run<C extends HelperContext<C, T, S>, T, S>(ctx: HelperCon
   )
 
   customElements.define(
-    'boss-helper-menu',
+    BOSS_HELPER_V2_DOM.menu,
     class extends HTMLElement {
       connectedCallback() {
         _connectedCallback(this, AppMenu)

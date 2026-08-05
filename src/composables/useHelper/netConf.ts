@@ -2,6 +2,7 @@ import { AlertProps } from '@nuxt/ui'
 import { Toast } from '@nuxt/ui/runtime/composables/useToast.js'
 
 import { counter } from '@/message'
+import { v2StorageKey } from '@/utils/namespace'
 
 export interface NetConf {
   version: string
@@ -37,7 +38,8 @@ async function netNotification(
   item: NotificationAlert | NotificationNotification,
   now: number = 0,
 ) {
-  if (now !== 0 && now < (await counter.storageGet(`local:netConf-${item.key}`, 0))) {
+  const storageKey = v2StorageKey(`net-conf:${item.key}`)
+  if (now !== 0 && now < (await counter.storageGet(storageKey, 0))) {
     return
   }
   const toast = useToast()
@@ -53,10 +55,7 @@ async function netNotification(
       description: item.data.description ?? item.data.message ?? '',
       duration: 0,
       'onUpdate:open': () => {
-        void counter.storageSet(
-          `local:netConf-${item.key}`,
-          now + (item.data.duration ?? 86400) * 1000,
-        )
+        void counter.storageSet(storageKey, now + (item.data.duration ?? 86400) * 1000)
       },
       onClick() {
         if (item.data.url) {

@@ -1,9 +1,16 @@
 export interface Statistics {
+  version?: number
   date: string
   success: number
   total: number
   repeat: number
   activityFilter: number
+  /** 细分计数，旧版本没有时按 0 迁移。 */
+  filtered?: number
+  eligible?: number
+  greetingSuccess?: number
+  errors?: number
+  rateLimited?: number
   tasks: {
     [key: string]: { [key: string]: number }
   }
@@ -50,6 +57,13 @@ export interface FormData {
   delayDeliveryInterval: number
   delayDeliveryPageNext: number
   delayMessageSending: number
+  /** 延迟范围 [最小秒数, 最大秒数]；旧版固定数字会在加载时迁移为等值范围。 */
+  delayRanges?: {
+    starts: FormDataRange
+    interval: FormDataRange
+    pageNext: FormDataRange
+    message: FormDataRange
+  }
   version: string
 
   [key: string]: any

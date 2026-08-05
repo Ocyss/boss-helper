@@ -1,115 +1,202 @@
 <script lang="ts" setup>
-import { useElementBounding, useWindowSize } from '@vueuse/core'
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
-import elmGetter from '@/utils/elmGetter'
+import Alert from '@/components/Alert.vue'
+import { counter } from '@/message'
+import { v2StorageKey } from '@/utils/namespace'
 
-const CONTAINER_ID = 'boss-helper-external-wrapper'
-const placeholder = ref<HTMLElement | null>(null)
-const externalWrapper = ref<HTMLElement | null>(null)
+/** 当前官方页面中已经验证过的筛选容器契约；不再搬运或猜测节点。 */
+const ROOT_SELECTORS = ['.job-recommend-main', '.page-jobs-main', '.job-search-wrapper'] as const
 
-const { x, y, width, height } = useElementBounding(placeholder)
-const { width: windowWidth } = useWindowSize()
+interface FilterControlSnapshot {
+  key: string
+  value: string
+  checked?: boolean
+}
 
-watch([x, y, width, windowWidth], () => {
-  if (!externalWrapper.value) return
-  if (height.value === 0 && y.value === 0) {
-    externalWrapper.value.style.display = 'none'
+interface FilterSnapshot {
+  version: 1
+  path: string
+  city: string
+  controls: FilterControlSnapshot[]
+  savedAt: string
+}
+
+const snapshotKey = computed(() => v2StorageKey(`filter-snapshot-${location.pathname}`))
+const status = ref('正在等待 BOSS 原生筛选控件…')
+const contractReady = ref(false)
+const savedAt = ref('')
+const city = ref('')
+let observer: MutationObserver | undefined
+
+function getRoots(): HTMLElement[] {
+  const roots = ROOT_SELECTORS.flatMap((selector) =>
+    Array.from(document.querySelectorAll<HTMLElement>(selector)),
+  )
+  return Array.from(new Set(roots)).filter((element) => element.offsetParent !== null)
+}
+
+function controlKey(element: HTMLElement): string | null {
+  const key =
+    element.getAttribute('name') ||
+    element.getAttribute('data-testid') ||
+    element.getAttribute('data-key') ||
+    element.getAttribute('id')
+  return key?.trim() || null
+}
+
+function findContract(): HTMLElement | null {
+  const roots = getRoots()
+  if (roots.length !== 1) return null
+  const controls = Array.from(
+    roots[0].querySelectorAll<HTMLElement>(
+      'input[name],select[name],textarea[name],[data-testid],[data-key]',
+    ),
+  )
+  // 没有带稳定 key 的控件时不保存/恢复，避免误写 BOSS 页面。
+  return controls.length > 0 && controls.every((control) => controlKey(control) !== null)
+    ? roots[0]
+    : null
+}
+
+function readCity(root: HTMLElement): string {
+  const urlCity = new URL(location.href).searchParams.get('city')
+  if (urlCity) return urlCity
+  const cityNode = document.querySelector<HTMLElement>(
+    '.filter-city-area .active, .filter-city-area [aria-selected="true"]',
+  )
+  if (cityNode && root.contains(cityNode)) return cityNode.textContent?.trim() ?? ''
+  return ''
+}
+
+function captureSnapshot(root: HTMLElement): FilterSnapshot {
+  const controls = Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'input[name],select[name],textarea[name],[data-testid],[data-key]',
+    ),
+  ).flatMap((element) => {
+    const key = controlKey(element)
+    if (!key) return []
+    const input = element as HTMLInputElement
+    return [
+      { key, value: input.value ?? element.textContent?.trim() ?? '', checked: input.checked },
+    ]
+  })
+  return {
+    version: 1,
+    path: location.pathname,
+    city: readCity(root),
+    controls,
+    savedAt: new Date().toISOString(),
+  }
+}
+
+async function saveSnapshot() {
+  const root = findContract()
+  if (!root) {
+    status.value = '无法识别 BOSS 筛选结构，已停止保存'
+    contractReady.value = false
     return
   }
-  Object.assign(externalWrapper.value.style, {
-    display: 'flex',
-    position: 'fixed',
-    zIndex: '100',
-    left: `${x.value}px`,
-    top: `${y.value}px`,
-    width: `${width.value}px`,
-    pointerEvents: 'auto',
-  })
-})
-
-const { height: externalHeight } = useElementBounding(externalWrapper)
-const internalHeight = ref(0)
-watch(externalHeight, (newVal) => {
-  internalHeight.value = newVal
-})
-
-async function initExternalContainer() {
-  let wrapper = document.getElementById(CONTAINER_ID)
-  if (!wrapper) {
-    wrapper = document.createElement('div')
-    wrapper.id = CONTAINER_ID
-    wrapper.style.cssText = `
-    flex-direction: column;
-    gap: 10px;
-    `
-    document.body.appendChild(wrapper)
+  try {
+    const snapshot = captureSnapshot(root)
+    await counter.storageSet(snapshotKey.value, snapshot)
+    city.value = snapshot.city
+    savedAt.value = snapshot.savedAt
+    status.value = '筛选状态已保存（不会搬运原生节点）'
+  } catch {
+    status.value = '筛选状态保存失败，已停止操作'
   }
-  externalWrapper.value = wrapper
-  return wrapper
 }
 
-async function collectTargets() {
-  let targets: HTMLElement[] = []
-  const url = location.href
-  const excludeNot = `:not(#${CONTAINER_ID} *)`
-
-  if (url.includes('/web/geek/job-recommend')) {
-    const el = await elmGetter.get<HTMLElement>(`.job-recommend-search${excludeNot}`)
-    if (el) targets = [el]
-  } else if (url.includes('/web/geek/jobs')) {
-    const [search, condition] = await elmGetter.get<HTMLElement>([
-      `.page-jobs-main .expect-and-search${excludeNot}`,
-      `.page-jobs-main .filter-condition${excludeNot}`,
-    ])
-    if (search && condition) targets = [search, condition]
-  } else {
-    const [search, condition] = await elmGetter.get<HTMLElement>([
-      `.job-search-wrapper .job-search-box${excludeNot}`,
-      `.job-search-wrapper .search-condition-wrapper${excludeNot}`,
-    ])
-    if (search && condition) targets = [search, condition]
+async function restoreSnapshot() {
+  const root = findContract()
+  let snapshot: FilterSnapshot | null = null
+  try {
+    snapshot = await counter.storageGet<FilterSnapshot | null>(snapshotKey.value, null)
+  } catch {
+    status.value = '筛选状态读取失败，已停止恢复'
+    return
   }
-  return targets
+  if (!root || !snapshot || snapshot.version !== 1 || snapshot.path !== location.pathname) {
+    status.value = '无法识别页面结构或没有可恢复的筛选状态，已停止恢复'
+    contractReady.value = false
+    return
+  }
+  const controls = new Map(
+    Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'input[name],select[name],textarea[name],[data-testid],[data-key]',
+      ),
+    ).flatMap((element) => {
+      const key = controlKey(element)
+      return key ? [[key, element] as const] : []
+    }),
+  )
+  for (const item of snapshot.controls) {
+    const element = controls.get(item.key)
+    if (!element) continue
+    const input = element as HTMLInputElement
+    if ('value' in input && item.value !== undefined) input.value = item.value
+    if (typeof item.checked === 'boolean' && 'checked' in input) input.checked = item.checked
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  city.value = snapshot.city
+  savedAt.value = snapshot.savedAt
+  status.value = '筛选状态已恢复；请确认城市和条件后再搜索'
 }
 
-onMounted(async () => {
-  const wrapper = await initExternalContainer()
-  const targets = await collectTargets()
-
-  if (targets.length) {
-    wrapper.innerHTML = ''
-    targets.forEach((el) => {
-      el.style.setProperty('margin', '0', 'important')
-      el.style.setProperty('width', '100%', 'important')
-      wrapper.appendChild(el)
-    })
+async function clearSnapshot() {
+  try {
+    await counter.storageRm(snapshotKey.value)
+    city.value = ''
+    savedAt.value = ''
+    status.value = '已清除 V2 保存的筛选状态'
+  } catch {
+    status.value = '筛选状态清除失败'
   }
+}
 
-  wrapper.style.display = 'flex'
+function checkContract() {
+  contractReady.value = findContract() !== null
+  if (contractReady.value) {
+    status.value = '已识别 BOSS 原生筛选控件，可保存/恢复'
+  }
+}
 
-  nextTick(() => {
-    window.dispatchEvent(new Event('resize'))
-  })
+onMounted(() => {
+  checkContract()
+  observer = new MutationObserver(checkContract)
+  observer.observe(document.body, { childList: true, subtree: true })
 })
 
-onUnmounted(() => {
-  if (externalWrapper.value) {
-    externalWrapper.value.style.display = 'none'
-  }
-})
+onUnmounted(() => observer?.disconnect())
 </script>
 
 <template>
-  <Alert
-    id="tabs-filter"
-    description="此处为Boss原生筛选条件, 如果不生效跟插件无关, 也无法进行功能优化, 遇到样式错误才可反馈"
-    color="warning"
-    show-icon
-  />
-  <div
-    ref="placeholder"
-    class="w-full invisible pointer-events-none"
-    :style="{ height: `${internalHeight}px` }"
-  />
+  <div class="flex flex-col gap-2">
+    <Alert
+      id="tabs-filter-v2"
+      :description="status"
+      :color="contractReady ? 'success' : 'warning'"
+      show-icon
+    />
+    <div class="flex flex-wrap items-center gap-2">
+      <UButton size="sm" :disabled="!contractReady" @click="saveSnapshot">保存当前筛选</UButton>
+      <UButton size="sm" variant="outline" :disabled="!contractReady" @click="restoreSnapshot">
+        恢复筛选
+      </UButton>
+      <UButton size="sm" color="warning" variant="ghost" @click="clearSnapshot"
+        >清除保存状态</UButton
+      >
+      <span v-if="city" class="text-xs text-gray-500">城市：{{ city }}</span>
+      <span v-if="savedAt" class="text-xs text-gray-400"
+        >保存于：{{ new Date(savedAt).toLocaleString() }}</span
+      >
+    </div>
+    <p class="text-xs text-gray-500">
+      V2 只读取带稳定属性的原生控件并触发 input/change；结构不匹配时 fail-closed，不猜选择器。
+    </p>
+  </div>
 </template>

@@ -1,11 +1,13 @@
 import { defineProxy } from 'comctx'
 
 import { defineContentScript, injectScript } from '#imports'
-
-import './boss/inject.css'
 import { BackgroundCounter, InjectBackgroundAdapter } from '@/message/background'
 import { ContentCounter } from '@/message/contentScript'
 import { ProvideContentScriptAdapter } from '@/message/contentScriptShare'
+import {
+  BOSS_HELPER_V2_BACKGROUND_NAMESPACE,
+  BOSS_HELPER_V2_CONTENT_NAMESPACE,
+} from '@/utils/namespace'
 
 export default defineContentScript({
   matches: ['*://zhipin.com/*', '*://*.zhipin.com/*'],
@@ -13,13 +15,13 @@ export default defineContentScript({
   world: 'ISOLATED',
   async main() {
     const [, injectBackgroundCounter] = defineProxy(() => ({}) as BackgroundCounter, {
-      namespace: '__boss-helper-background__',
+      namespace: BOSS_HELPER_V2_BACKGROUND_NAMESPACE,
     })
 
     const [provideContentCounter] = defineProxy(
       () => new ContentCounter(injectBackgroundCounter(new InjectBackgroundAdapter())),
       {
-        namespace: '__boss-helper-content__',
+        namespace: BOSS_HELPER_V2_CONTENT_NAMESPACE,
       },
     )
 

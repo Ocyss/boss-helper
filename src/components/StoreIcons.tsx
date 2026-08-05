@@ -86,10 +86,10 @@ export const store: Record<string, [() => JSX.Element, string, string, string]> 
     'https://img.shields.io/chrome-web-store/v/ogkmgjbagackkdlcibcailacnncgonbn?label=',
   ],
   crx: [
-    CrxStore,
-    '国内Chrome用户推荐，Chrome 同步无需魔法，更新速度未知',
-    'https://www.crxsoso.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn',
-    'https://img.shields.io/badge/v%3F.%3F.%3F-EF7C3D',
+    Github,
+    '官方 GitHub Releases，仅从官方仓库获取构建包',
+    'https://github.com/Ocyss/boss-helper/releases/latest',
+    'https://img.shields.io/github/v/release/Ocyss/boss-helper?label=',
   ],
   edge: [
     EdgeStore,

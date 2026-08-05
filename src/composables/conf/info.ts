@@ -221,32 +221,40 @@ export const defaultFormData: FormData = {
       {
         role: 'system',
         content: `## 角色
-  求职小能手
-  
-  ## input：
-  1 **求职者信息**
-  \`\`\`
-  1. ....
-  2. ....
-  3. ....
-  \`\`\`
-  
-  ## outputformat
-  招呼语字符串，无书信格式和前缀，和聊天开场白一样的介绍求职者`,
+你是 BOSS 直聘求职者的 AI 招呼语助手。
+
+## 求职者信息
+{{ candidateProfile }}
+
+## 任务
+根据求职者事实画像和岗位信息，生成一条适合 BOSS 直聘首次沟通的中文招呼语。
+
+## 硬性约束
+1. 只使用求职者画像中明确出现的事实，不得编造薪资、到岗时间、项目、公司、技术栈、年限或成果。
+2. 纯文本，80-130 字，绝对不超过 150 字；最多 3 句话。
+3. 不要标题、列表、Markdown、引号、表情、客套开头或落款。
+4. 最多引用岗位描述中的 2 个关键词，并至少引用 1 个求职者画像中的量化结果；若画像没有量化事实，不能伪造数字。
+5. 结构为：身份/年限/方向 → 一项与岗位匹配的真实经历和结果 → 针对岗位的一个具体问题。
+6. 信息不足时输出“需人工判断”，不要输出看似完整但包含猜测的招呼语。
+
+## 输出格式
+只输出一条招呼语或“需人工判断”，不要输出 JSON。`,
       },
       {
         role: 'user',
-        content: `### 待处理的岗位信息:\`\`\`
+        content: `## 待处理岗位
+\`\`\`
   <岗位信息>
   岗位名:{{ jobData.jobName }}   薪资: {{ jobData.salary }}
   学历要求: {{ jobData.degreeName }}
+  工作经验: {{ jobData.experienceName }}
   技能要求: {{ jobData.skills }}
-  岗位标签:{{ jobData.jobLabels }}
+  岗位标签: {{ jobData.jobLabels }}
     <岗位描述>
     {{ jobData.jobDescription }}
     <岗位描述/>
   </岗位信息>
-  \`\`\``,
+\`\`\``,
       },
     ],
   },
@@ -256,28 +264,33 @@ export const defaultFormData: FormData = {
       {
         role: 'system',
         content: `## 角色
-  求职评委
-  
-  最终返回下面格式的JSON字符串,不要有任何其他字符
-  
-  interface aiFilteringItem {
-    reason: string; // 扣分或加分的理由
-    score: number ; // 分数变化 正整数 不需要+-正负符号
-  }
-  
-  interface aiFiltering {
-    negative: aiFilteringItem[]; // 扣分项
-    positive: aiFilteringItem[] ; // 加分项
-  }
-  
-  ## 求职者需求
-  - 加分: 双休,早九晚五,新技术,机会多,年轻人多 每个加分项 10分
-  - 扣分: 需要上门,福利少,需要和客户交流,需要推销 每个扣分项 10分
-  `,
+你是求职岗位筛选评委，必须以证据为依据，不得根据岗位名称猜测。
+
+## 求职者画像
+{{ candidateProfile }}
+
+## 评分规则
+基础分 60 分。
+- 加分项每项 +10：双休、早九晚五、新技术/AI 应用、成长机会、年轻团队、明确技术产出。
+- 扣分项每项 -10：上门服务、福利明显缺失、需要频繁客户交流、销售/推销、长期驻场、外包性质。
+- 岗位匹配：强匹配 +20，中匹配 +10，弱匹配 0，不匹配 -10。
+- 若存在外包、纯销售、长期驻场或明显违背画像的硬性条件，veto=true。
+- 每个 positive/negative 必须引用岗位描述中的短证据；没有证据不得添加。
+
+## 输出要求
+只返回 JSON，不要 Markdown 或解释文字：
+{
+  "positive": [{"reason":"带证据的加分理由","score":10}],
+  "negative": [{"reason":"带证据的扣分理由","score":10}],
+  "finalScore": 0,
+  "verdict": "accept" | "review" | "reject",
+  "veto": false
+}
+finalScore 必须是有限数字；无法确认岗位事实、画像事实或证据不足时，verdict="review"、veto=true。`,
       },
       {
         role: 'user',
-        content: `## 待处理的岗位信息:
+        content: `## 待处理的岗位信息
   <岗位信息>
   岗位名:{{ jobData.jobName }}   薪资: {{ jobData.salary }}
   学历要求: {{ jobData.degreeName }}    工作经验要求: {{ jobData.experienceName }}
@@ -313,5 +326,11 @@ export const defaultFormData: FormData = {
   delayDeliveryInterval: 5,
   delayDeliveryPageNext: 60,
   delayMessageSending: 2,
+  delayRanges: {
+    starts: [3, 3, false],
+    interval: [5, 5, false],
+    pageNext: [60, 60, false],
+    message: [2, 2, false],
+  },
   version: '20260718',
 }

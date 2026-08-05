@@ -106,7 +106,11 @@ async function test() {
     })
     testOut.value = ''
     for await (const part of result.fullStream) {
-      logger.debug('TestResStream', part)
+      // 只记录流事件类型和长度，不把模型响应正文写入日志。
+      logger.debug('TestResStream', {
+        type: part.type,
+        textLength: 'text' in part && typeof part.text === 'string' ? part.text.length : undefined,
+      })
       if (part.type === 'reasoning-start') {
         testOut.value += '<思考过程>'
       } else if (part.type === 'reasoning-end') {

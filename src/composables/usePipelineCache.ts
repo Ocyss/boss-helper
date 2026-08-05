@@ -9,6 +9,7 @@ import type {
 } from '@/types/pipelineCache'
 import { jsonClone } from '@/utils/deepmerge'
 import { logger } from '@/utils/logger'
+import { v2StorageKey } from '@/utils/namespace'
 
 import { JobStatus } from './useApplying/type'
 
@@ -36,7 +37,7 @@ export class PipelineCacheManager {
     this.config = {
       expireDays: config.expireDays ?? 3,
       cleanupInterval: config.cleanupInterval ?? 6 * 60 * 60 * 1000, // 6小时
-      storageKey: config.storageKey ?? 'local:pipeline-cache',
+      storageKey: config.storageKey ?? v2StorageKey('pipeline-cache'),
       maxCacheSize: config.maxCacheSize ?? 10000,
       processorConfigs: config.processorConfigs ?? DEFAULT_PROCESSOR_CONFIGS,
     }

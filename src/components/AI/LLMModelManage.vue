@@ -57,8 +57,21 @@ function close() {
   open.value = false
 }
 
+/** 递归移除模型导出中的密钥、Cookie 和授权头字段。 */
+function sanitizeModelExport(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sanitizeModelExport(item))
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !/api[_-]?key|authorization|token|secret|password|cookie/iu.test(key))
+      .map(([key, item]) => [key, sanitizeModelExport(item)]),
+  )
+}
+
 function exportllm() {
-  exportJson(jsonClone(modelStore.modelData.value), 'Ai模型配置')
+  // 导出只保留可分享的模型元数据；API 密钥永远不进入下载文件。
+  const safeModels = sanitizeModelExport(jsonClone(modelStore.modelData.value)) as ModelConf[]
+  exportJson(safeModels, 'Ai模型配置-不含密钥')
 }
 
 function importllm() {

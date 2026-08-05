@@ -2,8 +2,10 @@ import { shallowRef, ref } from 'vue'
 
 import { PipelineCacheManager } from '@/composables/usePipelineCache'
 import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
+import { delayWithJitter } from '@/utils'
 
 import { HelperContext } from '../useHelper'
+import { RateLimitError } from './deliverError'
 import { DependencyMissingError } from './handles'
 import {
   Handler,
@@ -83,6 +85,9 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
         status: mergedStatus,
         msg: [acc.msg, r.msg].filter(Boolean).join('\n') || undefined,
         isCache: acc.isCache || r.isCache,
+        aiScore: r.aiScore ?? acc.aiScore,
+        draft: r.draft ?? acc.draft,
+        updatedAt: r.updatedAt ?? acc.updatedAt,
       }
     }, res[0] ?? {})
   }
@@ -109,6 +114,27 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   >([])
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
+  // 连续失败时采用指数退避并在达到阈值后停止，避免无意义地重复请求。
+  let consecutiveErrors = 0
+  let cooldownUntil = 0
+  const filterTaskIds = new Set([
+    '已沟通',
+    '重复沟通-相同公司',
+    '重复沟通-相同HR',
+    '岗位名',
+    '公司名',
+    '薪资范围',
+    '公司规模',
+    '猎头过滤',
+    '活跃度过滤',
+    'Hr职位',
+    '工作地址',
+    '好友状态',
+    '工作内容',
+    '金牌面试官',
+    '高德地图',
+    'AI筛选',
+  ])
 
   const rebuild = async () => {
     const _ctx: TaskContext<C, T, S> = { helper, now: new Date() }
@@ -237,9 +263,15 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         try {
           if (isStop()) break
           helper.jobResultMaps.set(data.jobData.key, {
+            id: t.id,
             status: t.state || 'running',
             msg: t.stateMsg || '运行中',
+            updatedAt: new Date().toISOString(),
           })
+          // 到达岗位投递节点即代表通过筛选；投递失败仍应保留 eligible 统计。
+          if (t.id === '岗位投递') {
+            void helper.statistics.recordEvent('eligible', data.jobData.key)
+          }
           res = await executeTask(t, data)
           if (res != null) {
             res.msg ??= t.label ?? t.id
@@ -258,6 +290,36 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             msg: `报错/${t.label ?? t.id}`,
           }
           logger.error(`任务${t.label ?? t.id}执行失败`, e)
+          const errorText = e instanceof Error ? e.message : String(e)
+          void helper.statistics.recordEvent(
+            e instanceof RateLimitError || errorText.includes('操作过于频繁')
+              ? 'rate_limited'
+              : 'error',
+            `${data.jobData.key}:${t.id}`,
+          )
+          helper.logs.info(`${data.jobData.jobName} · ${t.label ?? t.id}`, errorText.slice(0, 240))
+          consecutiveErrors += 1
+          const cooldownMs = Math.min(60_000, 5_000 * 2 ** Math.max(0, consecutiveErrors - 1))
+          cooldownUntil = Date.now() + cooldownMs
+          helper.logs.info(
+            `${data.jobData.jobName} · 连续错误`,
+            `已进入${Math.ceil(cooldownMs / 1000)}秒冷却（第${consecutiveErrors}次）`,
+          )
+          // 登录失效、限流和验证码提示都立即停止后续任务，避免重复请求。
+          if (
+            e instanceof RateLimitError ||
+            errorText.includes('操作过于频繁') ||
+            /登录|token|验证码/i.test(errorText)
+          ) {
+            status.value = 'stop'
+          }
+          if (consecutiveErrors >= 3) {
+            status.value = 'stop'
+            helper.logs.info(
+              `${data.jobData.jobName} · 连续错误`,
+              '连续错误达到3次，已停止后续岗位',
+            )
+          }
           skipPipeline = true
           break
         } finally {
@@ -265,22 +327,59 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             helper.jobResultMaps.set(data.jobData.key, {
               ...(helper.jobResultMaps.get(data.jobData.key) ?? {}),
               ...res,
+              updatedAt: new Date().toISOString(),
             })
             if (res.status) {
               helper.statistics.todayData.tasks[t.id] ??= {}
               helper.statistics.todayData.tasks[t.id][res.status] ??= 0
               helper.statistics.todayData.tasks[t.id][res.status] += 1
             }
+            const resultMessage = res.reason ?? res.msg
+            if (res.isSkip && resultMessage) {
+              helper.logs.info(
+                `${data.jobData.jobName} · ${t.label ?? t.id}`,
+                resultMessage.slice(0, 240),
+              )
+              if (filterTaskIds.has(t.id)) {
+                void helper.statistics.recordEvent(
+                  t.id.startsWith('重复沟通')
+                    ? 'duplicate'
+                    : t.id === '活跃度过滤'
+                      ? 'activity_filter'
+                      : 'filtered',
+                  `${data.jobData.key}:${t.id}`,
+                )
+              }
+            }
+            if (t.id === '岗位投递' && res.status === 'success') {
+              void helper.statistics.recordEvent('publish_success', data.jobData.key)
+            }
+            if (t.label === '打招呼' && res.status === 'success') {
+              void helper.statistics.recordEvent('greeting_success', `${data.jobData.key}:${t.id}`)
+            }
           }
         }
       }
       if (!skipPipeline) {
+        consecutiveErrors = 0
+        const existingResult = helper.jobResultMaps.get(data.jobData.key)
         helper.jobResultMaps.set(data.jobData.key, {
+          ...existingResult,
           status: 'success',
-          msg: '投递成功',
+          // 投递成功后继续展示草稿，但明确提示用户仍需人工发送。
+          msg: existingResult?.draft ? '投递成功；招呼草稿已生成（未发送）' : '投递成功',
+          updatedAt: new Date().toISOString(),
         })
+        helper.logs.info(data.jobData.jobName, '投递流程完成')
       }
     } catch (e) {
+      consecutiveErrors += 1
+      const cooldownMs = Math.min(60_000, 5_000 * 2 ** Math.max(0, consecutiveErrors - 1))
+      cooldownUntil = Date.now() + cooldownMs
+      helper.logs.info(
+        `${data.jobData.jobName} · 连续错误`,
+        `已进入${Math.ceil(cooldownMs / 1000)}秒冷却（第${consecutiveErrors}次）`,
+      )
       status.value = 'error'
       throw e
     }
@@ -313,13 +412,24 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           helper.jobResultMaps.set(job.key, v)
         })
 
-        await delay(helper.conf.formData.delayDeliveryStarts, isStop)
+        await delayWithJitter(
+          helper.conf.formData.delayRanges?.starts ?? helper.conf.formData.delayDeliveryStarts,
+          isStop,
+        )
 
         for (const [index, jobData] of helper.jobList.value.entries()) {
           current.value = index + 1
           if (isStop()) break
-          const status = helper.jobResultMaps.get(jobData.key)?.status
-          if (status === 'success' || status === 'warn') {
+          if (cooldownUntil > Date.now()) {
+            await delayWithJitter((cooldownUntil - Date.now()) / 1000, isStop, 0)
+          }
+          if (helper.statistics.todayData.success >= helper.conf.formData.deliveryLimit.value) {
+            stepMsg = '达到本地设置的每日投递上限'
+            status.value = 'stop'
+            break
+          }
+          const jobStatus = helper.jobResultMaps.get(jobData.key)?.status
+          if (jobStatus === 'success' || jobStatus === 'warn') {
             continue
           }
           const data = {
@@ -330,11 +440,19 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           helper.jobMaps.set(jobData.key, data)
           helper.currentJob.value = jobData.key
           await execute(data)
-          await delay(helper.conf.formData.delayDeliveryInterval, isStop)
+          await delayWithJitter(
+            helper.conf.formData.delayRanges?.interval ??
+              helper.conf.formData.delayDeliveryInterval,
+            isStop,
+          )
         }
         if (isStop()) break
         const hasMore = await helper.loadMoreJob(
-          delay(helper.conf.formData.delayDeliveryPageNext, isStop),
+          delayWithJitter(
+            helper.conf.formData.delayRanges?.pageNext ??
+              helper.conf.formData.delayDeliveryPageNext,
+            isStop,
+          ),
         )
         if (!hasMore) {
           status.value = 'stop'

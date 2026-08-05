@@ -7,14 +7,14 @@ import { HelperContext, JobData } from '@/composables/useHelper'
 import { AlertItem, ConfigAccordionItem } from '@/composables/useHelper/type'
 import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
 import { run } from '@/index'
-import { counter, initCounter } from '@/message'
+import { initCounter } from '@/message'
 import { FormDataInput } from '@/types/formData'
 import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
+import { BOSS_HELPER_V2_DOM } from '@/utils/namespace'
 
 import { GeekChatClientManager } from './chat'
 import { BoosJobData, bossWorkflow } from './delivery'
-import { uploadImage } from './requests'
 import { BossZpDetailData, BossZpJobItemData } from './types'
 
 function removeAd() {
@@ -214,53 +214,12 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     await this.workflow.executeAll(this._jobDataMap)
   }
 
-  async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
-    logger.info('发送消息', { jobKey: data.jobData.key, msg: msgs })
-
-    const stanza = {
-      uid: Number(data.rawData.boss.data.bossId),
-      friendSource: data.rawData.detail.bossInfo.bossSource ?? 0,
-      encryptUid: data.rawData.jobitem.encryptBossId,
-      encryptGid: '',
-      clientMid: Date.now(),
-    }
-    if (typeof msgs === 'string') {
-      msgs = [{ type: 'text', content: msgs }]
-    }
-    for (const msg of msgs) {
-      var m
-      // Each chat message needs its own client id; reusing one makes later messages look duplicated.
-      stanza.clientMid = Date.now()
-      if (msg.type === 'image') {
-        const response = await counter.getImage(msg.image)
-        if (!response.success) {
-          throw new Error('图片未上传或已过期')
-        }
-        const u8Array = new Uint8Array(response.buffer)
-        const file = new File([u8Array.buffer], response.name, { type: response.type })
-        const img = await uploadImage(data.rawData.boss.data.securityId, file)
-
-        m = this.geek.msgBuilder.createImageMessage(stanza, {
-          content: {
-            iid: 0,
-            ...img,
-          },
-        })
-      } else if (msg.type === 'text') {
-        this.pendingMessages.value = msg.content
-        await delay(this.conf.formData.delayMessageSending)
-        m = this.geek.msgBuilder.createTextMessage(stanza, {
-          text: this.pendingMessages.value,
-        })
-        this.pendingMessages.value = undefined
-      } else {
-        throw new Error('不支持的消息类型:' + msg['type'])
-      }
-      this.geek.client.publish('chat', this.geek.msgBuilder.encode(m), {
-        qos: 1,
-        retain: true,
-      })
-    }
+  /**
+   * V2 的发送能力硬性关闭；任务流水线只能返回草稿，用户必须在 BOSS 页面人工发送。
+   * 保留抽象方法签名以兼容旧版工作流，但不再读取消息正文或调用私有接口。
+   */
+  async sendMessage(_data: WorkflowData<BoosJobData, {}>, _msgs: FormDataInput['value']) {
+    throw new Error('Boss Helper V2 禁止自动发送消息，请人工复制草稿后操作')
   }
 
   async onMount(path?: string) {
@@ -269,7 +228,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
 
     try {
-      if (await elmGetter.get('boss-helper-job', 3000)) {
+      if (await elmGetter.get(BOSS_HELPER_V2_DOM.job, 3000)) {
         return
       }
     } catch {}
@@ -287,7 +246,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       '.job-search-wrapper,.job-recommend-main,.page-jobs .page-jobs-main',
     )
 
-    const appElement = document.createElement('boss-helper-job')
+    const appElement = document.createElement(BOSS_HELPER_V2_DOM.job)
     BossHelperCtx.instance = appElement
     elm.insertBefore(appElement, elm.firstChild)
     removeAd()
@@ -601,6 +560,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
             }
           }
           this._jobDataMap.set(job.key, jobData)
+
+          // 每次扫描都写入幂等 seen 事件；事件 key 带日期，跨天不会漏计，重复刷新不会重复计数。
+          void this.statistics.recordEvent('seen', job.key)
 
           return job
         })

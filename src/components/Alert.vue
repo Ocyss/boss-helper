@@ -3,6 +3,7 @@ import type { AlertProps } from '@nuxt/ui/components/Alert.vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { counter } from '@/message'
+import { v2StorageKey } from '@/utils/namespace'
 
 export interface ExtendedAlertProps extends /* @vue-ignore */ AlertProps {
   id?: string
@@ -11,7 +12,7 @@ export interface ExtendedAlertProps extends /* @vue-ignore */ AlertProps {
 
 const props = defineProps<ExtendedAlertProps>()
 
-const storageKey = computed(() => `local:alert:${props.id}`)
+const storageKey = computed(() => v2StorageKey(`alert:${props.id}`))
 const isVisible = ref(true)
 
 onMounted(async () => {

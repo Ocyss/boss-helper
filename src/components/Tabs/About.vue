@@ -27,16 +27,16 @@
         </div>
       </div>
       <div data-help="记得来个Star或者好评吧" style="margin-top: 10px">
-        该脚本分为浏览器扩展和油猴脚本，两版本皆已开源
+        本扩展仅建议从官方 Chrome Web Store 或 GitHub Releases 获取
         <br />
         Github地址:
         <ULink to="https://github.com/ocyss/boss-helper" target="_blank">
           https://github.com/ocyss/boss-helper
         </ULink>
         <br />
-        greasyfork地址:
-        <ULink to="https://greasyfork.org/zh-CN/scripts/491340" target="_blank">
-          https://greasyfork.org/zh-CN/scripts/491340
+        官方 Releases:
+        <ULink to="https://github.com/Ocyss/boss-helper/releases/latest" target="_blank">
+          https://github.com/Ocyss/boss-helper/releases/latest
         </ULink>
         <br />
         <br />

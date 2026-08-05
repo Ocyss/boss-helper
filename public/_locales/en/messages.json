@@ -1,8 +1,8 @@
 {
   "extName": {
-    "message": "boss-helper"
+    "message": "Boss Helper V2"
   },
   "extDescription": {
-    "message": "BOSS Direct Assistant, Supports rich filtering rules and AI integration, enabling both screening and automatic greetings."
+    "message": "BOSS job assistant V2 with observable screening and human-confirmed AI assistance."
   }
 }

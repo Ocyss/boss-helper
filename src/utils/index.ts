@@ -1,4 +1,5 @@
 import { counter } from '@/message'
+import { BOSS_HELPER_V2_DOM } from '@/utils/namespace'
 
 // 通知
 export async function notification(
@@ -63,6 +64,37 @@ export async function delay(s: number, isStopped?: () => boolean) {
   })
 }
 
+/**
+ * 在原有等待时间附近增加有界随机抖动，降低固定节奏造成的误操作风险。
+ * 这是保守限流，不绕过平台检测，也不改变任务顺序。
+ */
+export async function delayWithJitter(
+  seconds: number | readonly [number, number, boolean?],
+  isStopped?: () => boolean,
+  jitterRatio = 0.2,
+) {
+  const configured = Array.isArray(seconds)
+    ? ([Number(seconds[0]), Number(seconds[1])] as const)
+    : null
+  const base = Math.max(0, Number(seconds) || 0)
+  const ratio = Math.min(0.5, Math.max(0, Number(jitterRatio) || 0))
+  // 旧配置迁移后会得到 min=max；仍给固定值增加有界抖动，避免所有旧用户保持完全相同节奏。
+  const configuredBase = configured ? Math.max(0, Math.min(configured[0], configured[1])) : base
+  const configuredSame = configured ? configured[0] === configured[1] : false
+  const min =
+    configured && Number.isFinite(configured[0]) && !configuredSame
+      ? configuredBase
+      : configuredSame
+        ? configuredBase * (1 - ratio)
+        : base * (1 - ratio)
+  const max =
+    configured && Number.isFinite(configured[1]) && !configuredSame
+      ? Math.max(min, configured[1])
+      : configuredBase * (1 + ratio)
+  const value = min + Math.random() * (max - min)
+  return delay(value, isStopped)
+}
+
 // 加载进度条
 export function loader({
   ms = 10000,
@@ -75,10 +107,10 @@ export function loader({
   onDone?: () => void
   isStopped?: () => boolean
 }) {
-  let load = document.querySelector<HTMLDivElement>('#loader')
+  let load = document.querySelector<HTMLDivElement>(`#${BOSS_HELPER_V2_DOM.loader}`)
   if (!load) {
     const l = document.createElement('div')
-    l.id = 'loader'
+    l.id = BOSS_HELPER_V2_DOM.loader
     document.querySelector('#header')?.appendChild(l)
     load = l
   }
@@ -111,7 +143,7 @@ export function loader({
       cancelAnimationFrame(delayLoadId)
       delayLoadId = undefined
     }
-    const load = document.querySelector<HTMLDivElement>('#loader')
+    const load = document.querySelector<HTMLDivElement>(`#${BOSS_HELPER_V2_DOM.loader}`)
     if (load) load.style.width = '0%'
   }
 }

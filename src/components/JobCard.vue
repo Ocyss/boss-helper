@@ -69,7 +69,7 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
 
 <template>
   <div
-    class="job-card"
+    class="job-card job-list-row"
     :class="{ 'job-card-hover': hover }"
     :style="{
       '--state-color': jobStatus.color,
@@ -85,6 +85,21 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
     <h3 class="card-salary">
       {{ job.salary }}
     </h3>
+    <!-- 列表行补充 AI 分数、阶段和错误原因，字段缺失时安全降级。 -->
+    <div class="job-meta-row">
+      <span>AI {{ jobResult?.aiScore ?? '—' }}</span>
+      <span>阶段：{{ jobResult?.id || '未开始' }}</span>
+      <span v-if="jobResult?.updatedAt"
+        >时间：{{ new Date(jobResult.updatedAt).toLocaleTimeString('zh-CN') }}</span
+      >
+      <span v-if="jobResult?.reason">原因：{{ jobResult.reason }}</span>
+      <span v-else-if="jobResult?.status === 'error' || jobResult?.status === 'warn'"
+        >原因：{{ jobResult.msg || '任务未通过' }}</span
+      >
+    </div>
+    <div v-if="jobResult?.draft" class="job-draft" title="仅为草稿，不会自动发送">
+      招呼草稿：{{ jobResult.draft }}
+    </div>
     <div
       v-show="showDescription"
       class="card-content"

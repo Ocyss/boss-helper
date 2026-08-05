@@ -78,19 +78,20 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameCompanyFilter.value) {
         return
       }
-      const someSet: Set<string> = new Set<string>()
+      const someSet = new Set<string>()
       const data = await counter.storageGet<Record<string, string[]>>(sameCompanyKey, {})
       for (const id of data[ctx.helper.uid] ?? []) {
         someSet.add(id)
       }
       return {
         fn: async (_, { jobData: data }) => {
-          if (someSet.has(data.key)) {
+          if (data.key && someSet.has(data.key)) {
             return taskResult.skip('相同公司已投递')
           }
         },
         after: [
           async (ctx, { jobData: data }) => {
+            if (!data.key) return
             someSet.add(data.key)
             if (someSet.size % 3 === 0) {
               const oldData = await counter.storageGet<Record<string, string[]>>(sameCompanyKey, {})
@@ -112,7 +113,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameHrFilter.value) {
         return
       }
-      const someSet: Set<string> | null = new Set<string>()
+      const someSet = new Set<string>()
       const data = await counter.storageGet<Record<string, string[]>>(sameHrKey, {})
       for (const id of data[ctx.helper.uid] ?? []) {
         someSet.add(id)
@@ -126,6 +127,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         },
         after: [
           async (ctx, { jobData: data }) => {
+            if (!data.key) return
             someSet.add(data.key)
             if (someSet.size % 3 === 0) {
               const oldData = await counter.storageGet<Record<string, string[]>>(sameHrKey, {})
@@ -355,10 +357,18 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       }
       return async (ctx, data) => {
         const content = await ctx.helper.chatModel.chat('filtering', data).then((r) => r.text)
-        const { message, rating } = parseFiltering(content)
-        if (rating < (ctx.helper.conf.formData.aiFiltering.score ?? 10)) {
-          return taskResult.skip(message)
+        const { message, rating, veto } = parseFiltering(content)
+        if (
+          veto ||
+          !Number.isFinite(rating) ||
+          rating < (ctx.helper.conf.formData.aiFiltering.score ?? 10)
+        ) {
+          return {
+            ...taskResult.skip(message),
+            aiScore: Number.isFinite(rating) ? rating : undefined,
+          }
         }
+        return { aiScore: rating }
       }
     },
     {
@@ -420,19 +430,20 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
           }
         }
 
-        // ctx.message = msg
-
-        // const buf = new Message({
-        //   form_uid: uid.toString(),
-        //   to_uid: ctx.bossData.data.bossId.toString(),
-        //   to_name: ctx.bossData.data.encryptBossId, // encryptUserId
-        //   friend_source: ctx.bossData.data.bossSource,
-        //   content: msg,
-        // })
-
-        // await buf.send()
-
-        await ctx.helper.sendMessage?.(data, msg)
+        // V2 只生成草稿，禁止调用 BOSS 私有发送接口或触发发送按钮。
+        const draft = Array.isArray(msg)
+          ? msg
+              .filter((item) => item.type === 'text')
+              .map((item) => item.content.trim())
+              .filter(Boolean)
+              .join('\n')
+          : String(msg ?? '').trim()
+        if (!draft) return taskResult.skip('自定义招呼语为空，未生成草稿')
+        return {
+          status: 'success',
+          msg: '自定义招呼语草稿已生成（未发送）',
+          draft,
+        }
       }
     },
     { label: '自定义招呼语' },
@@ -449,7 +460,23 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       }
       return async (ctx, data) => {
         const msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
-        await ctx.helper.sendMessage?.(data, msg)
+        // AI 未返回合规非空招呼语时禁止发送空消息。
+        const normalized = typeof msg === 'string' ? msg.trim() : ''
+        const sentenceCount = normalized.split(/[。！？!?]+/u).filter(Boolean).length
+        if (
+          !normalized ||
+          normalized === '需人工判断' ||
+          normalized.length > 150 ||
+          sentenceCount > 3
+        ) {
+          return taskResult.skip('AI招呼语无效，已跳过发送')
+        }
+        // V2 只保留当前任务内的草稿，用户需要自行复制或人工发送。
+        return {
+          status: 'success',
+          msg: 'AI招呼语草稿已生成（未发送）',
+          draft: normalized,
+        }
       }
     },
     { label: 'AI招呼语', state: 'ai', stateMsg: '生成招呼语中' },

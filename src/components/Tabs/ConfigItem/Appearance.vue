@@ -5,6 +5,7 @@ import { watch, watchEffect } from 'vue'
 import Alert from '@/components/Alert.vue'
 import { useConf, appearanceConf } from '@/composables/conf'
 import { useStatistics } from '@/composables/useStatistics'
+import { BOSS_HELPER_V2_DOM } from '@/utils/namespace'
 
 const title = useTitle(undefined, { observe: true })
 const { todayData } = useStatistics()
@@ -50,7 +51,7 @@ let ticking = false
 watch(
   () => appearanceConf.value.blurCard,
   (val) => {
-    const root = document.querySelector('boss-helper-job')?.shadowRoot
+    const root = document.querySelector(BOSS_HELPER_V2_DOM.job)?.shadowRoot
     if (!root) return
     const card = root.querySelector<HTMLDivElement>('.boss-helper-card')
     const blur = card?.querySelector<HTMLDivElement>('.card-grid-overlay')
@@ -83,7 +84,7 @@ watch(
 watch(
   () => appearanceConf.value.listSink,
   (val) => {
-    const h = document.getElementById('boss-helper-job-warp')
+    const h = document.getElementById(BOSS_HELPER_V2_DOM.jobWarp)
     if (!h) return
     h.style.marginBottom = val ? '300px' : 'unset'
   },

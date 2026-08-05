@@ -1,0 +1,20 @@
+{
+  "schema_version": "candidate-profile.v1",
+  "target_roles": ["AI Agent / LLM 应用工程师"],
+  "location": "杭州",
+  "resume_summary": "填写可核验的教育、工作经历和项目方向；没有的事实留空。",
+  "skills_with_evidence": [
+    {
+      "skill": "Python",
+      "evidence": "填写项目或工作中的真实使用场景和结果"
+    },
+    {
+      "skill": "LLM 应用开发",
+      "evidence": "填写可公开说明的真实项目、职责和量化结果"
+    }
+  ],
+  "availability_policy": "填写可核验的到岗时间；未知时写待确认",
+  "salary_policy": "填写可接受范围；未知时写待确认",
+  "contact_policy": "只在用户确认后交换联系方式",
+  "reply_style": "简洁、具体、尊重事实；信息不足时请求人工确认"
+}

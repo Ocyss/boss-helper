@@ -76,8 +76,8 @@ function onWheel(e: any) {
   if (!cards.value) {
     return
   }
-  const left = -e.wheelDelta || e.deltaY / 2
-  cards.value.scrollLeft = cards.value.scrollLeft + left
+  const delta = e.deltaY || -e.wheelDelta || 0
+  cards.value.scrollTop += delta
   following.value = false
 }
 function scrollHandler(key = helper.currentJob.value) {
@@ -116,7 +116,7 @@ watch(
 
 <template>
   <div style="order: -1" class="boss-helper-card relative">
-    <div ref="cards" class="card-grid" @wheel.stop="onWheel">
+    <div ref="cards" class="card-grid job-list-rows" @wheel.stop="onWheel">
       <JobCard
         v-for="job in jobList"
         :ref="

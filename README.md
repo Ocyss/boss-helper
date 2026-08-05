@@ -1,17 +1,23 @@
 > [!CAUTION]
-> 本项目仅供学习交流，禁止用于商业用途
+> 本项目仅供学习交流，禁止用于商业用途；V2 不保证规避平台风控，也不实现自动回复或自动发送。
 >
 > 使用该脚本有一定风险(如黑号,封号,权重降低等)，本项目不承担任何责任
 
-| Chrome                                                                                                                                                                                             | Crx搜搜                                                                                                                                           | Edge                                                                                                                                                                                                                                                                                                                           | FireFox                                                                                                                                   | Github                                                                                                                                |
+| Chrome | Edge | FireFox | Github |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/ogkmgjbagackkdlcibcailacnncgonbn?label=Chrome插件商店)](https://chrome.google.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn) | [![Crx 搜搜](https://img.shields.io/badge/Crx搜索-v%3F.%3F.%3F-EF7C3D)](https://www.crxsoso.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn) | [![Edge Web Store](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fjcllnbjfeamhihjpfjlclhdnjmggbgal&query=version&prefix=v&label=Edge插件商店&color=EF7C3D)](https://microsoftedge.microsoft.com/addons/detail/jcllnbjfeamhihjpfjlclhdnjmggbgal) | [![Firefox](https://img.shields.io/amo/v/boss-helper?label=Mozilla插件商店)](https://addons.mozilla.org/zh-TW/firefox/addon/boss-helper/) | [![GitHub Release](https://img.shields.io/github/v/release/Ocyss/boss-helper)](https://github.com/Ocyss/boss-helper/releases/latest/) |
+| [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/ogkmgjbagackkdlcibcailacnncgonbn?label=官方Chrome插件商店)](https://chrome.google.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn) | [![Edge Web Store](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fjcllnbjfeamhihjpfjlclhdnjmggbgal&query=version&prefix=v&label=Edge插件商店&color=EF7C3D)](https://microsoftedge.microsoft.com/addons/detail/jcllnbjfeamhihjpfjlclhdnjmggbgal) | [![Firefox](https://img.shields.io/amo/v/boss-helper?label=Mozilla插件商店)](https://addons.mozilla.org/zh-TW/firefox/addon/boss-helper/) | [![GitHub Release](https://img.shields.io/github/v/release/Ocyss/boss-helper)](https://github.com/Ocyss/boss-helper/releases/latest/) |
 
-> **国内**: 如果无法访问 `Chrome插件商店` , 请使用 `Crx搜搜` 或 `Edge插件商店` 安装
+> **国内**：V2 推荐使用本仓库构建的 ZIP 通过 Chrome“加载已解压的扩展程序”安装；官方基线只从 Ocyss 的官方商店或 GitHub Releases 获取。
 
 ## 项目介绍
 
 Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率, 技术栈使用WXT + Vue3 + NuxtUI@4 + TailwindCSS@4, 开源在 Github 欢迎前来Pr
+
+## Boss Helper V2
+
+本仓库是 `ump45nose/boss-helper-v2` 的独立构建，版本 `0.6.0` 基于官方 `v0.5.1` 提交。V2 使用独立扩展身份、DOM 前缀、消息 namespace 和 `chrome.storage.local` key，可和官方扩展同时安装。交付和安装说明见 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)，候选人画像示例见 [candidate-profile.example.json](candidate-profile.example.json)。
+
+V2 的自动化边界是“筛选、AI 辅助和人工确认”：日志/统计可观测，等待采用保守随机抖动，AI 输出不合规时停止；模型配置默认提示 `glm5.2`，回复监控只在用户主动开启后通知并形成待确认草稿，不自动回复、不自动发简历、不交换联系方式、不点击发送。
 
 > 本项目处于积极维护状态, 一直很忙所以拖了比较久才开源，抱歉了~
 
@@ -29,8 +35,6 @@ Github开源地址: <https://github.com/ocyss/boss-helper>
 > 每个提交都会给我发通知，我看见就会评论的形式回复 一般 1-2天
 
 飞书问卷结果: <https://gai06vrtbc0.feishu.cn/share/base/view/shrcnrg8D0cbLQc89d7Jj7AZgMc>
-
-greasyfork地址(0.2旧版本): <https://greasyfork.org/zh-CN/scripts/491340>
 
 ## 项目预览
 

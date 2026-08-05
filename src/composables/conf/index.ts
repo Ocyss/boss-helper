@@ -7,16 +7,17 @@ import type { ConfigLevel, FormData } from '@/types/formData'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
+import { v2StorageKey } from '@/utils/namespace'
 
 import { defaultFormData } from './info'
 
 export * from './info'
 
-const formDataPresetKey = 'local:FormDataPrese'
-const formDataPresetsKey = 'local:FormDataPreses'
+const formDataPresetKey = v2StorageKey('form-data-preset')
+const formDataPresetsKey = v2StorageKey('form-data-presets')
 
 export const appearanceConf = useStorageAsync(
-  'appearance-conf',
+  v2StorageKey('appearance-conf'),
   {
     hideHeader: false,
     changeIcon: false,
@@ -44,15 +45,15 @@ const formDataPresets = ref([
 
 const formDataKey = () => {
   if (formDataPreset.value !== 'default') {
-    return `local:web-geek-job-FormData-${formDataPreset.value}`
+    return v2StorageKey(`form-data-${formDataPreset.value}`)
   }
-  return 'local:web-geek-job-FormData'
+  return v2StorageKey('form-data')
 }
 
 watchThrottled(
   formData,
   (v) => {
-    logger.debug('formData改变', toRaw(v))
+    logger.debug('formData改变', { keys: Object.keys(toRaw(v)) })
   },
   { throttle: 2000 },
 )
@@ -151,6 +152,36 @@ export const useConf = () => {
         title: `用户配置初始化失败: ${String(err)}`,
         color: 'error',
       })
+    }
+    // 旧版只有固定延迟数字；首次加载时转换成 min=max，随后由运行时加入有界抖动。
+    const source = from as Partial<FormData> & { delayRanges?: FormData['delayRanges'] }
+    if (!source.delayRanges) {
+      const value = (key: keyof FormData, fallback: number): number => {
+        const candidate = source[key]
+        return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : fallback
+      }
+      source.delayRanges = {
+        starts: [
+          value('delayDeliveryStarts', defaultFormData.delayDeliveryStarts),
+          value('delayDeliveryStarts', defaultFormData.delayDeliveryStarts),
+          false,
+        ],
+        interval: [
+          value('delayDeliveryInterval', defaultFormData.delayDeliveryInterval),
+          value('delayDeliveryInterval', defaultFormData.delayDeliveryInterval),
+          false,
+        ],
+        pageNext: [
+          value('delayDeliveryPageNext', defaultFormData.delayDeliveryPageNext),
+          value('delayDeliveryPageNext', defaultFormData.delayDeliveryPageNext),
+          false,
+        ],
+        message: [
+          value('delayMessageSending', defaultFormData.delayMessageSending),
+          value('delayMessageSending', defaultFormData.delayMessageSending),
+          false,
+        ],
+      }
     }
     return from
   }
