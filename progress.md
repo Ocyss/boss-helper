@@ -21,4 +21,6 @@
 - 收到反馈：数据已恢复，本轮只删除“关于&赞赏”界面和收款码，并将筛选页的等待文案改为明确的未识别状态。
 - 已从 `App.vue` 移除关于 tab 及组件引用，并删除 `src/components/Tabs/About.vue`；`Filter.vue` 在契约不匹配时显示“未识别 BOSS 原生筛选控件，保存/恢复已停用”。
 - 实际页面只在滚动/下拉后稳定显示 `.expect-and-search` / `.filter-condition`；已让 `Filter.vue` 监听 DOM 变化、滚动和 resize，并区分“发现原生控件但缺少稳定属性”和“未显示控件”。
-- `npm run build:chrome`、`npm run zip:chrome` 和构建包字符串检查通过；新 ZIP SHA256 为 `E11BA1E3D22285021F724FBC3786BC94CCAA03D487345CEC82F9167E68CB1D74`。
+- `npm run build:chrome`、`npm run zip:chrome` 和构建包字符串检查通过；新 ZIP SHA256 为 `D8B7B88A614EEDCD0ED3D8655BA6E8C5D216FE4ED0D416345FD62FBC867EDED7`。
+- 用户反馈原生下拉仍不可保存；已增加“定位 BOSS 原生筛选”“刷新状态”和当前条件只读摘要，明确不点击选项、不触发搜索。
+- `smoke-v2.mjs` 增加筛选定位入口和关于页面删除断言，防止后续构建回归。
