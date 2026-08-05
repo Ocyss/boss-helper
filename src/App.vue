@@ -6,7 +6,6 @@ import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import ChatBox from '@/components/ChatBox.vue'
 import JobCards from '@/components/JobCards.vue'
 import Version from '@/components/Menu/Version.vue'
-import About from '@/components/Tabs/About.vue'
 import Ai from '@/components/Tabs/AI.vue'
 import Config from '@/components/Tabs/Config.vue'
 import Filter from '@/components/Tabs/Filter.vue'
@@ -30,7 +29,6 @@ const items = computed<TabsItem[]>(() => {
     { slot: 'config', label: '配置', help: '好好看，好好学' },
     { slot: 'ai', label: 'AI', help: 'AI时代，脚本怎么能落伍!' },
     { slot: 'logs', label: '日志', help: '反正你也不看' },
-    { slot: 'about', label: '关于&赞赏', help: '项目是写不完美的,但总要去追求完美' },
   ] satisfies (TabsItem | boolean | null | undefined | '')[]
 
   return configs.filter((item) => !!item) as TabsItem[]
@@ -226,7 +224,6 @@ function onPointerMove(ev: PointerEvent) {
             <template #config><Config /></template>
             <template #ai><Ai /></template>
             <template #logs><Logs /></template>
-            <template #about><About /></template>
             <template #list-trailing>
               <UButton
                 class="ml-2"

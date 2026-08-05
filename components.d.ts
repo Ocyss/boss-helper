@@ -12,7 +12,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    About: typeof import('./src/components/Tabs/About.vue')['default']
     Address: typeof import('./src/components/Tabs/ConfigItem/Address.vue')['default']
     AI: typeof import('./src/components/Tabs/AI.vue')['default']
     Alert: typeof import('./src/components/Alert.vue')['default']
@@ -79,7 +78,6 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
-  const About: typeof import('./src/components/Tabs/About.vue')['default']
   const Address: typeof import('./src/components/Tabs/ConfigItem/Address.vue')['default']
   const AI: typeof import('./src/components/Tabs/AI.vue')['default']
   const Alert: typeof import('./src/components/Alert.vue')['default']

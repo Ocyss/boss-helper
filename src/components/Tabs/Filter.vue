@@ -5,8 +5,16 @@ import Alert from '@/components/Alert.vue'
 import { counter } from '@/message'
 import { v2StorageKey } from '@/utils/namespace'
 
-/** 当前官方页面中已经验证过的筛选容器契约；不再搬运或猜测节点。 */
+/** 官方页面已经验证过的页面容器；这里只读，不搬运或重挂载 BOSS 节点。 */
 const ROOT_SELECTORS = ['.job-recommend-main', '.page-jobs-main', '.job-search-wrapper'] as const
+/** BOSS 筛选区域会在滚动/下拉后显示，使用官方已有容器类判断其是否出现。 */
+const NATIVE_FILTER_SELECTORS = [
+  '.job-recommend-search',
+  '.page-jobs-main .expect-and-search',
+  '.page-jobs-main .filter-condition',
+  '.job-search-wrapper .job-search-box',
+  '.job-search-wrapper .search-condition-wrapper',
+] as const
 
 interface FilterControlSnapshot {
   key: string
@@ -23,17 +31,33 @@ interface FilterSnapshot {
 }
 
 const snapshotKey = computed(() => v2StorageKey(`filter-snapshot-${location.pathname}`))
-const status = ref('正在等待 BOSS 原生筛选控件…')
+const status = ref('正在检查 BOSS 原生筛选控件…')
 const contractReady = ref(false)
 const savedAt = ref('')
 const city = ref('')
 let observer: MutationObserver | undefined
 
+// BOSS 的固定头部可能有尺寸但不可见，使用布局矩形而不是 offsetParent 判断显示状态。
+function isVisible(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect()
+  const style = getComputedStyle(element)
+  return (
+    rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
+  )
+}
+
 function getRoots(): HTMLElement[] {
   const roots = ROOT_SELECTORS.flatMap((selector) =>
     Array.from(document.querySelectorAll<HTMLElement>(selector)),
   )
-  return Array.from(new Set(roots)).filter((element) => element.offsetParent !== null)
+  return Array.from(new Set(roots)).filter(isVisible)
+}
+
+function getNativeFilterNodes(): HTMLElement[] {
+  const nodes = NATIVE_FILTER_SELECTORS.flatMap((selector) =>
+    Array.from(document.querySelectorAll<HTMLElement>(selector)),
+  )
+  return Array.from(new Set(nodes)).filter(isVisible)
 }
 
 function controlKey(element: HTMLElement): string | null {
@@ -63,7 +87,7 @@ function readCity(root: HTMLElement): string {
   const urlCity = new URL(location.href).searchParams.get('city')
   if (urlCity) return urlCity
   const cityNode = document.querySelector<HTMLElement>(
-    '.filter-city-area .active, .filter-city-area [aria-selected="true"]',
+    '.city-label.active, .filter-city-area .active, .filter-city-area [aria-selected="true"]',
   )
   if (cityNode && root.contains(cityNode)) return cityNode.textContent?.trim() ?? ''
   return ''
@@ -158,10 +182,19 @@ async function clearSnapshot() {
   }
 }
 
+// 在初次加载、滚动和下拉展开后都重新判断，避免控件延迟出现时永久显示“等待”。
 function checkContract() {
-  contractReady.value = findContract() !== null
+  const root = getRoots()
+  const contract = findContract()
+  const nativeFilterVisible = getNativeFilterNodes().length > 0
+  contractReady.value = contract !== null
   if (contractReady.value) {
     status.value = '已识别 BOSS 原生筛选控件，可保存/恢复'
+  } else if (nativeFilterVisible || root.length > 0) {
+    status.value = '已发现 BOSS 原生筛选控件，但缺少稳定属性；请直接使用页面筛选'
+  } else {
+    // 识别失败时明确说明功能状态，避免让用户误以为扩展或页面一直卡住。
+    status.value = '当前页面未显示 BOSS 原生筛选控件，保存/恢复已停用（不猜选择器）'
   }
 }
 
@@ -169,9 +202,15 @@ onMounted(() => {
   checkContract()
   observer = new MutationObserver(checkContract)
   observer.observe(document.body, { childList: true, subtree: true })
+  window.addEventListener('scroll', checkContract, true)
+  window.addEventListener('resize', checkContract)
 })
 
-onUnmounted(() => observer?.disconnect())
+onUnmounted(() => {
+  observer?.disconnect()
+  window.removeEventListener('scroll', checkContract, true)
+  window.removeEventListener('resize', checkContract)
+})
 </script>
 
 <template>
