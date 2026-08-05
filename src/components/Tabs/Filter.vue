@@ -33,6 +33,8 @@ interface FilterSnapshot {
 const snapshotKey = computed(() => v2StorageKey(`filter-snapshot-${location.pathname}`))
 const status = ref('正在检查 BOSS 原生筛选控件…')
 const contractReady = ref(false)
+const nativeFilterVisible = ref(false)
+const nativeFilterSummary = ref<string[]>([])
 const savedAt = ref('')
 const city = ref('')
 let observer: MutationObserver | undefined
@@ -58,6 +60,26 @@ function getNativeFilterNodes(): HTMLElement[] {
     Array.from(document.querySelectorAll<HTMLElement>(selector)),
   )
   return Array.from(new Set(nodes)).filter(isVisible)
+}
+
+// 返回当前页面最靠前的官方筛选区域，用于“定位”而非修改 BOSS 控件。
+function findNativeFilterAnchor(): HTMLElement | null {
+  return getNativeFilterNodes().find((element) => isVisible(element)) ?? null
+}
+
+// 读取用户已经选中的原生条件，只展示文本，不保存完整页面或聊天内容。
+function readNativeFilterSummary(): string[] {
+  const selectors = [
+    '.expect-and-search .expect-item .text-content',
+    '.filter-condition-inner .city-label.active',
+    '.filter-condition-inner .current-select',
+  ]
+  const values = selectors.flatMap((selector) =>
+    Array.from(document.querySelectorAll<HTMLElement>(selector)).map((element) =>
+      element.textContent?.trim().replace(/\s+/g, ' '),
+    ),
+  )
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
 }
 
 function controlKey(element: HTMLElement): string | null {
@@ -186,7 +208,8 @@ async function clearSnapshot() {
 function checkContract() {
   const root = getRoots()
   const contract = findContract()
-  const nativeFilterVisible = getNativeFilterNodes().length > 0
+  nativeFilterVisible.value = findNativeFilterAnchor() !== null
+  nativeFilterSummary.value = readNativeFilterSummary()
   contractReady.value = contract !== null
   if (contractReady.value) {
     status.value = '已识别 BOSS 原生筛选控件，可保存/恢复'
@@ -196,6 +219,18 @@ function checkContract() {
     // 识别失败时明确说明功能状态，避免让用户误以为扩展或页面一直卡住。
     status.value = '当前页面未显示 BOSS 原生筛选控件，保存/恢复已停用（不猜选择器）'
   }
+}
+
+// 将用户带到 BOSS 官方筛选区；不会点击选项、触发搜索或修改筛选值。
+function focusNativeFilter() {
+  const anchor = findNativeFilterAnchor()
+  if (!anchor) {
+    status.value = '当前页面未显示 BOSS 原生筛选控件，请先回到页面顶部或展开筛选'
+    nativeFilterVisible.value = false
+    return
+  }
+  anchor.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  status.value = '已定位 BOSS 原生筛选区，请直接选择条件并点击搜索'
 }
 
 onMounted(() => {
@@ -222,6 +257,10 @@ onUnmounted(() => {
       show-icon
     />
     <div class="flex flex-wrap items-center gap-2">
+      <UButton size="sm" :disabled="!nativeFilterVisible" @click="focusNativeFilter">
+        定位 BOSS 原生筛选
+      </UButton>
+      <UButton size="sm" variant="ghost" @click="checkContract">刷新状态</UButton>
       <UButton size="sm" :disabled="!contractReady" @click="saveSnapshot">保存当前筛选</UButton>
       <UButton size="sm" variant="outline" :disabled="!contractReady" @click="restoreSnapshot">
         恢复筛选
@@ -234,8 +273,12 @@ onUnmounted(() => {
         >保存于：{{ new Date(savedAt).toLocaleString() }}</span
       >
     </div>
+    <p v-if="nativeFilterSummary.length" class="text-xs text-gray-500">
+      当前 BOSS 原生条件：{{ nativeFilterSummary.join('、') }}
+    </p>
     <p class="text-xs text-gray-500">
-      V2 只读取带稳定属性的原生控件并触发 input/change；结构不匹配时 fail-closed，不猜选择器。
+      V2 不搬运原生控件；保存/恢复只在存在稳定属性时启用，否则请直接使用上方定位到的 BOSS
+      筛选并点击搜索。
     </p>
   </div>
 </template>

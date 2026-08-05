@@ -30,8 +30,17 @@ const applyingSource = readFileSync(
   'utf8',
 )
 const bossSource = readFileSync(resolve(root, 'src', 'entrypoints', 'boss', 'index.ts'), 'utf8')
+const appSource = readFileSync(resolve(root, 'src', 'App.vue'), 'utf8')
+const filterSource = readFileSync(resolve(root, 'src', 'components', 'Tabs', 'Filter.vue'), 'utf8')
 assert.ok(!applyingSource.includes('sendMessage?.('), '招呼任务不应调用发送方法')
 assert.ok(!bossSource.includes("publish('chat'"), 'V2 不应发布 BOSS 聊天消息')
+// UI 约束：筛选页只能定位官方控件，关于/赞赏入口必须从交付包中移除。
+assert.ok(filterSource.includes('focusNativeFilter'), '筛选页缺少官方控件定位入口')
+assert.ok(!appSource.includes('About.vue'), 'V2 不应挂载关于/赞赏页面')
+assert.ok(
+  !existsSync(resolve(root, 'src', 'components', 'Tabs', 'About.vue')),
+  '关于页面组件未删除',
+)
 
 const profile = JSON.parse(readFileSync(resolve(root, 'candidate-profile.example.json'), 'utf8'))
 for (const key of [
