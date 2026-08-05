@@ -20,3 +20,9 @@
 - `npm install --ignore-scripts --no-package-lock` 第一次因 `typescript@7.0.2` 与 `@nuxt/ui@4.10.0` 的 peer 依赖冲突失败；下一次改用 `--legacy-peer-deps`，不更改输出目录。
 - 半成品依赖目录导致一次 `Invalid Version`；已删除并重新安装，之后 `npm run check` 通过。
 - WXT 构建准备期会尝试读取未初始化的 `counter`，输出诊断但退出码为 0，正式产物和静态冒烟均通过。
+
+## 2026-08-05 UI 反馈复核
+
+- 截图中的岗位区域仍由 `JobCards.vue` 挂载 `JobCard.vue`，旧 `.job-card` 样式包含背景、阴影、倾斜和大块卡片布局；之前的 `.job-list-row` 仅改变网格排列，不能实现真正的列表。
+- `JobData` 已提供岗位、公司、城市、薪资、活跃时间、标签和描述字段；`TaskResult` 已提供阶段、状态、AI 分数、原因、草稿和更新时间，可直接映射到表格列。
+- 新实现应直接渲染 `<table>`/`<tr>` 文字行，避免头像、卡片背景和旧组件样式继续影响视觉；详情使用展开行，不改变投递逻辑。
