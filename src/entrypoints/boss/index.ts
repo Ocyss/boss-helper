@@ -9,6 +9,7 @@ import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
 import { run } from '@/index'
 import { initCounter } from '@/message'
 import { FormDataInput } from '@/types/formData'
+import { delayWithJitter } from '@/utils'
 import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 import { BOSS_HELPER_V2_DOM } from '@/utils/namespace'
@@ -215,11 +216,76 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   }
 
   /**
-   * V2 的发送能力硬性关闭；任务流水线只能返回草稿，用户必须在 BOSS 页面人工发送。
-   * 保留抽象方法签名以兼容旧版工作流，但不再读取消息正文或调用私有接口。
+   * 按用户显式开启的高风险开关发送文本招呼语；关闭开关时绝不触发外部发送。
+   * 发送使用仓库已有的 BOSS MQTT/protobuf 通道，不记录消息正文、令牌或完整响应。
    */
-  async sendMessage(_data: WorkflowData<BoosJobData, {}>, _msgs: FormDataInput['value']) {
-    throw new Error('Boss Helper V2 禁止自动发送消息，请人工复制草稿后操作')
+  async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
+    if (!this.conf.formData.autoDelivery.value) {
+      throw new Error('自动投递未开启，招呼语保持人工确认')
+    }
+    if (!this.geek?.client || !this.geek.msgBuilder) {
+      throw new Error('BOSS 聊天通道未就绪，已停止自动发送')
+    }
+
+    const items =
+      typeof msgs === 'string'
+        ? [{ type: 'text' as const, content: msgs }]
+        : Array.isArray(msgs)
+          ? msgs
+          : []
+    const textItems = items.filter(
+      (item): item is Extract<(typeof items)[number], { type: 'text' }> => item.type === 'text',
+    )
+    if (textItems.length !== items.length) {
+      throw new Error('自动投递目前只支持文本招呼语，图片请人工确认')
+    }
+    const text = textItems
+      .map((item) => item.content.trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+    if (!text) {
+      throw new Error('招呼语为空，已停止自动发送')
+    }
+
+    const boss = data.rawData.boss?.data
+    const bossInfo = data.rawData.detail?.bossInfo
+    const job = data.rawData.jobitem
+    if (!boss?.bossId || !job?.encryptBossId || !bossInfo) {
+      throw new Error('招聘者上下文不完整，已停止自动发送')
+    }
+
+    // 使用消息等待范围，避免每条消息以完全固定节奏发送。
+    await delayWithJitter(
+      this.conf.formData.delayRanges?.message ?? this.conf.formData.delayMessageSending,
+    )
+    const stanza = {
+      uid: Number(boss.bossId),
+      friendSource: Number(bossInfo.bossSource ?? boss.bossSource ?? 0),
+      encryptUid: job.encryptBossId,
+      encryptGid: '',
+      clientMid: Date.now(),
+    }
+    const message = this.geek.msgBuilder.createTextMessage(stanza, { text })
+    const encoded = this.geek.msgBuilder.encode(message)
+
+    // 等待 MQTT 发布回调，超时或连接错误均 fail-closed，不重发同一草稿。
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const timer = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        reject(new Error('BOSS 聊天发送确认超时'))
+      }, 10_000)
+      this.geek.client.publish('chat', encoded, { qos: 1, retain: true }, (error) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timer)
+        if (error) reject(new Error(`BOSS 聊天发送失败: ${error.message}`))
+        else resolve()
+      })
+    })
+    logger.info('自动招呼发送成功', { jobKey: data.jobData.key })
   }
 
   async onMount(path?: string) {
@@ -401,6 +467,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                   },
                 ],
               },
+              { type: 'checkbox', key: 'autoDelivery' },
               { type: 'customGreeting', key: 'customGreeting' },
             ],
           },

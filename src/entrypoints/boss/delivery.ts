@@ -72,7 +72,10 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.amap({ deps: ['岗位详情获取'] }), // 高德地图
   tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
 
-  defineTaskHandler('岗位投递', () => async (_, { rawData }) => {
+  defineTaskHandler('岗位投递', (ctx) => async (_, { rawData }) => {
+    if (!ctx.helper.conf.formData.autoDelivery.value) {
+      return taskResult.skip('自动投递未开启，请在配置中明确开启后重试')
+    }
     await sendPublishReq({
       securityId: rawData.jobitem.securityId,
       encryptJobId: rawData.jobitem.encryptJobId,
