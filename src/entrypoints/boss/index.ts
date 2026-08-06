@@ -542,6 +542,21 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
               },
             ],
           },
+          {
+            label: '诊断配置',
+            value: 'diagnostics',
+            items: [
+              {
+                type: 'alert',
+                id: 'diagnostic-config-alert',
+                showIcon: true,
+                color: 'warning',
+                description:
+                  '详细诊断只记录阶段、耗时、超时配置和错误分类；即使开启，也不会记录 API 密钥、Cookie、Prompt、模型响应或完整聊天内容。',
+              },
+              { type: 'checkbox', key: 'diagnosticLogging' },
+            ],
+          },
         ],
       ]
     })

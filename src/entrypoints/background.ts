@@ -2,6 +2,7 @@ import { defineProxy } from 'comctx'
 
 import { browser, defineBackground } from '#imports'
 import type { CandidateProfile } from '@/composables/useApplying/utils'
+import { resolveModelTimeout } from '@/composables/useModel/common'
 import { BackgroundCounter, ProvideBackgroundAdapter } from '@/message/background'
 import type { ReplyDraftItem } from '@/types/replyDraft'
 import { replyDraftQueueKey } from '@/types/replyDraft'
@@ -120,9 +121,7 @@ async function generateReplyDraft(
         temperature: 0.2,
         stream: false,
       }),
-      signal: AbortSignal.timeout(
-        Math.min(60_000, Math.max(5_000, Number(data.other?.timeout) || 60_000)),
-      ),
+      signal: AbortSignal.timeout(resolveModelTimeout(data.other?.timeout)),
     })
     if (!response.ok) return { ok: false, error: `模型请求失败（HTTP ${response.status}）` }
     const payload = await response.json()
