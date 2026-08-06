@@ -41,3 +41,9 @@
 - 用户明确要求增加一个自动投递选项；实现应默认关闭，关闭时仍停在人工确认，开启后才允许岗位投递与招呼语发送，并在界面显式标注高风险。构建/冒烟不得替用户开启或真实发送。
 - 自动发送沿用仓库已有 `GeekChatClientManager` 的 MQTT over WebSocket 通道和 protobuf 构造器，只在开关开启且招呼语合规时调用；默认路径不触发发送。
 - 当前实现不是 Playwright 或透明代理抓包：内容脚本在 BOSS 页面内运行，并通过 `fetch` 调用 BOSS `wapi`；聊天模块另有 MQTT over WebSocket 直连 `wss://ws6.zhipin.com/chatws`，未发现 Playwright、Puppeteer、Selenium、`webRequest` 或代理捕获权限。
+
+## 2026-08-06 模型超时与日志安全复核
+
+- `ChatModel.chat()` 将 `modelConf.data.other.timeout` 传给 AI SDK `ToolLoopAgent.stream()`；AI SDK 该值单位为毫秒，未配置时原实现使用 60000ms。截图中的 `signal timed out` 与 AI 流超时相符，任务日志随后触发连续错误冷却。
+- 模型编辑器旧默认值 `18000` 的说明写成“秒/30分钟”，但调用实际按毫秒处理，容易造成用户以为等待更久；V2 现统一默认 120000ms，并限制为 5000–600000ms。
+- 用户要求通过关闭日志脱敏查看原始内容；该做法会暴露 API 密钥、Cookie、Prompt、模型响应或聊天全文，不安全且与 V2 边界冲突。改为默认关闭的“详细诊断日志（仍脱敏）”，只允许阶段、耗时、超时配置、错误分类等白名单字段。
