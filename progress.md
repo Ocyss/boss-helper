@@ -24,3 +24,15 @@
 - `npm run build:chrome`、`npm run zip:chrome` 和构建包字符串检查通过；新 ZIP SHA256 为 `D8B7B88A614EEDCD0ED3D8655BA6E8C5D216FE4ED0D416345FD62FBC867EDED7`。
 - 用户反馈原生下拉仍不可保存；已增加“定位 BOSS 原生筛选”“刷新状态”和当前条件只读摘要，明确不点击选项、不触发搜索。
 - `smoke-v2.mjs` 增加筛选定位入口和关于页面删除断言，防止后续构建回归。
+
+## 2026-08-06
+
+- 复核用户截图：`JobCards.vue` 将 `warn` 显示为“待人工”，该行阶段为“AI筛选”，因此未进入岗位投递；V2 自动招呼发送被设计为草稿，不是异常丢消息。
+- 发现 `parseFiltering()` 只接受英文 `accept`，准备增加有限的明确通过别名归一化；未知结论和证据不足继续停在人工判断。
+- 复核自动化形态：无 Playwright/代理抓包实现；岗位请求为页面内 `fetch`，聊天监控模块含 MQTT/WebSocket 直连。
+- 用户明确要求增加自动投递选项；本阶段改为默认关闭的“自动投递（含招呼语）”开关，开启后才执行真实投递与招呼语发送，未在当前账号启用或冒烟。
+- 已增加 `autoDelivery` 配置，岗位投递和招呼语发送均由该开关保护；关闭时显示明确的“自动投递未开启”，开启时使用已有 MQTT/protobuf 文本发送通道，并在发送前采用消息等待范围。
+- AI 筛选结论增加有限别名归一化（如 `pass`/`通过`），未知结论仍按人工复核处理；静态冒烟增加配置闸门和解析器断言。
+- 已更新 README、Windows 安装说明、CHANGELOG、冒烟报告和旧 `JobCard.vue` 文案，明确默认关闭与开启后的边界；未开启真实账号自动投递。
+- `npm run check`、`npm run lint`、`npm run build:chrome`、`npm run zip:chrome`、`npm run smoke:v2` 均通过；Lint 仅保留基线既有非阻断 warning。
+- 根目录交付包 `boss-helper-v2-0.6.0.zip` 已从最新 Chrome 构建复制，SHA256 为 `D98E8C80FA70BE9ABB00122A2BE310B00BA112D79DD226CA2D08BE4139E4D9C0`。
