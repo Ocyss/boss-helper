@@ -56,6 +56,11 @@ export const formInfoData: Record<string, any> = {
     'data-help':
       '高风险开关，默认关闭；开启后筛选通过的岗位会真实投递，并通过 BOSS 聊天通道自动发送合规招呼语。关闭时只停在待人工确认。',
   },
+  diagnosticLogging: {
+    label: '详细诊断日志（仍脱敏）',
+    'data-help':
+      '默认关闭；开启后记录 AI 请求阶段、耗时、超时配置和错误分类，仍强制隐藏 API 密钥、Cookie、Prompt、模型响应和聊天全文。',
+  },
   greetingVariable: {
     label: '招呼语变量',
     'data-help': '使用mitem模板引擎来对招呼语进行渲染;',
@@ -192,6 +197,10 @@ export const defaultFormData: FormData = {
   },
   autoDelivery: {
     // 默认关闭，避免导入旧配置后意外触发真实投递或消息发送。
+    value: false,
+  },
+  diagnosticLogging: {
+    // 默认关闭，避免额外采集诊断摘要；开启也不会关闭强制脱敏。
     value: false,
   },
   deliveryLimit: {

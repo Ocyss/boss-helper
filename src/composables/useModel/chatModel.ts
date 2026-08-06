@@ -21,6 +21,8 @@ import { renderTemplate } from '@/utils/ai'
 import { ModelConf } from '.'
 import { WorkflowData } from '../useApplying/type'
 import { HelperContext } from '../useHelper'
+import type { DiagnosticDetails } from '../useHelper/type'
+import { resolveModelTimeout } from './common'
 
 const role = ['system', 'user', 'assistant', 'boss', 'jd', 'filtering', 'greetings'] as const
 type MessageRole = (typeof role)[number]
@@ -28,6 +30,53 @@ type MessageRole = (typeof role)[number]
 export interface Message extends ChatMessageProps {
   uiRole: MessageRole
   // messages?: ModelMessage[]
+}
+
+type ModelErrorSummary = {
+  kind: 'timeout' | 'http_error' | 'request_error'
+  message: string
+  httpStatus?: number
+}
+
+/** 将模型错误压缩为不含 URL、请求体、密钥或完整响应的可展示摘要。 */
+function summarizeModelError(error: unknown, timeoutMs: number): ModelErrorSummary {
+  const rawMessage = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  if (
+    (typeof DOMException !== 'undefined' &&
+      error instanceof DOMException &&
+      ['TimeoutError', 'AbortError'].includes(error.name)) ||
+    /signal\s+timed\s*out|timed\s*out|timeout|超时|abort/iu.test(rawMessage)
+  ) {
+    return {
+      kind: 'timeout',
+      message: `模型请求超时（${Math.round(timeoutMs / 1000)}秒）`,
+    }
+  }
+  if (APICallError.isInstance(error)) {
+    return {
+      kind: 'http_error',
+      message: `模型接口错误（HTTP ${error.statusCode ?? '未知'}）`,
+      httpStatus: error.statusCode,
+    }
+  }
+  return {
+    kind: 'request_error',
+    message: `模型请求失败（${error instanceof Error && error.name ? error.name : '未知错误'}）`,
+  }
+}
+
+/** 返回经过分类的 Error，避免任务日志再次写入原始异常对象。 */
+function normalizeModelError(error: unknown, timeoutMs: number): Error {
+  return new Error(summarizeModelError(error, timeoutMs).message)
+}
+
+/** 将模型错误摘要转换为诊断白名单字段，避免把异常对象传入日志。 */
+function diagnosticErrorDetails(summary: ModelErrorSummary): DiagnosticDetails {
+  return {
+    errorKind: summary.kind,
+    errorMessage: summary.message,
+    httpStatus: summary.httpStatus,
+  }
 }
 
 export class VueChatState<UI_MESSAGE extends UIMessage> implements ChatState<UI_MESSAGE> {
@@ -149,7 +198,18 @@ export class ChatModel {
 
     const [agent, modelConf, model] = _agent
 
-    const timeout = modelConf.data?.other?.timeout ?? 60000
+    const timeout = resolveModelTimeout(modelConf.data?.other?.timeout)
+    const startedAt = Date.now()
+    const diagnosticTitle = `${data.jobData.jobName} · AI${agentName}`
+    const recordDiagnostic = (details: DiagnosticDetails) => {
+      this.ctx.logs.diagnostic(diagnosticTitle, {
+        agent: agentName,
+        timeoutMs: timeout,
+        elapsedMs: Date.now() - startedAt,
+        ...details,
+      })
+    }
+    recordDiagnostic({ event: 'request_start', phase: 'model_stream' })
     let messages: ModelMessage[]
 
     if (typeof model.prompt === 'string') {
@@ -225,6 +285,7 @@ ${data.jobData.jobDescription}`,
     // })
 
     state.status = 'streaming'
+    state.error = undefined
 
     const msg: Message = {
       id: this.generateId[agentName](),
@@ -238,32 +299,49 @@ ${data.jobData.jobDescription}`,
       },
     }
     let index = -1
-    const stream = await agent.stream({
-      timeout,
-      messages,
-      onStart: () => {
-        logger.debug('Chat start', { jobKey: data.jobData.key, agent: agentName })
-      },
-      onStepStart: () => {
-        logger.debug('Chat step start', { jobKey: data.jobData.key, agent: agentName })
-      },
-      onStepEnd: (message) => {
-        if (index > 0) {
-          state.replaceMessage(index, {
-            ...msg,
-            parts: message.content as typeof msg.parts,
-            metadata: {
-              usage: message.usage,
-              providerMetadata: message.providerMetadata,
-            },
-          })
-        }
-        state.status = 'ready'
-      },
-      onEnd: () => {
-        logger.debug('Chat ended', { jobKey: data.jobData.key, agent: agentName })
-      },
-    })
+    let stream: Awaited<ReturnType<typeof agent.stream>>
+    try {
+      stream = await agent.stream({
+        timeout,
+        messages,
+        onStart: () => {
+          logger.debug('Chat start', { jobKey: data.jobData.key, agent: agentName })
+          recordDiagnostic({ event: 'provider_start', phase: 'model_stream' })
+        },
+        onStepStart: () => {
+          logger.debug('Chat step start', { jobKey: data.jobData.key, agent: agentName })
+          recordDiagnostic({ event: 'step_start', phase: 'model_stream' })
+        },
+        onStepEnd: (message) => {
+          if (index > 0) {
+            state.replaceMessage(index, {
+              ...msg,
+              parts: message.content as typeof msg.parts,
+              metadata: {
+                usage: message.usage,
+                providerMetadata: message.providerMetadata,
+              },
+            })
+          }
+          state.status = 'ready'
+          recordDiagnostic({ event: 'step_end', phase: 'model_stream' })
+        },
+        onEnd: () => {
+          logger.debug('Chat ended', { jobKey: data.jobData.key, agent: agentName })
+          recordDiagnostic({ event: 'provider_end', phase: 'model_stream' })
+        },
+      })
+    } catch (error) {
+      const summary = summarizeModelError(error, timeout)
+      state.status = 'error'
+      state.error = new Error(summary.message)
+      recordDiagnostic({
+        event: 'request_error',
+        phase: 'agent_stream',
+        ...diagnosticErrorDetails(summary),
+      })
+      throw state.error
+    }
 
     state.pushMessage(msg)
     index = state.messages.findIndex((m) => m.id === msg.id)
@@ -273,14 +351,13 @@ ${data.jobData.jobDescription}`,
         originalMessages: state.messages,
         sendReasoning: true,
         onError: (err) => {
-          if (err instanceof Error) {
-            if (APICallError.isInstance(err)) {
-              return `请求错误 ${err.statusCode}: ${err.message}`
-            }
-            return err.message
-          }
-          logger.error('Unknown error during chat streaming', err)
-          return `Unknown error: ${err}`
+          const summary = summarizeModelError(err, timeout)
+          recordDiagnostic({
+            event: 'stream_error',
+            phase: 'ui_stream',
+            ...diagnosticErrorDetails(summary),
+          })
+          return summary.message
         },
       })) {
         let part: (typeof msg.parts)[number] | null = null
@@ -312,12 +389,25 @@ ${data.jobData.jobDescription}`,
             break
           case 'error': {
             state.status = 'error'
-            state.error = new Error(chunk.errorText)
+            state.error = normalizeModelError(chunk.errorText, timeout)
+            recordDiagnostic({
+              event: 'chunk_error',
+              phase: 'ui_stream',
+              errorKind: 'request_error',
+              errorMessage: state.error.message,
+            })
             break
           }
 
           case 'abort': {
-            logger.error('Chat abort', chunk.reason)
+            state.status = 'error'
+            state.error = normalizeModelError(chunk.reason || 'signal timed out', timeout)
+            recordDiagnostic({
+              event: 'stream_abort',
+              phase: 'ui_stream',
+              errorKind: 'timeout',
+              errorMessage: state.error.message,
+            })
             break
           }
         }
@@ -330,13 +420,20 @@ ${data.jobData.jobDescription}`,
       state.status = 'ready'
     } catch (e) {
       state.status = 'error'
-      state.error = e as Error
-      logger.error('Error during chat streaming', e)
+      state.error = normalizeModelError(e, timeout)
+      const summary = summarizeModelError(e, timeout)
+      recordDiagnostic({
+        event: 'request_error',
+        phase: 'ui_stream',
+        ...diagnosticErrorDetails(summary),
+      })
     }
 
     if (state.error) {
       throw state.error
     }
+
+    recordDiagnostic({ event: 'request_success', phase: 'model_stream' })
 
     // for await (const chunk of readUIMessageStream({ // BUG: 无法正确处理消息
     //   stream: stream.toUIMessageStream({

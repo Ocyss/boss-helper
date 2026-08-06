@@ -7,13 +7,30 @@ export interface other {
   }
 }
 
+/** AI 请求的安全超时边界，单位为毫秒。 */
+export const DEFAULT_MODEL_TIMEOUT_MS = 120_000
+export const MIN_MODEL_TIMEOUT_MS = 5_000
+export const MAX_MODEL_TIMEOUT_MS = 600_000
+
+/** 解析用户配置的模型超时，避免空值、负数或极端值造成立即中止或无限等待。 */
+export function resolveModelTimeout(value: unknown): number {
+  const timeout = Number(value)
+  if (!Number.isFinite(timeout) || timeout <= 0) return DEFAULT_MODEL_TIMEOUT_MS
+  return Math.min(MAX_MODEL_TIMEOUT_MS, Math.max(MIN_MODEL_TIMEOUT_MS, Math.round(timeout)))
+}
+
 export const other: LLMInfo<other>['other'] = {
   value: {
     timeout: {
-      value: 18000,
+      value: DEFAULT_MODEL_TIMEOUT_MS,
       type: 'input',
       format: 'number',
-      desc: 'GPT请求的超时时间,超时后不会进行重试将跳过岗位,默认18000s / 30分钟',
+      config: {
+        min: MIN_MODEL_TIMEOUT_MS,
+        max: MAX_MODEL_TIMEOUT_MS,
+        step: 1000,
+      },
+      desc: '模型请求超时时间，单位毫秒；范围5秒到10分钟，默认120秒。超时后停止当前岗位，不会重试发送。',
     },
     // background: {
     //   value: false,

@@ -112,6 +112,10 @@ export interface LogData {
   aiGreetingA?: string
 }
 
+/** 详细诊断日志只允许使用标量摘要，调用方不得传入 Prompt、响应正文或凭据。 */
+export type DiagnosticValue = string | number | boolean | null | undefined
+export type DiagnosticDetails = Record<string, DiagnosticValue>
+
 type logState = 'info' | 'success' | 'warning' | 'danger'
 
 export interface Log {

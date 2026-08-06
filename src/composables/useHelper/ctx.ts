@@ -14,7 +14,7 @@ import { FormDataInput } from '@/types/formData'
 import { v2StorageKey } from '@/utils/namespace'
 
 import { initNetConf, NetConf } from './netConf'
-import { Log, JobData, LogData, ConfigAccordionItem, AlertItem } from './type'
+import { Log, JobData, LogData, ConfigAccordionItem, AlertItem, DiagnosticDetails } from './type'
 
 const logsStorageKey = v2StorageKey('logs')
 
@@ -38,6 +38,7 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   logs: {
     add: (job: JobData, err?: BossHelperError, logdata?: LogData, msg?: string) => void
     info: (title: string, message: string) => void
+    diagnostic: (title: string, details: DiagnosticDetails) => void
     clear: () => void
     value: Log[]
   }
@@ -75,6 +76,20 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
           state: 'info',
           state_name: '消息',
           message,
+          time: new Date().toISOString(),
+          data: undefined,
+        })
+        this._logs.value = this._logs.value.slice(-200)
+        void counter.storageSet(logsStorageKey, this._logs.value.slice(-200).map(sanitizeLog))
+      },
+      diagnostic: (title: string, details: DiagnosticDetails) => {
+        // 详细诊断开关只控制是否采集摘要，不会改变 sanitizeLog 的强制脱敏行为。
+        if (!this.conf.formData.diagnosticLogging.value) return
+        this._logs.value.push({
+          title,
+          state: 'info',
+          state_name: '诊断',
+          message: formatDiagnosticDetails(details),
           time: new Date().toISOString(),
           data: undefined,
         })
@@ -155,6 +170,26 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   async onJobCardClick(_key: string) {
     throw new Error('Method not implemented.')
   }
+}
+
+const diagnosticKeyPattern =
+  /^(event|agent|stage|timeoutMs|elapsedMs|errorKind|errorMessage|httpStatus|retries|phase)$/u
+const diagnosticSecretPattern =
+  /(bearer\s+[^\s]+|(?:sk|key|token)[-_][a-z0-9._-]{8,}|(?:api[_-]?key|authorization|cookie|password|secret)\s*[:=]\s*[^\s,;]+)/giu
+
+/** 将诊断字段限制为白名单并截断文本，避免“详细日志”绕过脱敏边界。 */
+function formatDiagnosticDetails(details: DiagnosticDetails): string {
+  const parts = Object.entries(details)
+    .filter(([key, value]) => diagnosticKeyPattern.test(key) && value !== undefined)
+    .slice(0, 12)
+    .map(([key, value]) => {
+      const text = String(value)
+        .replace(diagnosticSecretPattern, '[已隐藏凭据]')
+        .replace(/[\r\n]+/gu, ' ')
+        .slice(0, 120)
+      return `${key}=${text}`
+    })
+  return parts.join(' · ').slice(0, 500) || '无可展示诊断字段'
 }
 
 /** 仅保留日志展示所需字段，移除职位对象与 AI 原始问答中的敏感数据。 */
