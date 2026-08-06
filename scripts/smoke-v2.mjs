@@ -42,6 +42,18 @@ const filteringUtilsSource = readFileSync(
   resolve(root, 'src', 'composables', 'useApplying', 'utils.ts'),
   'utf8',
 )
+const chatModelSource = readFileSync(
+  resolve(root, 'src', 'composables', 'useModel', 'chatModel.ts'),
+  'utf8',
+)
+const modelCommonSource = readFileSync(
+  resolve(root, 'src', 'composables', 'useModel', 'common.ts'),
+  'utf8',
+)
+const contextSource = readFileSync(
+  resolve(root, 'src', 'composables', 'useHelper', 'ctx.ts'),
+  'utf8',
+)
 assert.ok(applyingSource.includes('autoDelivery.value'), '招呼任务缺少自动投递开关保护')
 assert.ok(bossSource.includes("publish('chat'"), '自动投递缺少 BOSS 聊天发送通道')
 assert.ok(
@@ -62,6 +74,12 @@ assert.ok(
 )
 assert.ok(deliverySource.includes('autoDelivery.value'), '岗位投递未受自动投递开关保护')
 assert.ok(filteringUtilsSource.includes('normalizeFilteringVerdict'), 'AI 结论归一化缺失')
+assert.ok(infoSource.includes('diagnosticLogging'), '缺少详细诊断日志配置')
+assert.ok(infoSource.includes('value: false'), '详细诊断日志默认值必须为 false')
+assert.ok(chatModelSource.includes('summarizeModelError'), '模型错误缺少安全分类')
+assert.ok(chatModelSource.includes('resolveModelTimeout'), '模型请求缺少统一超时解析')
+assert.ok(modelCommonSource.includes('DEFAULT_MODEL_TIMEOUT_MS = 120_000'), '模型默认超时未统一')
+assert.ok(contextSource.includes('formatDiagnosticDetails'), '诊断日志缺少白名单脱敏')
 
 const profile = JSON.parse(readFileSync(resolve(root, 'candidate-profile.example.json'), 'utf8'))
 for (const key of [
