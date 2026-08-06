@@ -18,7 +18,8 @@ function clearLogs() {
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <div class="text-sm text-gray-500">
-        只显示脱敏的任务阶段和错误原因，不保存 Prompt、模型响应或 Cookie。
+        默认只显示脱敏任务阶段和错误原因；开启“详细诊断日志”后会增加耗时、超时配置和错误分类，仍不保存
+        Prompt、模型响应或 Cookie。
       </div>
       <UButton size="sm" color="warning" variant="outline" @click="clearLogs">清空日志</UButton>
     </div>
