@@ -30,6 +30,8 @@ export interface FormData {
   customGreeting: FormDataInput
   /** 默认关闭；开启后才允许真实岗位投递和自动发送招呼语。 */
   autoDelivery: FormDataCheckbox
+  /** 默认关闭；开启后只记录受控的非敏感诊断摘要，强制保留凭据和聊天内容脱敏。 */
+  diagnosticLogging: FormDataCheckbox
   deliveryLimit: FormDataInputNumber
   greetingVariable: FormDataCheckbox
   activityFilter: FormDataCheckbox
