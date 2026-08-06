@@ -35,4 +35,11 @@
 - AI 筛选结论增加有限别名归一化（如 `pass`/`通过`），未知结论仍按人工复核处理；静态冒烟增加配置闸门和解析器断言。
 - 已更新 README、Windows 安装说明、CHANGELOG、冒烟报告和旧 `JobCard.vue` 文案，明确默认关闭与开启后的边界；未开启真实账号自动投递。
 - `npm run check`、`npm run lint`、`npm run build:chrome`、`npm run zip:chrome`、`npm run smoke:v2` 均通过；Lint 仅保留基线既有非阻断 warning。
-- 根目录交付包 `boss-helper-v2-0.6.0.zip` 已从最新 Chrome 构建复制，SHA256 为 `D98E8C80FA70BE9ABB00122A2BE310B00BA112D79DD226CA2D08BE4139E4D9C0`。
+- 根目录交付包 `boss-helper-v2-0.6.0.zip` 已从最新 Chrome 构建复制，SHA256 为 `20C97867ACF2AB52E12DD4F673113F01B3D00D887FAA5AE1F93552E9F1CE3FDF`。
+
+## 2026-08-06 模型超时与诊断日志
+
+- 定位到岗位 AI 筛选/招呼使用 AI SDK 流式请求，未配置模型超时时默认 60000ms；日志中的 `signal timed out` 属于模型流超时，不是 BOSS 投递接口超时。
+- 新增 `diagnosticLogging` 本地配置，默认关闭；开启后只记录 AI 阶段、耗时、超时配置和错误分类，诊断字段在白名单内再次截断/脱敏。
+- 将模型默认超时调整为 120000ms，允许范围 5000–600000ms；ChatModel 与 background 草稿请求共用解析函数，超时统一显示“模型请求超时（N秒）”。
+- `npm run check`、`npm run lint` 通过；Lint 仍只有基线既有非阻断 warning。当前 ZIP 需在本轮构建完成后重新生成，未进行真实账号或真实模型超时回归。
