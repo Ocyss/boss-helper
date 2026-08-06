@@ -33,3 +33,11 @@
 - 筛选页的“正在等待”文案原先只在识别成功时更新，识别失败会一直停留在等待状态；应改成明确的未识别/停用提示，保持 fail-closed。
 - 当前 BOSS 页面使用 `.page-jobs-main .expect-and-search` 与 `.page-jobs-main .filter-condition`，筛选区域在滚动/下拉后才稳定显示；页面顶部原生筛选仍可直接使用。V2 不搬运原生节点，仅在发现稳定属性时启用保存/恢复。
 - 当前截图状态为“已发现原生筛选但缺少稳定属性”，继续启用保存/恢复会造成假成功；新增定位按钮和只读条件摘要，让用户直接操作官方控件并看到当前条件。
+
+## 2026-08-06 AI 筛选与自动发送边界复核
+
+- 截图中的岗位状态为“待人工”、阶段为“AI筛选”，原因含“分数90/积极…”，说明任务在 AI 筛选节点以 `warn` 结束，尚未进入“岗位投递”节点；这不是招呼语发送接口返回失败。
+- `parseFiltering()` 目前仅把 `verdict === "accept"` 视为通过；模型返回明确的 `pass`/`通过` 等等价结论时会被误判为 `veto`，需要做有限别名归一化，未知值仍 fail-closed。
+- 用户明确要求增加一个自动投递选项；实现应默认关闭，关闭时仍停在人工确认，开启后才允许岗位投递与招呼语发送，并在界面显式标注高风险。构建/冒烟不得替用户开启或真实发送。
+- 自动发送沿用仓库已有 `GeekChatClientManager` 的 MQTT over WebSocket 通道和 protobuf 构造器，只在开关开启且招呼语合规时调用；默认路径不触发发送。
+- 当前实现不是 Playwright 或透明代理抓包：内容脚本在 BOSS 页面内运行，并通过 `fetch` 调用 BOSS `wapi`；聊天模块另有 MQTT over WebSocket 直连 `wss://ws6.zhipin.com/chatws`，未发现 Playwright、Puppeteer、Selenium、`webRequest` 或代理捕获权限。
