@@ -28,6 +28,8 @@ export interface FormData {
   salaryRange: FormSalaryRangeInput
   companySizeRange: FormDataRangeInput
   customGreeting: FormDataInput
+  /** 默认关闭；开启后才允许真实岗位投递和自动发送招呼语。 */
+  autoDelivery: FormDataCheckbox
   deliveryLimit: FormDataInputNumber
   greetingVariable: FormDataCheckbox
   activityFilter: FormDataCheckbox
