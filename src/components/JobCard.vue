@@ -97,8 +97,16 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
         >原因：{{ jobResult.msg || '任务未通过' }}</span
       >
     </div>
-    <div v-if="jobResult?.draft" class="job-draft" title="仅为草稿，不会自动发送">
-      招呼草稿：{{ jobResult.draft }}
+    <div
+      v-if="jobResult?.draft"
+      class="job-draft"
+      :title="
+        helper.conf.formData.autoDelivery.value
+          ? '自动投递模式：文本招呼语已发送'
+          : '仅为草稿，不会自动发送'
+      "
+    >
+      {{ helper.conf.formData.autoDelivery.value ? '招呼语：' : '招呼草稿：' }}{{ jobResult.draft }}
     </div>
     <div
       v-show="showDescription"

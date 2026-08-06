@@ -280,7 +280,13 @@ watch(
                     <p class="job-detail-text">{{ joinValues(job.welfareList) }}</p>
                   </div>
                   <div v-if="getJobResult(job)?.draft">
-                    <span class="job-detail-label">招呼草稿（未发送）</span>
+                    <span class="job-detail-label">
+                      {{
+                        helper.conf.formData.autoDelivery.value
+                          ? '招呼语（自动发送）'
+                          : '招呼草稿（未发送）'
+                      }}
+                    </span>
                     <p class="job-detail-text">{{ getJobResult(job)?.draft }}</p>
                   </div>
                 </div>
