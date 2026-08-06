@@ -430,7 +430,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
           }
         }
 
-        // V2 只生成草稿，禁止调用 BOSS 私有发送接口或触发发送按钮。
+        // 关闭自动投递时保留草稿；开启后才通过上下文发送能力触发真实消息。
         const draft = Array.isArray(msg)
           ? msg
               .filter((item) => item.type === 'text')
@@ -439,6 +439,14 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
               .join('\n')
           : String(msg ?? '').trim()
         if (!draft) return taskResult.skip('自定义招呼语为空，未生成草稿')
+        if (ctx.helper.conf.formData.autoDelivery.value) {
+          await ctx.helper.sendMessage(data, draft)
+          return {
+            status: 'success',
+            msg: '自定义招呼语已自动发送',
+            draft,
+          }
+        }
         return {
           status: 'success',
           msg: '自定义招呼语草稿已生成（未发送）',
@@ -471,7 +479,15 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         ) {
           return taskResult.skip('AI招呼语无效，已跳过发送')
         }
-        // V2 只保留当前任务内的草稿，用户需要自行复制或人工发送。
+        if (ctx.helper.conf.formData.autoDelivery.value) {
+          await ctx.helper.sendMessage(data, normalized)
+          return {
+            status: 'success',
+            msg: 'AI招呼语已自动发送',
+            draft: normalized,
+          }
+        }
+        // 关闭自动投递时只保留当前任务内的草稿，用户需要自行复制或人工发送。
         return {
           status: 'success',
           msg: 'AI招呼语草稿已生成（未发送）',

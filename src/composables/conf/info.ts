@@ -51,6 +51,11 @@ export const formInfoData: Record<string, any> = {
     'data-help':
       '因为boss不支持将自定义的招呼语设置为默认招呼语。开启表示发送boss默认的招呼语后还会发送自定义招呼语',
   },
+  autoDelivery: {
+    label: '自动投递（含招呼语）',
+    'data-help':
+      '高风险开关，默认关闭；开启后筛选通过的岗位会真实投递，并通过 BOSS 聊天通道自动发送合规招呼语。关闭时只停在待人工确认。',
+  },
   greetingVariable: {
     label: '招呼语变量',
     'data-help': '使用mitem模板引擎来对招呼语进行渲染;',
@@ -83,7 +88,7 @@ export const formInfoData: Record<string, any> = {
   aiGreeting: {
     label: 'AI招呼语',
     'data-help':
-      '即使前面招呼语开了也不会发送，只会发送AI生成的招呼语，让gpt来打招呼真是太棒了，毕竟开场白很重要。',
+      '只有开启“自动投递（含招呼语）”后才会自动发送合规 AI 招呼语；否则不会进入真实投递流程。',
   },
   aiFiltering: {
     label: 'AI过滤',
@@ -184,6 +189,10 @@ export const defaultFormData: FormData = {
   customGreeting: {
     value: '',
     enable: false,
+  },
+  autoDelivery: {
+    // 默认关闭，避免导入旧配置后意外触发真实投递或消息发送。
+    value: false,
   },
   deliveryLimit: {
     value: 120,

@@ -37,6 +37,46 @@ export function rangeMatch(rangeStr: string, form: FormDataRange): boolean {
   }
 }
 
+type FilteringVerdict = 'accept' | 'review' | 'reject'
+
+/**
+ * 将模型明确给出的有限结论别名归一化；未知值统一按人工复核处理，避免放宽通过条件。
+ * @param value 模型返回的 verdict 字段
+ * @returns 内部统一结论
+ */
+function normalizeFilteringVerdict(value: unknown): FilteringVerdict {
+  const verdict = (typeof value === 'string' ? value : '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/gu, '')
+  if (
+    [
+      'accept',
+      'accepted',
+      'approve',
+      'approved',
+      'pass',
+      'passed',
+      'yes',
+      '通过',
+      '接受',
+      '同意',
+      '推荐',
+    ].includes(verdict)
+  ) {
+    return 'accept'
+  }
+  if (['reject', 'rejected', 'fail', 'failed', 'no', '否决', '拒绝', '不通过'].includes(verdict)) {
+    return 'reject'
+  }
+  return 'review'
+}
+
+/**
+ * 解析 AI 筛选结构化结果并生成脱敏原因；证据或结论不明确时 fail-closed。
+ * @param content 模型返回的 JSON 文本
+ * @returns 评分、结论和用户可见的短原因
+ */
 export function parseFiltering(content: string) {
   interface Item {
     reason: string
@@ -99,7 +139,7 @@ export function parseFiltering(content: string) {
   }
 
   const rating = Number(res.finalScore)
-  const verdict = String(res.verdict).toLowerCase()
+  const verdict = normalizeFilteringVerdict(res.verdict)
   // 只有明确 accept 且未触发 veto 才允许进入投递流程。
   const veto = res.veto === true || verdict !== 'accept'
 
