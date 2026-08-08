@@ -42,6 +42,12 @@ export interface WorkflowState {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>
   }
+  /** 记录文本招呼和图片简历是否已发送，避免失败重跑时重复发送。 */
+  delivery?: {
+    jobPublished?: boolean
+    greetingSent?: boolean
+    resumeImageSent?: boolean
+  }
 }
 
 export interface WorkflowData<T, S> {
@@ -59,6 +65,8 @@ export type TaskResult = {
   id?: string
   /** AI 筛选结构化分数，仅保存数值元数据，不保存模型原文。 */
   aiScore?: number
+  /** 仅岗位投递节点使用，标记本次是否真正调用并确认投递成功。 */
+  delivered?: boolean
   /** 招呼语正文只保留在岗位状态内；关闭自动投递时供人工确认，不写入日志或统计。 */
   draft?: string
   /** 当前任务状态更新时间，仅用于岗位列表定位问题。 */

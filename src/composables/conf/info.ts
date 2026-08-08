@@ -56,10 +56,20 @@ export const formInfoData: Record<string, any> = {
     'data-help':
       '高风险开关，默认关闭；开启后筛选通过的岗位会真实投递，并通过 BOSS 聊天通道自动发送合规招呼语。关闭时只停在待人工确认。',
   },
+  resumeImage: {
+    label: '招呼语后发送图片简历',
+    'data-help':
+      '高风险开关，默认关闭；需要先上传图片并开启自动投递。招呼语成功后通过 BOSS 图片消息发送，失败时停止后续岗位。',
+  },
   diagnosticLogging: {
     label: '详细诊断日志（仍脱敏）',
     'data-help':
       '默认关闭；开启后记录 AI 请求阶段、耗时、超时配置和错误分类，仍强制隐藏 API 密钥、Cookie、Prompt、模型响应和聊天全文。',
+  },
+  batchPause: {
+    label: '投递批次长等待',
+    'data-help':
+      '默认关闭；每完成随机 X～Y 次实际投递后，等待随机 1～4 分钟再继续。仅是节奏控制，不保证规避平台风控。',
   },
   greetingVariable: {
     label: '招呼语变量',
@@ -203,6 +213,13 @@ export const defaultFormData: FormData = {
     // 默认关闭，避免额外采集诊断摘要；开启也不会关闭强制脱敏。
     value: false,
   },
+  resumeImage: {
+    // 图片二进制保存在扩展 IndexedDB，配置只保存本地引用；默认不发送。
+    enable: false,
+    image: '',
+    name: '',
+    type: '',
+  },
   deliveryLimit: {
     value: 120,
   },
@@ -344,11 +361,19 @@ finalScore 必须是有限数字；无法确认岗位事实、画像事实或证
   delayDeliveryInterval: 5,
   delayDeliveryPageNext: 60,
   delayMessageSending: 2,
+  batchPause: {
+    // 保守默认关闭，避免升级后改变现有投递节奏。
+    enable: false,
+    afterMin: 8,
+    afterMax: 12,
+    waitMinSeconds: 60,
+    waitMaxSeconds: 240,
+  },
   delayRanges: {
     starts: [3, 3, false],
     interval: [5, 5, false],
     pageNext: [60, 60, false],
     message: [2, 2, false],
   },
-  version: '20260718',
+  version: '20260808',
 }

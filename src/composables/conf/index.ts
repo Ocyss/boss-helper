@@ -131,6 +131,28 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
       return from
     },
   ],
+  [
+    '20260808',
+    (from) => {
+      // 新增高风险功能默认关闭；旧配置即使没有字段也不能意外启用图片发送。
+      if (!from.batchPause || typeof from.batchPause !== 'object') {
+        from.batchPause = { ...defaultFormData.batchPause }
+      }
+      if (!from.resumeImage || typeof from.resumeImage !== 'object') {
+        from.resumeImage = { ...defaultFormData.resumeImage }
+      } else {
+        from.resumeImage = {
+          ...defaultFormData.resumeImage,
+          ...from.resumeImage,
+          enable: false,
+          image: '',
+          name: '',
+          type: '',
+        }
+      }
+      return from
+    },
+  ],
 ]
 
 export const useConf = () => {
@@ -182,6 +204,36 @@ export const useConf = () => {
           false,
         ],
       }
+    }
+    // 统一限制批次长等待配置，避免导入异常数字导致无等待或超长等待。
+    const rawBatchPause = source.batchPause
+    const batchPause =
+      rawBatchPause && typeof rawBatchPause === 'object'
+        ? rawBatchPause
+        : defaultFormData.batchPause
+    const asPositiveInt = (value: unknown, fallback: number) => {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? Math.max(1, Math.round(parsed)) : fallback
+    }
+    const afterMin = asPositiveInt(batchPause.afterMin, defaultFormData.batchPause.afterMin)
+    const afterMax = Math.max(
+      afterMin,
+      asPositiveInt(batchPause.afterMax, defaultFormData.batchPause.afterMax),
+    )
+    const waitMinSeconds = asPositiveInt(
+      batchPause.waitMinSeconds,
+      defaultFormData.batchPause.waitMinSeconds,
+    )
+    const waitMaxSeconds = Math.max(
+      waitMinSeconds,
+      asPositiveInt(batchPause.waitMaxSeconds, defaultFormData.batchPause.waitMaxSeconds),
+    )
+    source.batchPause = {
+      enable: batchPause.enable === true,
+      afterMin,
+      afterMax,
+      waitMinSeconds,
+      waitMaxSeconds,
     }
     return from
   }
@@ -248,12 +300,16 @@ export const useConf = () => {
 
   async function confExport() {
     const data = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
+    // 图片二进制位于本机 IndexedDB，导出只保留不发送的空占位，避免把个人简历带出本机。
+    data.resumeImage = { ...defaultFormData.resumeImage }
     exportJson(data, '打招呼配置')
   }
 
   async function confImport() {
     let jsonData = await importJson<Partial<FormData>>()
     jsonData = (await formDataHandler(jsonData)) ?? jsonData
+    // 导入文件不能携带本机 IndexedDB 图片引用；用户必须在当前设备重新选择图片。
+    jsonData.resumeImage = { ...defaultFormData.resumeImage }
     deepmerge(formData, jsonData, { clone: false })
     toast.add({
       title: '导入成功, 切记要手动保存哦',
@@ -274,6 +330,8 @@ export const useConf = () => {
         'notification',
         'useCache',
         'delay',
+        'batchPause',
+        'resumeImage',
       ].reduce(
         (result, key) => {
           result[key] = defaultFormData[key as keyof FormData]

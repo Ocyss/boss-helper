@@ -4,10 +4,10 @@ import { defineUnlistedScript } from '#imports'
 import { appearanceConf, useConf } from '@/composables/conf'
 import { createLazyObject, isInitialized, WorkflowData } from '@/composables/useApplying/type'
 import { HelperContext, JobData } from '@/composables/useHelper'
-import { AlertItem, ConfigAccordionItem } from '@/composables/useHelper/type'
+import { AlertItem, ConfigAccordionItem, ResumeImageSendResult } from '@/composables/useHelper/type'
 import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
 import { run } from '@/index'
-import { initCounter } from '@/message'
+import { counter, initCounter } from '@/message'
 import { FormDataInput } from '@/types/formData'
 import { delayWithJitter } from '@/utils'
 import elmGetter from '@/utils/elmGetter'
@@ -16,6 +16,7 @@ import { BOSS_HELPER_V2_DOM } from '@/utils/namespace'
 
 import { GeekChatClientManager } from './chat'
 import { BoosJobData, bossWorkflow } from './delivery'
+import { uploadImage } from './requests'
 import { BossZpDetailData, BossZpJobItemData } from './types'
 
 function removeAd() {
@@ -139,6 +140,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   _clickJobCardAction = (_: BossZpJobItemData) => {}
   _jobList: Ref<BossZpJobItemData[]>
   _jobDataMap: Map<string, BoosJobData>
+  /** 为文本和图片消息分配单调递增 clientMid，避免同毫秒重复消息标识。 */
+  private messageSequence = Date.now()
 
   rootVue: any = null
   jobMaps: Map<string, WorkflowData<BoosJobData, {}>>
@@ -215,6 +218,48 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     await this.workflow.executeAll(this._jobDataMap)
   }
 
+  /** 为每条 BOSS 聊天消息分配单调递增的临时 ID。 */
+  private nextClientMid(): number {
+    this.messageSequence = Math.max(this.messageSequence + 1, Date.now())
+    return this.messageSequence
+  }
+
+  /** 构造当前招聘者上下文；缺少稳定字段时立即 fail-closed。 */
+  private getMessageStanza(data: WorkflowData<BoosJobData, {}>) {
+    const boss = data.rawData.boss?.data
+    const bossInfo = data.rawData.detail?.bossInfo
+    const job = data.rawData.jobitem
+    if (!boss?.bossId || !job?.encryptBossId || !bossInfo) {
+      throw new Error('招聘者上下文不完整，已停止自动发送')
+    }
+    return {
+      uid: Number(boss.bossId),
+      friendSource: Number(bossInfo.bossSource ?? boss.bossSource ?? 0),
+      encryptUid: job.encryptBossId,
+      encryptGid: '',
+      clientMid: this.nextClientMid(),
+    }
+  }
+
+  /** 发布单条 MQTT 消息并等待确认；超时或失败不重发，避免重复触达招聘者。 */
+  private async publishChatMessage(encoded: any, label: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const timer = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        reject(new Error(`BOSS ${label}发送确认超时`))
+      }, 10_000)
+      this.geek.client.publish('chat', encoded, { qos: 1, retain: true }, (error) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timer)
+        if (error) reject(new Error(`BOSS ${label}发送失败`))
+        else resolve()
+      })
+    })
+  }
+
   /**
    * 按用户显式开启的高风险开关发送文本招呼语；关闭开关时绝不触发外部发送。
    * 发送使用仓库已有的 BOSS MQTT/protobuf 通道，不记录消息正文、令牌或完整响应。
@@ -225,6 +270,10 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
     if (!this.geek?.client || !this.geek.msgBuilder) {
       throw new Error('BOSS 聊天通道未就绪，已停止自动发送')
+    }
+    if (data.state.delivery?.greetingSent) {
+      logger.info('跳过重复招呼发送', { jobKey: data.jobData.key })
+      return
     }
 
     const items =
@@ -237,7 +286,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       (item): item is Extract<(typeof items)[number], { type: 'text' }> => item.type === 'text',
     )
     if (textItems.length !== items.length) {
-      throw new Error('自动投递目前只支持文本招呼语，图片请人工确认')
+      throw new Error('自动投递只支持文本招呼语，图片请使用图片简历配置')
     }
     const text = textItems
       .map((item) => item.content.trim())
@@ -248,44 +297,70 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       throw new Error('招呼语为空，已停止自动发送')
     }
 
-    const boss = data.rawData.boss?.data
-    const bossInfo = data.rawData.detail?.bossInfo
-    const job = data.rawData.jobitem
-    if (!boss?.bossId || !job?.encryptBossId || !bossInfo) {
-      throw new Error('招聘者上下文不完整，已停止自动发送')
-    }
-
     // 使用消息等待范围，避免每条消息以完全固定节奏发送。
     await delayWithJitter(
       this.conf.formData.delayRanges?.message ?? this.conf.formData.delayMessageSending,
     )
-    const stanza = {
-      uid: Number(boss.bossId),
-      friendSource: Number(bossInfo.bossSource ?? boss.bossSource ?? 0),
-      encryptUid: job.encryptBossId,
-      encryptGid: '',
-      clientMid: Date.now(),
-    }
-    const message = this.geek.msgBuilder.createTextMessage(stanza, { text })
-    const encoded = this.geek.msgBuilder.encode(message)
-
-    // 等待 MQTT 发布回调，超时或连接错误均 fail-closed，不重发同一草稿。
-    await new Promise<void>((resolve, reject) => {
-      let settled = false
-      const timer = window.setTimeout(() => {
-        if (settled) return
-        settled = true
-        reject(new Error('BOSS 聊天发送确认超时'))
-      }, 10_000)
-      this.geek.client.publish('chat', encoded, { qos: 1, retain: true }, (error) => {
-        if (settled) return
-        settled = true
-        window.clearTimeout(timer)
-        if (error) reject(new Error(`BOSS 聊天发送失败: ${error.message}`))
-        else resolve()
-      })
-    })
+    const message = this.geek.msgBuilder.createTextMessage(this.getMessageStanza(data), { text })
+    await this.publishChatMessage(this.geek.msgBuilder.encode(message), '招呼')
+    data.state.delivery = { ...(data.state.delivery ?? {}), greetingSent: true }
     logger.info('自动招呼发送成功', { jobKey: data.jobData.key })
+  }
+
+  /**
+   * 招呼语成功后发送用户配置的图片简历；图片二进制从本机 IndexedDB 读取，失败返回安全摘要。
+   * 该方法不读取或记录 Cookie、图片正文、上传响应或聊天内容。
+   */
+  async sendResumeImage(data: WorkflowData<BoosJobData, {}>): Promise<ResumeImageSendResult> {
+    const config = this.conf.formData.resumeImage
+    if (!config.enable) return { sent: false, reason: '图片简历功能未开启' }
+    if (!this.conf.formData.autoDelivery.value) {
+      return { sent: false, reason: '自动投递未开启，图片简历保持人工确认' }
+    }
+    if (data.state.delivery?.resumeImageSent) {
+      return { sent: true, reason: '图片简历已发送' }
+    }
+    if (!config.image) {
+      return { sent: false, reason: '未上传图片简历，请先在配置中上传', stop: true }
+    }
+    if (!this.geek?.client || !this.geek.msgBuilder) {
+      return { sent: false, reason: 'BOSS 聊天通道未就绪', stop: true }
+    }
+    // 图片上传沿用 BOSS 详情接口返回的会话安全标识，避免把列表卡片标识误用于聊天上传。
+    const securityId = data.rawData.boss?.data.securityId
+    if (!securityId) {
+      return { sent: false, reason: '岗位安全标识缺失，无法上传图片', stop: true }
+    }
+
+    try {
+      const stored = await counter.getImage(config.image)
+      if (!stored.success) {
+        return { sent: false, reason: '图片简历本机副本不存在，请重新上传', stop: true }
+      }
+      const file = new File([new Uint8Array(stored.buffer).buffer], config.name || stored.name, {
+        type: config.type || stored.type,
+      })
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+        return { sent: false, reason: '图片格式不受支持，请重新上传 PNG/JPEG/WebP', stop: true }
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        return { sent: false, reason: '图片超过 2 MiB，请压缩后重新上传', stop: true }
+      }
+
+      // 图片上传与消息发送是两个不可回滚的 BOSS 操作；发送失败后停止，不自动重试。
+      const uploaded = await uploadImage(securityId, file)
+      const image = this.geek.msgBuilder.createImageMessage(this.getMessageStanza(data), {
+        // BOSS 现有图片消息示例使用 iid=0；上传接口不一定返回 iid，因此保持兼容占位。
+        content: { iid: uploaded.iid ?? 0, ...uploaded },
+      })
+      await this.publishChatMessage(this.geek.msgBuilder.encode(image), '图片简历')
+      data.state.delivery = { ...(data.state.delivery ?? {}), resumeImageSent: true }
+      logger.info('自动图片简历发送成功', { jobKey: data.jobData.key })
+      return { sent: true }
+    } catch {
+      logger.error('自动图片简历发送失败', { jobKey: data.jobData.key })
+      return { sent: false, reason: '图片简历发送失败，已停止后续岗位', stop: true }
+    }
   }
 
   async onMount(path?: string) {
@@ -468,6 +543,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                 ],
               },
               { type: 'checkbox', key: 'autoDelivery' },
+              { type: 'resumeImage', key: 'resumeImage' },
               { type: 'customGreeting', key: 'customGreeting' },
             ],
           },
@@ -538,6 +614,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                       disable: true,
                     },
                   },
+                  { type: 'batchPause', key: 'batchPause' },
                 ],
               },
             ],

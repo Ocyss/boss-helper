@@ -43,3 +43,13 @@
 - 新增 `diagnosticLogging` 本地配置，默认关闭；开启后只记录 AI 阶段、耗时、超时配置和错误分类，诊断字段在白名单内再次截断/脱敏。
 - 将模型默认超时调整为 120000ms，允许范围 5000–600000ms；ChatModel 与 background 草稿请求共用解析函数，超时统一显示“模型请求超时（N秒）”。
 - `npm run check`、`npm run lint` 通过；Lint 仍只有基线既有非阻断 warning。当前 ZIP 需在本轮构建完成后重新生成，未进行真实账号或真实模型超时回归。
+
+## 2026-08-08 投递批次长等待与图片简历需求
+
+- 用户提供图片简历，要求增加 X～Y 次投递后随机 1–4 分钟长等待，以及招呼语后可配置发送图片简历。
+- 本阶段先审计现有工作流、配置迁移、图片上传和 MQTT/protobuf 发送链路；新功能默认关闭，禁止在冒烟中真实批量投递或发送简历。
+- 已增加 `batchPause` 配置：默认关闭，X～Y（默认 8～12）次 BOSS 明确成功投递后，随机等待 60～240 秒；计数不包含重复、筛选失败或待人工任务，停止、每日上限和限流条件优先。
+- 已增加 `resumeImage` 配置页：PNG/JPEG/WebP、最大 2 MiB；图片二进制进入本机 IndexedDB，配置只保存本地引用，导入/导出、AI 请求和日志均不携带图片。
+- 已将图片发送接入“岗位投递成功 → 文本招呼语成功 → 图片上传/发送”的顺序；图片发送失败不重试并停止后续岗位，同一工作流使用状态去重，默认开关保持关闭。
+- `npm run check`、`npm run lint`、`npx oxfmt --check`、`git diff --check`、`npm run build:chrome`、`npm run zip:chrome`、`npm run smoke:v2` 和 SHA256 校验均通过；构建仅保留 Nuxt UI 命名冲突与 `EMPTY_IMPORT_META` 非阻断 warning。
+- 最终交付包 `boss-helper-v2-0.6.0.zip` SHA256 为 `FD7113C610BD2BECAA614AB6E634B08D7A8BCD8E4C6F9E98276D97BB1395FF3A`；未使用真实账号进行批量投递、招呼或图片简历发送。

@@ -139,7 +139,15 @@ export type ConfigItem =
       type:
         | 'select'
         | 'checkbox'
-        | ('salaryRange' | 'companySizeRange' | 'customGreeting' | 'address' | 'appearance')
+        | (
+            | 'salaryRange'
+            | 'companySizeRange'
+            | 'customGreeting'
+            | 'resumeImage'
+            | 'batchPause'
+            | 'address'
+            | 'appearance'
+          )
     }
   | AlertItem
   | {
@@ -156,4 +164,11 @@ export type ConfigItem =
 
 export interface ConfigAccordionItem extends AccordionItem {
   items?: (ConfigItem | false)[]
+}
+
+/** 图片简历发送结果；失败时由工作流决定是否停止后续岗位。 */
+export interface ResumeImageSendResult {
+  sent: boolean
+  reason?: string
+  stop?: boolean
 }

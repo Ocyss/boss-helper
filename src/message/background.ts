@@ -101,6 +101,14 @@ export class BackgroundCounter {
     await db.put(STORE_NAME, file, key)
     return { success: true, key }
   }
+
+  /** 删除本机 IndexedDB 中的图片，避免清空配置后继续保留个人简历副本。 */
+  async removeImage(key: string): Promise<boolean> {
+    if (!key) return false
+    const db = await initDB()
+    await db.delete(STORE_NAME, key)
+    return true
+  }
 }
 
 interface MessageMeta {

@@ -332,7 +332,7 @@ export class ProtoBufferMessage {
     e: MessageStanza,
     t: {
       content: {
-        iid: number
+        iid?: number
         tinyImage: { url: string; width: number; height: number }
         originImage: { url: string; width: number; height: number }
       }

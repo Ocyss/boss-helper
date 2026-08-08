@@ -441,6 +441,21 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         if (!draft) return taskResult.skip('自定义招呼语为空，未生成草稿')
         if (ctx.helper.conf.formData.autoDelivery.value) {
           await ctx.helper.sendMessage(data, draft)
+          if (ctx.helper.conf.formData.resumeImage.enable) {
+            const resumeResult = await ctx.helper.sendResumeImage(data)
+            if (!resumeResult.sent) {
+              if (resumeResult.stop) ctx.helper.stop()
+              return taskResult.skip(
+                `招呼语已发送；${resumeResult.reason ?? '图片简历未发送'}`,
+                'warn',
+              )
+            }
+            return {
+              status: 'success',
+              msg: '自定义招呼语和图片简历已自动发送',
+              draft,
+            }
+          }
           return {
             status: 'success',
             msg: '自定义招呼语已自动发送',
@@ -481,6 +496,21 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         }
         if (ctx.helper.conf.formData.autoDelivery.value) {
           await ctx.helper.sendMessage(data, normalized)
+          if (ctx.helper.conf.formData.resumeImage.enable) {
+            const resumeResult = await ctx.helper.sendResumeImage(data)
+            if (!resumeResult.sent) {
+              if (resumeResult.stop) ctx.helper.stop()
+              return taskResult.skip(
+                `招呼语已发送；${resumeResult.reason ?? '图片简历未发送'}`,
+                'warn',
+              )
+            }
+            return {
+              status: 'success',
+              msg: 'AI招呼语和图片简历已自动发送',
+              draft: normalized,
+            }
+          }
           return {
             status: 'success',
             msg: 'AI招呼语已自动发送',

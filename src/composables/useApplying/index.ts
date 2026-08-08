@@ -86,6 +86,7 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
         msg: [acc.msg, r.msg].filter(Boolean).join('\n') || undefined,
         isCache: acc.isCache || r.isCache,
         aiScore: r.aiScore ?? acc.aiScore,
+        delivered: r.delivered ?? acc.delivered,
         draft: r.draft ?? acc.draft,
         updatedAt: r.updatedAt ?? acc.updatedAt,
       }
@@ -258,6 +259,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     const isStop = () => status.value === 'stop'
     try {
       let skipPipeline = false
+      let published = false
       for (const t of pipeline.value) {
         let res: void | TaskResult = undefined
         try {
@@ -351,7 +353,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
                 )
               }
             }
-            if (t.id === '岗位投递' && res.status === 'success') {
+            if (t.id === '岗位投递' && res.delivered === true) {
+              published = true
               void helper.statistics.recordEvent('publish_success', data.jobData.key)
             }
             if (t.label === '打招呼' && res.status === 'success') {
@@ -372,6 +375,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         })
         helper.logs.info(data.jobData.jobName, '投递流程完成')
       }
+      return { published }
     } catch (e) {
       consecutiveErrors += 1
       const cooldownMs = Math.min(60_000, 5_000 * 2 ** Math.max(0, consecutiveErrors - 1))
@@ -392,6 +396,19 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     errorMessage.value = null
     status.value = 'running'
     const isStop = () => status.value === 'stop'
+    // 只统计本次工作流实际完成“岗位投递”的成功次数，避免异步统计写入滞后影响长等待和每日上限。
+    const startingSuccess = helper.statistics.todayData.success
+    let sessionPublished = 0
+    let publishedSinceLongPause = 0
+    const pauseConfig = helper.conf.formData.batchPause
+    const pauseEnabled = pauseConfig.enable === true
+    const randomInteger = (min: number, max: number) =>
+      Math.floor(min + Math.random() * (Math.max(min, max) - min + 1))
+    const nextPauseAfter = () =>
+      randomInteger(Math.max(1, pauseConfig.afterMin), Math.max(1, pauseConfig.afterMax))
+    let pauseTarget = pauseEnabled ? nextPauseAfter() : Number.POSITIVE_INFINITY
+    const successfulToday = () =>
+      Math.max(helper.statistics.todayData.success, startingSuccess + sessionPublished)
 
     try {
       while (status.value === 'running') {
@@ -423,7 +440,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           if (cooldownUntil > Date.now()) {
             await delayWithJitter((cooldownUntil - Date.now()) / 1000, isStop, 0)
           }
-          if (helper.statistics.todayData.success >= helper.conf.formData.deliveryLimit.value) {
+          if (successfulToday() >= helper.conf.formData.deliveryLimit.value) {
             stepMsg = '达到本地设置的每日投递上限'
             status.value = 'stop'
             break
@@ -439,12 +456,37 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           }
           helper.jobMaps.set(jobData.key, data)
           helper.currentJob.value = jobData.key
-          await execute(data)
-          await delayWithJitter(
-            helper.conf.formData.delayRanges?.interval ??
-              helper.conf.formData.delayDeliveryInterval,
-            isStop,
-          )
+          const execution = await execute(data)
+          stateMaps.value.set(jobData.key, data.state)
+          let longPauseTriggered = false
+          if (execution?.published) {
+            sessionPublished += 1
+            publishedSinceLongPause += 1
+            if (successfulToday() >= helper.conf.formData.deliveryLimit.value) {
+              stepMsg = '达到本地设置的每日投递上限'
+              status.value = 'stop'
+            } else if (pauseEnabled && publishedSinceLongPause >= pauseTarget && !isStop()) {
+              longPauseTriggered = true
+              helper.logs.info(
+                `${jobData.jobName} · 批次长等待`,
+                `已完成${publishedSinceLongPause}次实际投递，随机等待${pauseConfig.waitMinSeconds}-${pauseConfig.waitMaxSeconds}秒`,
+              )
+              await delayWithJitter(
+                [pauseConfig.waitMinSeconds, pauseConfig.waitMaxSeconds],
+                isStop,
+                0,
+              )
+              publishedSinceLongPause = 0
+              pauseTarget = nextPauseAfter()
+            }
+          }
+          if (!longPauseTriggered && !isStop()) {
+            await delayWithJitter(
+              helper.conf.formData.delayRanges?.interval ??
+                helper.conf.formData.delayDeliveryInterval,
+              isStop,
+            )
+          }
         }
         if (isStop()) break
         const hasMore = await helper.loadMoreJob(

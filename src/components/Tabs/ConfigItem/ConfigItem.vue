@@ -5,8 +5,10 @@ import { type ConfigItem } from '@/composables/useHelper/type'
 
 import Address from './Address.vue'
 import Appearance from './Appearance.vue'
+import BatchPause from './BatchPause.vue'
 import CustomGreeting from './CustomGreeting.vue'
 import SalaryRangeComponent from './Form/SalaryRange.vue'
+import ResumeImage from './ResumeImage.vue'
 import SalaryRange from './SalaryRange.vue'
 
 const props = defineProps<{
@@ -20,6 +22,8 @@ const conf = useConf()
 <template>
   <Alert v-if="item.type === 'alert'" v-bind="item" />
   <CustomGreeting v-else-if="item.type === 'customGreeting'" />
+  <ResumeImage v-else-if="item.type === 'resumeImage'" />
+  <BatchPause v-else-if="item.type === 'batchPause'" />
   <Address v-else-if="item.type === 'address'" />
   <Appearance v-else-if="item.type === 'appearance'" />
   <FormItem

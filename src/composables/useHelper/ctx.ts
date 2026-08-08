@@ -14,7 +14,15 @@ import { FormDataInput } from '@/types/formData'
 import { v2StorageKey } from '@/utils/namespace'
 
 import { initNetConf, NetConf } from './netConf'
-import { Log, JobData, LogData, ConfigAccordionItem, AlertItem, DiagnosticDetails } from './type'
+import {
+  Log,
+  JobData,
+  LogData,
+  ConfigAccordionItem,
+  AlertItem,
+  DiagnosticDetails,
+  ResumeImageSendResult,
+} from './type'
 
 const logsStorageKey = v2StorageKey('logs')
 
@@ -114,6 +122,8 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
 
   abstract start(): Promise<void>
   abstract sendMessage(data: WorkflowData<T, S>, msg: FormDataInput['value']): Promise<void>
+  /** 发送已配置的图片简历；实现必须在失败时返回安全摘要，不泄露原始响应。 */
+  abstract sendResumeImage(data: WorkflowData<T, S>): Promise<ResumeImageSendResult>
   abstract get uid(): string
   abstract get userInfo(): {
     id: string

@@ -54,6 +54,11 @@ export class ContentCounter implements BackgroundCounter {
     return this.background.setImage(...args)
   }
 
+  /** 将图片删除请求转发到 background 的 IndexedDB。 */
+  async removeImage(...args: Parameters<BackgroundCounter['removeImage']>) {
+    return this.background.removeImage(...args)
+  }
+
   async storageGet<T>(key: string, defaultValue: T): Promise<T>
   async storageGet<T>(key: string): Promise<T | null>
   async storageGet<T>(key: string, defaultValue?: T): Promise<T | null> {

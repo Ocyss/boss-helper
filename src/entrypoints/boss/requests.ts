@@ -18,6 +18,13 @@ const toast = useToast()
 export const sameCompanyKey = v2StorageKey('same-company')
 export const sameHrKey = v2StorageKey('same-hr')
 
+/** BOSS 图片上传后可直接放入 protobuf 图片消息的最小结构。 */
+export interface UploadedImage {
+  iid?: number
+  tinyImage: { url: string; width: number; height: number }
+  originImage: { url: string; width: number; height: number }
+}
+
 export async function getJobDetail(params: { securityId: string; lid: string }): Promise<{
   code: number
   message: string
@@ -168,7 +175,8 @@ export async function getBossData(
   }
 }
 
-export async function uploadImage(securityId: string, file: File) {
+/** 上传图片到当前招聘会话；不记录图片内容、令牌或完整上传响应。 */
+export async function uploadImage(securityId: string, file: File): Promise<UploadedImage> {
   const toast = useToast()
   const token = window?.Cookie.get('bst')
   if (!token) {

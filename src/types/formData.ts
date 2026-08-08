@@ -32,6 +32,8 @@ export interface FormData {
   autoDelivery: FormDataCheckbox
   /** 默认关闭；开启后只记录受控的非敏感诊断摘要，强制保留凭据和聊天内容脱敏。 */
   diagnosticLogging: FormDataCheckbox
+  /** 默认关闭；开启后在招呼语发送成功后发送本机已上传的图片简历。 */
+  resumeImage: FormDataResumeImage
   deliveryLimit: FormDataInputNumber
   greetingVariable: FormDataCheckbox
   activityFilter: FormDataCheckbox
@@ -61,6 +63,8 @@ export interface FormData {
   delayDeliveryInterval: number
   delayDeliveryPageNext: number
   delayMessageSending: number
+  /** 投递批次长等待配置，默认关闭，时间单位均为秒。 */
+  batchPause: FormDataBatchPause
   /** 延迟范围 [最小秒数, 最大秒数]；旧版固定数字会在加载时迁移为等值范围。 */
   delayRanges?: {
     starts: FormDataRange
@@ -110,6 +114,23 @@ export interface FormSalaryRangeInput {
 
 export interface FormDataInputNumber {
   value: number
+}
+
+/** X～Y 次实际投递后，进入 min～max 秒的有界随机长等待。 */
+export interface FormDataBatchPause {
+  enable: boolean
+  afterMin: number
+  afterMax: number
+  waitMinSeconds: number
+  waitMaxSeconds: number
+}
+
+/** 图片简历只在本机 IndexedDB 保存二进制，配置中仅保存引用元数据。 */
+export interface FormDataResumeImage {
+  enable: boolean
+  image: string
+  name: string
+  type: string
 }
 
 export interface FormDataCheckbox {

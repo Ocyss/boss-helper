@@ -29,6 +29,10 @@ const applyingSource = readFileSync(
   resolve(root, 'src', 'composables', 'useApplying', 'handles.ts'),
   'utf8',
 )
+const applyingIndexSource = readFileSync(
+  resolve(root, 'src', 'composables', 'useApplying', 'index.ts'),
+  'utf8',
+)
 const bossSource = readFileSync(resolve(root, 'src', 'entrypoints', 'boss', 'index.ts'), 'utf8')
 const appSource = readFileSync(resolve(root, 'src', 'App.vue'), 'utf8')
 const filterSource = readFileSync(resolve(root, 'src', 'components', 'Tabs', 'Filter.vue'), 'utf8')
@@ -54,6 +58,20 @@ const contextSource = readFileSync(
   resolve(root, 'src', 'composables', 'useHelper', 'ctx.ts'),
   'utf8',
 )
+const configItemSource = readFileSync(
+  resolve(root, 'src', 'components', 'Tabs', 'ConfigItem', 'ConfigItem.vue'),
+  'utf8',
+)
+const batchPauseSource = readFileSync(
+  resolve(root, 'src', 'components', 'Tabs', 'ConfigItem', 'BatchPause.vue'),
+  'utf8',
+)
+const resumeImageSource = readFileSync(
+  resolve(root, 'src', 'components', 'Tabs', 'ConfigItem', 'ResumeImage.vue'),
+  'utf8',
+)
+const confSource = readFileSync(resolve(root, 'src', 'composables', 'conf', 'index.ts'), 'utf8')
+const backgroundSource = readFileSync(resolve(root, 'src', 'message', 'background.ts'), 'utf8')
 assert.ok(applyingSource.includes('autoDelivery.value'), '招呼任务缺少自动投递开关保护')
 assert.ok(bossSource.includes("publish('chat'"), '自动投递缺少 BOSS 聊天发送通道')
 assert.ok(
@@ -80,6 +98,26 @@ assert.ok(chatModelSource.includes('summarizeModelError'), '模型错误缺少�
 assert.ok(chatModelSource.includes('resolveModelTimeout'), '模型请求缺少统一超时解析')
 assert.ok(modelCommonSource.includes('DEFAULT_MODEL_TIMEOUT_MS = 120_000'), '模型默认超时未统一')
 assert.ok(contextSource.includes('formatDiagnosticDetails'), '诊断日志缺少白名单脱敏')
+assert.ok(applyingIndexSource.includes('pauseTarget'), '缺少投递批次随机长等待阈值')
+assert.ok(applyingIndexSource.includes('execution?.published'), '长等待计数缺少实际投递成功门槛')
+assert.ok(
+  applyingIndexSource.includes('delivered === true'),
+  '长等待计数必须只使用实际投递成功结果',
+)
+assert.ok(batchPauseSource.includes('waitMinSeconds'), '缺少长等待时间范围配置')
+assert.ok(configSource.includes("type: 'batchPause'"), '缺少批次长等待配置入口')
+assert.ok(configItemSource.includes('BatchPause'), '批次长等待配置组件未挂载')
+assert.ok(configItemSource.includes('ResumeImage'), '图片简历配置组件未挂载')
+assert.ok(resumeImageSource.includes('counter.setImage'), '图片简历未保存到本机扩展存储')
+assert.ok(resumeImageSource.includes('counter.removeImage'), '图片简历缺少本机清除入口')
+assert.ok(bossSource.includes('sendResumeImage'), '缺少图片简历发送流程')
+assert.ok(bossSource.includes('uploadImage'), '图片简历未复用 BOSS 图片上传链路')
+assert.ok(bossSource.includes('iid: uploaded.iid ?? 0'), '图片消息缺少 BOSS 兼容 iid 占位')
+assert.ok(
+  confSource.includes('data.resumeImage = { ...defaultFormData.resumeImage }'),
+  '配置导出不得携带图片引用',
+)
+assert.ok(backgroundSource.includes('removeImage'), 'background 缺少图片清理能力')
 
 const profile = JSON.parse(readFileSync(resolve(root, 'candidate-profile.example.json'), 'utf8'))
 for (const key of [
