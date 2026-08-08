@@ -1,9 +1,10 @@
 import { counter } from '@/message'
+import { FormDataInput } from '@/types/formData'
 import { renderTemplate } from '@/utils/ai'
 import { HelperContext } from '~/composables/useHelper'
 
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
-import { defineTaskHandler, JobStatus, TaskContext, TaskResult } from './type'
+import { defineTaskHandler, JobStatus, TaskContext, TaskResult, WorkflowData } from './type'
 import { parseFiltering, rangeMatch, rangeMatchFormat } from './utils'
 
 export class DependencyMissingError extends Error {
@@ -69,6 +70,108 @@ export const taskResult = {
     reason,
     status: 'error',
   }),
+}
+
+type GreetingSource = 'custom' | 'ai' | 'fallback'
+
+type FallbackResolution = {
+  enabled: boolean
+  text?: string
+  reason?: string
+}
+
+/** 判断招呼语是否满足自动发送的长度和句数约束。 */
+function isValidGreetingText(text: string): boolean {
+  const normalized = text.trim()
+  const sentenceCount = normalized.split(/[。！？!?]+/u).filter(Boolean).length
+  return Boolean(
+    normalized && normalized !== '需人工判断' && normalized.length <= 150 && sentenceCount <= 3,
+  )
+}
+
+/** 读取并渲染本地兜底文本；不会把错误、模型响应或聊天全文带入结果。 */
+function resolveFallbackGreeting<C extends HelperContext<C, T, S>, T, S>(
+  ctx: TaskContext<C, T, S>,
+  data: WorkflowData<T, S>,
+): FallbackResolution {
+  const config = ctx.helper.conf.formData.greetingFallback
+  if (!config?.enable) {
+    return { enabled: false }
+  }
+  const raw = typeof config.value === 'string' ? config.value.trim() : ''
+  if (!raw) {
+    return { enabled: true, reason: '兜底招呼语为空' }
+  }
+  try {
+    const rendered = ctx.helper.conf.formData.greetingVariable.value
+      ? renderTemplate(raw, data)
+      : raw
+    const normalized = String(rendered ?? '').trim()
+    if (!isValidGreetingText(normalized)) {
+      return { enabled: true, reason: '兜底招呼语不符合长度或句数限制' }
+    }
+    return { enabled: true, text: normalized }
+  } catch {
+    return { enabled: true, reason: '兜底招呼语模板渲染失败' }
+  }
+}
+
+/** 统一执行招呼语草稿/发送及可选图片简历发送，避免 AI 与自定义路径语义漂移。 */
+async function deliverGreeting<C extends HelperContext<C, T, S>, T, S>(
+  ctx: TaskContext<C, T, S>,
+  data: WorkflowData<T, S>,
+  greeting: FormDataInput['value'],
+  source: GreetingSource,
+  fallbackReason?: string,
+): Promise<TaskResult> {
+  const draft = Array.isArray(greeting)
+    ? greeting
+        .filter((item) => item.type === 'text')
+        .map((item) => item.content.trim())
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+    : String(greeting ?? '').trim()
+  const hasImage =
+    Array.isArray(greeting) && greeting.some((item) => item.type === 'image' && Boolean(item.image))
+  if (!draft && !hasImage) {
+    return taskResult.skip('招呼语为空，未生成草稿')
+  }
+
+  const label = source === 'fallback' ? '兜底招呼语' : source === 'ai' ? 'AI招呼语' : '自定义招呼语'
+  const fallbackUsed = source === 'fallback'
+  if (ctx.helper.conf.formData.autoDelivery.value) {
+    // sendMessage 可能已经把文本/高级招呼图片发出；异常时不再尝试兜底，避免重复触达。
+    await ctx.helper.sendMessage(data, greeting)
+    if (ctx.helper.conf.formData.resumeImage.enable) {
+      const resumeResult = await ctx.helper.sendResumeImage(data)
+      if (!resumeResult.sent) {
+        if (resumeResult.stop) ctx.helper.stop()
+        return taskResult.skip(`${label}已发送；${resumeResult.reason ?? '图片简历未发送'}`, 'warn')
+      }
+      return {
+        status: 'success',
+        msg: `${label}和图片简历已自动发送`,
+        reason: fallbackReason,
+        draft: draft || undefined,
+        fallbackUsed,
+      }
+    }
+    return {
+      status: 'success',
+      msg: `${label}已自动发送`,
+      reason: fallbackReason,
+      draft: draft || undefined,
+      fallbackUsed,
+    }
+  }
+  return {
+    status: 'success',
+    msg: `${label}草稿已生成（未发送）`,
+    reason: fallbackReason,
+    draft: draft || undefined,
+    fallbackUsed,
+  }
 }
 
 export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
@@ -430,43 +533,35 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
           }
         }
 
-        // 关闭自动投递时保留草稿；开启后才通过上下文发送能力触发真实消息。
+        // 关闭自动投递时保留草稿；开启后保留高级招呼语中的图片顺序并发送。
         const draft = Array.isArray(msg)
           ? msg
               .filter((item) => item.type === 'text')
               .map((item) => item.content.trim())
               .filter(Boolean)
               .join('\n')
+              .trim()
           : String(msg ?? '').trim()
-        if (!draft) return taskResult.skip('自定义招呼语为空，未生成草稿')
-        if (ctx.helper.conf.formData.autoDelivery.value) {
-          await ctx.helper.sendMessage(data, draft)
-          if (ctx.helper.conf.formData.resumeImage.enable) {
-            const resumeResult = await ctx.helper.sendResumeImage(data)
-            if (!resumeResult.sent) {
-              if (resumeResult.stop) ctx.helper.stop()
-              return taskResult.skip(
-                `招呼语已发送；${resumeResult.reason ?? '图片简历未发送'}`,
-                'warn',
-              )
-            }
-            return {
-              status: 'success',
-              msg: '自定义招呼语和图片简历已自动发送',
-              draft,
-            }
+        const hasImage =
+          Array.isArray(msg) && msg.some((item) => item.type === 'image' && Boolean(item.image))
+        if (!draft && !hasImage) {
+          const fallback = resolveFallbackGreeting(ctx, data)
+          if (!fallback.text) {
+            return taskResult.skip(
+              fallback.enabled
+                ? `自定义招呼语为空；${fallback.reason ?? '兜底招呼语不可用'}`
+                : '自定义招呼语为空，未生成草稿',
+            )
           }
-          return {
-            status: 'success',
-            msg: '自定义招呼语已自动发送',
-            draft,
-          }
+          return deliverGreeting(
+            ctx,
+            data,
+            fallback.text,
+            'fallback',
+            '自定义招呼语为空，已使用兜底招呼语',
+          )
         }
-        return {
-          status: 'success',
-          msg: '自定义招呼语草稿已生成（未发送）',
-          draft,
-        }
+        return deliverGreeting(ctx, data, msg, 'custom')
       }
     },
     { label: '自定义招呼语' },
@@ -478,51 +573,73 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.aiGreeting.enable) {
         return
       }
-      if (!ctx.helper.chatModel.createAgent(ctx.helper.conf.formData.aiGreeting, 'greetings')) {
+      // 没有模型但已配置兜底文本时仍构建任务，让运行时生成兜底草稿/消息。
+      const fallbackConfigured =
+        ctx.helper.conf.formData.greetingFallback.enable &&
+        Boolean(ctx.helper.conf.formData.greetingFallback.value.trim())
+      let modelReady = false
+      try {
+        modelReady = ctx.helper.chatModel.createAgent(
+          ctx.helper.conf.formData.aiGreeting,
+          'greetings',
+        )
+      } catch {
+        // 模型配置初始化异常也走同一套兜底逻辑，不把 provider 原始错误写入岗位正文。
+        modelReady = false
+      }
+      if (!modelReady && !fallbackConfigured) {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
       return async (ctx, data) => {
-        const msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
-        // AI 未返回合规非空招呼语时禁止发送空消息。
+        // 模型初始化失败时不再调用 AI，直接走同一套兜底安全校验。
+        if (!modelReady) {
+          const fallback = resolveFallbackGreeting(ctx, data)
+          if (!fallback.text) {
+            return taskResult.skip(`AI模型未配置；${fallback.reason ?? '未配置兜底招呼语'}`)
+          }
+          return deliverGreeting(
+            ctx,
+            data,
+            fallback.text,
+            'fallback',
+            'AI模型未配置或初始化失败，已使用兜底招呼语',
+          )
+        }
+
+        let msg = ''
+        try {
+          msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
+        } catch (error) {
+          // AI 请求未产生外部 BOSS 消息时才允许切换兜底，避免消息确认丢失时重复发送。
+          const fallback = resolveFallbackGreeting(ctx, data)
+          if (!fallback.text) throw error
+          return deliverGreeting(
+            ctx,
+            data,
+            fallback.text,
+            'fallback',
+            'AI招呼语生成失败，已使用兜底招呼语',
+          )
+        }
+
+        // AI 未返回合规非空招呼语时使用用户配置的兜底文本，否则保持 fail-closed。
         const normalized = typeof msg === 'string' ? msg.trim() : ''
-        const sentenceCount = normalized.split(/[。！？!?]+/u).filter(Boolean).length
-        if (
-          !normalized ||
-          normalized === '需人工判断' ||
-          normalized.length > 150 ||
-          sentenceCount > 3
-        ) {
-          return taskResult.skip('AI招呼语无效，已跳过发送')
-        }
-        if (ctx.helper.conf.formData.autoDelivery.value) {
-          await ctx.helper.sendMessage(data, normalized)
-          if (ctx.helper.conf.formData.resumeImage.enable) {
-            const resumeResult = await ctx.helper.sendResumeImage(data)
-            if (!resumeResult.sent) {
-              if (resumeResult.stop) ctx.helper.stop()
-              return taskResult.skip(
-                `招呼语已发送；${resumeResult.reason ?? '图片简历未发送'}`,
-                'warn',
-              )
-            }
-            return {
-              status: 'success',
-              msg: 'AI招呼语和图片简历已自动发送',
-              draft: normalized,
-            }
+        if (!isValidGreetingText(normalized)) {
+          const fallback = resolveFallbackGreeting(ctx, data)
+          if (!fallback.text) {
+            return taskResult.skip(
+              `AI招呼语无效；${fallback.enabled ? (fallback.reason ?? '兜底招呼语不可用') : '未配置兜底招呼语'}`,
+            )
           }
-          return {
-            status: 'success',
-            msg: 'AI招呼语已自动发送',
-            draft: normalized,
-          }
+          return deliverGreeting(
+            ctx,
+            data,
+            fallback.text,
+            'fallback',
+            'AI招呼语无效，已使用兜底招呼语',
+          )
         }
-        // 关闭自动投递时只保留当前任务内的草稿，用户需要自行复制或人工发送。
-        return {
-          status: 'success',
-          msg: 'AI招呼语草稿已生成（未发送）',
-          draft: normalized,
-        }
+        return deliverGreeting(ctx, data, normalized, 'ai')
       }
     },
     { label: 'AI招呼语', state: 'ai', stateMsg: '生成招呼语中' },

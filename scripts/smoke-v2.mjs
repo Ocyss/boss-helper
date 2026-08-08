@@ -70,6 +70,10 @@ const resumeImageSource = readFileSync(
   resolve(root, 'src', 'components', 'Tabs', 'ConfigItem', 'ResumeImage.vue'),
   'utf8',
 )
+const fallbackSource = readFileSync(
+  resolve(root, 'src', 'components', 'Tabs', 'ConfigItem', 'GreetingFallback.vue'),
+  'utf8',
+)
 const confSource = readFileSync(resolve(root, 'src', 'composables', 'conf', 'index.ts'), 'utf8')
 const backgroundSource = readFileSync(resolve(root, 'src', 'message', 'background.ts'), 'utf8')
 assert.ok(applyingSource.includes('autoDelivery.value'), '招呼任务缺少自动投递开关保护')
@@ -108,6 +112,11 @@ assert.ok(batchPauseSource.includes('waitMinSeconds'), '缺少长等待时间范
 assert.ok(configSource.includes("type: 'batchPause'"), '缺少批次长等待配置入口')
 assert.ok(configItemSource.includes('BatchPause'), '批次长等待配置组件未挂载')
 assert.ok(configItemSource.includes('ResumeImage'), '图片简历配置组件未挂载')
+assert.ok(configItemSource.includes('GreetingFallback'), '兜底招呼语配置组件未挂载')
+assert.ok(configSource.includes("type: 'greetingFallback'"), '缺少兜底招呼语配置入口')
+assert.ok(fallbackSource.includes('默认关闭'), '兜底招呼语必须默认关闭并提示风险')
+assert.ok(applyingSource.includes('resolveFallbackGreeting'), '招呼任务缺少兜底文本解析')
+assert.ok(applyingSource.includes('AI招呼语生成失败，已使用兜底招呼语'), 'AI异常缺少兜底路径')
 assert.ok(resumeImageSource.includes('counter.setImage'), '图片简历未保存到本机扩展存储')
 assert.ok(resumeImageSource.includes('counter.removeImage'), '图片简历缺少本机清除入口')
 assert.ok(bossSource.includes('sendResumeImage'), '缺少图片简历发送流程')

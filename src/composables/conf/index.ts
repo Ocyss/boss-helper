@@ -145,11 +145,37 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
           ...defaultFormData.resumeImage,
           ...from.resumeImage,
           enable: false,
-          image: '',
-          name: '',
-          type: '',
         }
       }
+      return from
+    },
+  ],
+  [
+    '20260809',
+    (from) => {
+      // 兼容旧版迁移循环只执行最新迁移：补齐上一版新增字段并保持高风险功能关闭。
+      if (!from.batchPause || typeof from.batchPause !== 'object') {
+        from.batchPause = { ...defaultFormData.batchPause }
+      }
+      if (!from.resumeImage || typeof from.resumeImage !== 'object') {
+        from.resumeImage = { ...defaultFormData.resumeImage }
+      } else {
+        from.resumeImage = {
+          ...defaultFormData.resumeImage,
+          ...from.resumeImage,
+          enable: false,
+        }
+      }
+      // 新增兜底语默认关闭；保留用户已填写的文本，但不让升级过程意外触发发送。
+      const fallback = from.greetingFallback
+      from.greetingFallback =
+        fallback && typeof fallback === 'object'
+          ? {
+              ...defaultFormData.greetingFallback,
+              ...fallback,
+              enable: false,
+            }
+          : { ...defaultFormData.greetingFallback }
       return from
     },
   ],
@@ -235,6 +261,15 @@ export const useConf = () => {
       waitMinSeconds,
       waitMaxSeconds,
     }
+    // 兜底文本只保留短文本和布尔开关；导入异常对象时回到默认关闭状态。
+    const rawFallback = source.greetingFallback
+    source.greetingFallback =
+      rawFallback && typeof rawFallback === 'object'
+        ? {
+            enable: rawFallback.enable === true,
+            value: typeof rawFallback.value === 'string' ? rawFallback.value.slice(0, 300) : '',
+          }
+        : { ...defaultFormData.greetingFallback }
     return from
   }
 
@@ -332,6 +367,7 @@ export const useConf = () => {
         'delay',
         'batchPause',
         'resumeImage',
+        'greetingFallback',
       ].reduce(
         (result, key) => {
           result[key] = defaultFormData[key as keyof FormData]

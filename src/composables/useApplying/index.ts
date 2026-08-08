@@ -87,6 +87,7 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
         isCache: acc.isCache || r.isCache,
         aiScore: r.aiScore ?? acc.aiScore,
         delivered: r.delivered ?? acc.delivered,
+        fallbackUsed: r.fallbackUsed ?? acc.fallbackUsed,
         draft: r.draft ?? acc.draft,
         updatedAt: r.updatedAt ?? acc.updatedAt,
       }

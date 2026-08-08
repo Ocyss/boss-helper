@@ -144,6 +144,7 @@ export type ConfigItem =
             | 'companySizeRange'
             | 'customGreeting'
             | 'resumeImage'
+            | 'greetingFallback'
             | 'batchPause'
             | 'address'
             | 'appearance'

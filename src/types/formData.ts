@@ -34,6 +34,8 @@ export interface FormData {
   diagnosticLogging: FormDataCheckbox
   /** 默认关闭；开启后在招呼语发送成功后发送本机已上传的图片简历。 */
   resumeImage: FormDataResumeImage
+  /** 默认关闭；AI 生成失败且尚未发送外部消息时使用的文本招呼语。 */
+  greetingFallback: FormDataGreetingFallback
   deliveryLimit: FormDataInputNumber
   greetingVariable: FormDataCheckbox
   activityFilter: FormDataCheckbox
@@ -131,6 +133,12 @@ export interface FormDataResumeImage {
   image: string
   name: string
   type: string
+}
+
+/** AI 招呼失败时的用户自定义文本兜底；不会保存模型错误或聊天全文。 */
+export interface FormDataGreetingFallback {
+  enable: boolean
+  value: string
 }
 
 export interface FormDataCheckbox {

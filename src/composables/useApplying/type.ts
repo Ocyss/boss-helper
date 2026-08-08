@@ -67,6 +67,8 @@ export type TaskResult = {
   aiScore?: number
   /** 仅岗位投递节点使用，标记本次是否真正调用并确认投递成功。 */
   delivered?: boolean
+  /** 仅记录是否使用了用户配置的兜底招呼语，不保存兜底正文到日志。 */
+  fallbackUsed?: boolean
   /** 招呼语正文只保留在岗位状态内；关闭自动投递时供人工确认，不写入日志或统计。 */
   draft?: string
   /** 当前任务状态更新时间，仅用于岗位列表定位问题。 */

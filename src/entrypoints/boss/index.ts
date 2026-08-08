@@ -250,7 +250,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         settled = true
         reject(new Error(`BOSS ${label}发送确认超时`))
       }, 10_000)
-      this.geek.client.publish('chat', encoded, { qos: 1, retain: true }, (error) => {
+      // 聊天消息不能作为 MQTT retained message 留在 topic，避免页面重连后重复展示/触达。
+      this.geek.client.publish('chat', encoded, { qos: 1, retain: false }, (error) => {
         if (settled) return
         settled = true
         window.clearTimeout(timer)
@@ -261,8 +262,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   }
 
   /**
-   * 按用户显式开启的高风险开关发送文本招呼语；关闭开关时绝不触发外部发送。
-   * 发送使用仓库已有的 BOSS MQTT/protobuf 通道，不记录消息正文、令牌或完整响应。
+   * 按用户显式开启的高风险开关按顺序发送文本/图片招呼语；关闭开关时绝不触发外部发送。
+   * 发送使用仓库已有的 BOSS MQTT/protobuf 通道，不记录消息正文、图片、令牌或完整响应。
    */
   async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
     if (!this.conf.formData.autoDelivery.value) {
@@ -282,27 +283,60 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         : Array.isArray(msgs)
           ? msgs
           : []
-    const textItems = items.filter(
-      (item): item is Extract<(typeof items)[number], { type: 'text' }> => item.type === 'text',
+    const hasContent = items.some(
+      (item) =>
+        (item.type === 'text' && Boolean(item.content.trim())) ||
+        (item.type === 'image' && Boolean(item.image)),
     )
-    if (textItems.length !== items.length) {
-      throw new Error('自动投递只支持文本招呼语，图片请使用图片简历配置')
-    }
-    const text = textItems
-      .map((item) => item.content.trim())
-      .filter(Boolean)
-      .join('\n')
-      .trim()
-    if (!text) {
+    if (!hasContent) {
       throw new Error('招呼语为空，已停止自动发送')
     }
+    const securityId = data.rawData.boss?.data.securityId
+    let sentAny = false
+    for (const item of items) {
+      let encoded: any
+      let label = '招呼'
+      if (item.type === 'text') {
+        const text = item.content.trim()
+        if (!text) continue
+        const message = this.geek.msgBuilder.createTextMessage(this.getMessageStanza(data), {
+          text,
+        })
+        encoded = this.geek.msgBuilder.encode(message)
+      } else if (item.type === 'image') {
+        if (!securityId) {
+          throw new Error('招聘者会话安全标识缺失，无法发送招呼图片')
+        }
+        const stored = await counter.getImage(item.image)
+        if (!stored.success) {
+          throw new Error('招呼图片本机副本不存在，请重新上传')
+        }
+        const file = new File([new Uint8Array(stored.buffer).buffer], stored.name, {
+          type: stored.type,
+        })
+        if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+          throw new Error('招呼图片格式不支持或超过2MiB')
+        }
+        const uploaded = await uploadImage(securityId, file)
+        const message = this.geek.msgBuilder.createImageMessage(this.getMessageStanza(data), {
+          content: { iid: uploaded.iid ?? 0, ...uploaded },
+        })
+        encoded = this.geek.msgBuilder.encode(message)
+        label = '招呼图片'
+      } else {
+        throw new Error('招呼语包含不支持的消息类型')
+      }
 
-    // 使用消息等待范围，避免每条消息以完全固定节奏发送。
-    await delayWithJitter(
-      this.conf.formData.delayRanges?.message ?? this.conf.formData.delayMessageSending,
-    )
-    const message = this.geek.msgBuilder.createTextMessage(this.getMessageStanza(data), { text })
-    await this.publishChatMessage(this.geek.msgBuilder.encode(message), '招呼')
+      // 使用消息等待范围，避免多条文本/图片以完全固定节奏发送。
+      await delayWithJitter(
+        this.conf.formData.delayRanges?.message ?? this.conf.formData.delayMessageSending,
+      )
+      await this.publishChatMessage(encoded, label)
+      sentAny = true
+    }
+    if (!sentAny) {
+      throw new Error('招呼语为空，已停止自动发送')
+    }
     data.state.delivery = { ...(data.state.delivery ?? {}), greetingSent: true }
     logger.info('自动招呼发送成功', { jobKey: data.jobData.key })
   }
@@ -544,6 +578,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
               },
               { type: 'checkbox', key: 'autoDelivery' },
               { type: 'resumeImage', key: 'resumeImage' },
+              { type: 'greetingFallback', key: 'greetingFallback' },
               { type: 'customGreeting', key: 'customGreeting' },
             ],
           },

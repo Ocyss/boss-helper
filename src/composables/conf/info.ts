@@ -61,6 +61,11 @@ export const formInfoData: Record<string, any> = {
     'data-help':
       '高风险开关，默认关闭；需要先上传图片并开启自动投递。招呼语成功后通过 BOSS 图片消息发送，失败时停止后续岗位。',
   },
+  greetingFallback: {
+    label: 'AI招呼失败时使用兜底语',
+    'data-help':
+      '默认关闭；AI 未配置、超时、异常或返回需人工判断时，可使用你填写的文本。BOSS 消息已发出或确认超时后不会改发兜底语。',
+  },
   diagnosticLogging: {
     label: '详细诊断日志（仍脱敏）',
     'data-help':
@@ -220,6 +225,11 @@ export const defaultFormData: FormData = {
     name: '',
     type: '',
   },
+  greetingFallback: {
+    // 兜底文本也可能触发真实消息，必须由用户明确开启且默认不发送。
+    enable: false,
+    value: '',
+  },
   deliveryLimit: {
     value: 120,
   },
@@ -375,5 +385,5 @@ finalScore 必须是有限数字；无法确认岗位事实、画像事实或证
     pageNext: [60, 60, false],
     message: [2, 2, false],
   },
-  version: '20260808',
+  version: '20260809',
 }
