@@ -276,6 +276,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     try {
       let skipPipeline = false
       let errorLog = false
+      let delivered = false
       for (const t of pipeline.value) {
         let res: void | TaskResult = undefined
         try {
@@ -293,6 +294,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               break
             }
           }
+          if (t.id === '岗位投递') delivered = true
           if (isStop()) break
         } catch (e) {
           res = {
@@ -329,6 +331,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         const r = helper.jobResultMaps.get(data.jobData.key)
         log.warn(`投递过滤: ${data.jobData.jobName}`, r?.msg, r?.reason)
       }
+      return delivered
     } catch (e) {
       status.value = 'error'
       throw e
@@ -378,8 +381,12 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           }
           helper.jobMaps.set(jobData.key, data)
           helper.currentJob.value = jobData.key
-          await execute(data, index)
-          await delay(helper.conf.formData.delayDeliveryInterval, isStop)
+          // 整卡处理完后, 仅实际投递过的卡片等待间隔, 避免高频投递被视为脚本;
+          // 被过滤跳过的卡片(相同hr/已沟通/关键词等)不等待, 立即处理下一张
+          const delivered = await execute(data, index)
+          if (delivered) {
+            await delay(helper.conf.formData.delayDeliveryInterval, isStop)
+          }
         }
         if (isStop()) break
         const hasMore = await helper.loadMoreJob(
