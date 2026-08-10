@@ -324,7 +324,10 @@ export const useConf = () => {
   }
 
   async function confReload() {
-    const v = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
+    // 重载也必须经过同一套迁移和边界归一化，避免旧配置让批次范围变成空值。
+    let from = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
+    from = (await formDataHandler(from)) ?? from
+    const v = deepmerge<FormData>(defaultFormData, from)
     deepmerge(formData, v, { clone: false })
     logger.debug('formData已重置')
     toast.add({
