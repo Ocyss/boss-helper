@@ -33,6 +33,7 @@ const applyingIndexSource = readFileSync(
   resolve(root, 'src', 'composables', 'useApplying', 'index.ts'),
   'utf8',
 )
+const utilsSource = readFileSync(resolve(root, 'src', 'utils', 'index.ts'), 'utf8')
 const bossSource = readFileSync(resolve(root, 'src', 'entrypoints', 'boss', 'index.ts'), 'utf8')
 const appSource = readFileSync(resolve(root, 'src', 'App.vue'), 'utf8')
 const filterSource = readFileSync(resolve(root, 'src', 'components', 'Tabs', 'Filter.vue'), 'utf8')
@@ -103,12 +104,23 @@ assert.ok(chatModelSource.includes('resolveModelTimeout'), '模型请求缺少�
 assert.ok(modelCommonSource.includes('DEFAULT_MODEL_TIMEOUT_MS = 120_000'), '模型默认超时未统一')
 assert.ok(contextSource.includes('formatDiagnosticDetails'), '诊断日志缺少白名单脱敏')
 assert.ok(applyingIndexSource.includes('pauseTarget'), '缺少投递批次随机长等待阈值')
+assert.ok(utilsSource.includes('jitterRatio = 0.2'), '有界随机等待默认抖动未启用')
+assert.ok(applyingIndexSource.includes('delayWithJitter('), '投递流程未使用有界随机等待')
 assert.ok(applyingIndexSource.includes('execution?.published'), '长等待计数缺少实际投递成功门槛')
 assert.ok(
   applyingIndexSource.includes('delivered === true'),
   '长等待计数必须只使用实际投递成功结果',
 )
 assert.ok(batchPauseSource.includes('waitMinSeconds'), '缺少长等待时间范围配置')
+assert.ok(
+  batchPauseSource.includes(':disabled="helper.workflowRunning.value"'),
+  '批次范围不应因开关关闭而不可编辑',
+)
+assert.ok(batchPauseSource.includes('当前等待策略'), '缺少有界随机等待策略说明')
+assert.ok(
+  /async function confReload\(\)[\s\S]*?formDataHandler\(from\)/u.test(confSource),
+  '配置重载未复用统一迁移归一化',
+)
 assert.ok(configSource.includes("type: 'batchPause'"), '缺少批次长等待配置入口')
 assert.ok(configItemSource.includes('BatchPause'), '批次长等待配置组件未挂载')
 assert.ok(configItemSource.includes('ResumeImage'), '图片简历配置组件未挂载')
@@ -121,6 +133,7 @@ assert.ok(resumeImageSource.includes('counter.setImage'), '图片简历未保存
 assert.ok(resumeImageSource.includes('counter.removeImage'), '图片简历缺少本机清除入口')
 assert.ok(bossSource.includes('sendResumeImage'), '缺少图片简历发送流程')
 assert.ok(bossSource.includes('uploadImage'), '图片简历未复用 BOSS 图片上传链路')
+assert.ok(bossSource.includes('图片简历沿用消息发送的有界等待'), '图片简历发送缺少有界消息等待')
 assert.ok(bossSource.includes('iid: uploaded.iid ?? 0'), '图片消息缺少 BOSS 兼容 iid 占位')
 assert.ok(
   confSource.includes('data.resumeImage = { ...defaultFormData.resumeImage }'),
