@@ -387,6 +387,10 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         // BOSS 现有图片消息示例使用 iid=0；上传接口不一定返回 iid，因此保持兼容占位。
         content: { iid: uploaded.iid ?? 0, ...uploaded },
       })
+      // 图片简历沿用消息发送的有界等待；这里只控制消息节奏，不模拟点击、滚动或其他页面事件。
+      await delayWithJitter(
+        this.conf.formData.delayRanges?.message ?? this.conf.formData.delayMessageSending,
+      )
       await this.publishChatMessage(this.geek.msgBuilder.encode(image), '图片简历')
       data.state.delivery = { ...(data.state.delivery ?? {}), resumeImageSent: true }
       logger.info('自动图片简历发送成功', { jobKey: data.jobData.key })
@@ -605,7 +609,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryStarts',
                     fieldProps: {
                       label: '投递开始',
-                      'data-help': '点击投递按钮会等待一段时间,默认值10s',
+                      'data-help': '点击投递按钮会在默认3秒附近有界随机等待（约2.4～3.6秒）',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -617,7 +621,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryInterval',
                     fieldProps: {
                       label: '投递间隔',
-                      'data-help': '每个投递的间隔,太快易风控,默认值2s',
+                      'data-help': '每个投递会在默认5秒附近有界随机等待（约4～6秒）',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -629,7 +633,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryPageNext',
                     fieldProps: {
                       label: '投递翻页',
-                      'data-help': '投递完下一页之后等待的间隔,太快易风控,默认值60s',
+                      'data-help': '投递完下一页后会在默认60秒附近有界随机等待（约48～72秒）',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -641,12 +645,11 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayMessageSending',
                     fieldProps: {
                       label: '消息发送',
-                      'data-help': '在发送消息前允许等待一定的时间让用户来修改或手动发送,默认值2s',
+                      'data-help': '发送消息前会在默认2秒附近有界随机等待（约1.6～2.4秒）',
                     },
                     inputNumberProps: {
                       min: 1,
                       max: 99999,
-                      disable: true,
                     },
                   },
                   { type: 'batchPause', key: 'batchPause' },
