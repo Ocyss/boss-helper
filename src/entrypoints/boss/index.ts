@@ -15,6 +15,7 @@ import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 
 import { GeekChatClientManager } from './chat'
+import { mountBossChatMvp, unmountBossChatMvp } from './chat/mvp-panel'
 import type { BoosJobData } from './delivery'
 import { bossWorkflow } from './delivery'
 import { uploadImage } from './requests'
@@ -700,6 +701,14 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 export default defineUnlistedScript(async () => {
   // hookChatSocket()
 
+  const isChatPage = (path: string) =>
+    path === '/web/geek/chat' || path.startsWith('/web/geek/chat/')
+
+  if (isChatPage(window.location.pathname)) {
+    await mountBossChatMvp()
+    return
+  }
+
   initCounter()
   const bossHelpCtx = await BossHelperCtx.new()
 
@@ -722,6 +731,11 @@ export default defineUnlistedScript(async () => {
       fullPath: string
     }) => {
       // hookChatSocket()
+      if (isChatPage(to.path)) {
+        void mountBossChatMvp()
+        return
+      }
+      unmountBossChatMvp()
       void bossHelpCtx.onMount(to.path)
     },
   )
