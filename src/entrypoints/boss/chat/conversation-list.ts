@@ -1,3 +1,5 @@
+import type { BossProtoMessage } from './message-parser'
+
 const CHATBOT_ID = 1400400
 const DEFAULT_PAGE_SIZE = 100
 const REQUEST_TIMEOUT_MS = 15000
@@ -20,6 +22,11 @@ interface BossFriendIndexItem {
   positionName?: string
   jobName?: string
   bossTitle?: string
+  encryptJobId?: string
+  securityId?: string
+  lid?: string
+  jobId?: number | string
+  unreadCount?: number | string
 }
 
 interface BossFriendIndexData {
@@ -27,9 +34,9 @@ interface BossFriendIndexData {
 }
 
 interface BossLastMessageInfo {
-  msgId?: number
+  msgId?: number | string
   showText?: string
-  fromId?: number
+  fromId?: number | string
   status?: number
 }
 
@@ -44,9 +51,13 @@ interface BossFriendDetail {
   encryptBossId?: string
   encryptJobId?: string
   securityId?: string
+  lid?: string
+  jobId?: number | string
+  jobSource?: number | string
   isTop?: boolean | number
   lastTS?: number
   lastMessageInfo?: BossLastMessageInfo
+  unreadCount?: number | string
 }
 
 interface BossFriendDetailData {
@@ -55,18 +66,35 @@ interface BossFriendDetailData {
 
 export interface BossConversationSummary {
   id: string
-  friendId: number
+  friendId: string
   friendSource: number
   name: string
   avatar: string
   companyName: string
   jobName: string
+  lastMessageId: string
+  lastMessageFromId: string
   lastMessage: string
   lastMessageAt: number
   isTop: boolean
   encryptBossId: string
   encryptJobId: string
   securityId: string
+  jobLid: string
+  jobId: string
+  unreadCount?: number
+}
+
+interface BossConversationHistoryData {
+  messages?: BossProtoMessage[]
+  hasMore?: boolean
+  minMsgId?: number | string
+}
+
+export interface BossConversationHistoryPage {
+  messages: BossProtoMessage[]
+  hasMore: boolean
+  minMessageId: string
 }
 
 export interface BossConversationPage {
@@ -82,7 +110,20 @@ function toFiniteNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function getConversationId(friendId: number, friendSource: number): string {
+function toOptionalCount(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : undefined
+}
+
+function toId(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'number') return Number.isFinite(value) ? String(Math.trunc(value)) : ''
+  if (typeof value === 'bigint') return value.toString()
+  return String(value).trim()
+}
+
+function getConversationId(friendId: string, friendSource: number): string {
   return `${friendId}-${friendSource}`
 }
 
@@ -150,7 +191,7 @@ function normalizeConversation(
   indexItem: BossFriendIndexItem,
   detail?: BossFriendDetail,
 ): BossConversationSummary {
-  const friendId = toFiniteNumber(indexItem.friendId)
+  const friendId = toId(indexItem.friendId)
   const friendSource = toFiniteNumber(indexItem.friendSource)
 
   return {
@@ -167,12 +208,45 @@ function normalizeConversation(
       detail?.title ||
       indexItem.bossTitle ||
       '',
+    lastMessageId: toId(detail?.lastMessageInfo?.msgId),
+    lastMessageFromId: toId(detail?.lastMessageInfo?.fromId),
     lastMessage: detail?.lastMessageInfo?.showText || '',
     lastMessageAt: detail?.lastTS || indexItem.updateTime || 0,
     isTop: Boolean(detail?.isTop),
     encryptBossId: detail?.encryptBossId || indexItem.encryptFriendId || '',
-    encryptJobId: detail?.encryptJobId || '',
-    securityId: detail?.securityId || '',
+    encryptJobId: detail?.encryptJobId || indexItem.encryptJobId || '',
+    securityId: detail?.securityId || indexItem.securityId || '',
+    jobLid: detail?.lid || indexItem.lid || '',
+    jobId: toId(detail?.jobId || indexItem.jobId),
+    unreadCount: toOptionalCount(detail?.unreadCount ?? indexItem.unreadCount),
+  }
+}
+
+export async function fetchBossConversationHistory(
+  target: Pick<BossConversationSummary, 'encryptBossId' | 'friendSource' | 'securityId'>,
+  page = 1,
+  pageSize = 30,
+  maxMessageId = '0',
+): Promise<BossConversationHistoryPage> {
+  if (!target.encryptBossId || !target.securityId) {
+    throw new Error('当前会话缺少读取聊天记录所需的 HR 或安全标识')
+  }
+
+  const url = new URL('/wapi/zpchat/geek/historyMsg', window.location.origin)
+  url.searchParams.set('bossId', target.encryptBossId)
+  url.searchParams.set('maxMsgId', maxMessageId || '0')
+  url.searchParams.set('c', String(Math.min(50, Math.max(1, Math.floor(pageSize)))))
+  url.searchParams.set('page', String(Math.max(1, Math.floor(page))))
+  url.searchParams.set('src', String(target.friendSource))
+  url.searchParams.set('securityId', target.securityId)
+
+  const data = await requestBossApi<BossConversationHistoryData>(url)
+  if (!Array.isArray(data.messages)) throw new Error('BOSS 聊天记录格式发生变化')
+
+  return {
+    messages: data.messages,
+    hasMore: Boolean(data.hasMore),
+    minMessageId: toId(data.minMsgId),
   }
 }
 
@@ -213,7 +287,7 @@ export async function fetchBossConversationPage(
   const bossFriendIds: string[] = []
   const directFriendIds: string[] = []
   for (const item of pageItems) {
-    const friendId = String(toFiniteNumber(item.friendId))
+    const friendId = toId(item.friendId)
     if (toFiniteNumber(item.friendSource) === 1) {
       directFriendIds.push(friendId)
     } else {
@@ -243,14 +317,14 @@ export async function fetchBossConversationPage(
 
   const details = new Map<string, BossFriendDetail>()
   for (const detail of detailData.result) {
-    const friendId = toFiniteNumber(detail.uid)
+    const friendId = toId(detail.uid)
     const friendSource = toFiniteNumber(detail.friendSource)
-    if (friendId > 0) details.set(getConversationId(friendId, friendSource), detail)
+    if (toFiniteNumber(friendId) > 0) details.set(getConversationId(friendId, friendSource), detail)
   }
 
   const items = pageItems
     .map((item) => {
-      const id = getConversationId(toFiniteNumber(item.friendId), toFiniteNumber(item.friendSource))
+      const id = getConversationId(toId(item.friendId), toFiniteNumber(item.friendSource))
       return normalizeConversation(item, details.get(id))
     })
     .sort(

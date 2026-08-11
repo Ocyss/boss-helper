@@ -34,7 +34,7 @@ export interface FormData {
   useCache: FormDataCheckbox
   aiGreeting: FormDataAi
   aiFiltering: FormDataAi & { score: number }
-  aiReply: FormDataAi
+  aiReply: FormDataAiReply
   amap: {
     key: string
     origins: string
@@ -108,6 +108,15 @@ export interface FormDataAi {
   model?: string
   prompt: Prompt
   enable: boolean
+}
+
+export interface FormDataAiReply extends FormDataAi {
+  mode: import('./aiReply').BossReplyMode
+  knowledge: import('./aiReply').BossReplyKnowledgeItem[]
+  browserNotification: boolean
+  feishuNotification: boolean
+  sendDelaySeconds: number
+  maxReplyLength: number
 }
 
 export type CustomGreetingItemText = {

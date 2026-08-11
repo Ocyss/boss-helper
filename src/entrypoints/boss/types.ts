@@ -23,6 +23,7 @@ export interface BossZpBossData {
     name: string
     hasInterview: boolean
     bossSource: number
+    lid?: string
   }
   job: {
     jobName: string
@@ -36,6 +37,13 @@ export interface BossZpBossData {
     lowSalary: number
     highSalary: number
     experienceName: string
+    lid?: string
+    encryptJobId?: string
+    jobDescription?: string
+    postDescription?: string
+    description?: string
+    address?: string
+    skills?: string[]
   }
 }
 

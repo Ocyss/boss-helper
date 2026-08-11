@@ -356,6 +356,7 @@ const testModelRef = useTemplateRef('testModel')
         关闭
       </UButton>
       <UButton
+        v-if="data !== 'aiReply'"
         color="neutral"
         variant="soft"
         @click="

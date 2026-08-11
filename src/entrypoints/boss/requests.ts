@@ -17,7 +17,7 @@ const toast = useToast()
 export const sameCompanyKey = 'local:sameCompany'
 export const sameHrKey = 'local:sameHr'
 
-export async function getJobDetail(params: { securityId: string; lid: string }): Promise<{
+export async function getJobDetail(params: { securityId: string; lid?: string }): Promise<{
   code: number
   message: string
   zpData: BossZpDetailData
@@ -32,13 +32,47 @@ export async function getJobDetail(params: { securityId: string; lid: string }):
   }
   const url = new URL('https://www.zhipin.com/wapi/zpgeek/job/detail.json')
   url.searchParams.set('securityId', params.securityId)
-  url.searchParams.set('lid', params.lid)
+  if (params.lid) url.searchParams.set('lid', params.lid)
   url.searchParams.set('_', String(Date.now()))
 
   return fetch(url.toString(), {
     headers: { Zp_token: token },
     signal: AbortSignal.timeout(5000),
   }).then((r) => r.json())
+}
+
+export interface BossChatJobBaseInfo {
+  jobName?: string
+  brandName?: string
+  companyName?: string
+  salaryDesc?: string
+  degreeName?: string
+  experienceName?: string
+  address?: string
+  locationName?: string
+  jobDescription?: string
+  postDescription?: string
+  description?: string
+  encryptJobId?: string
+  lid?: string
+  skills?: string[]
+}
+
+export async function getChatJobBaseInfo(params: { securityId: string }): Promise<{
+  code: number
+  message?: string
+  zpData?: BossChatJobBaseInfo
+}> {
+  const token = window?.Cookie.get('bst')
+  if (!token) throw new Error('没有获取到 BOSS 登录态')
+
+  const url = new URL('https://www.zhipin.com/wapi/zpjob/job/base/info')
+  url.searchParams.set('securityId', params.securityId)
+  return fetch(url, {
+    credentials: 'include',
+    headers: { Zp_token: token },
+    signal: AbortSignal.timeout(5000),
+  }).then((response) => response.json())
 }
 
 export async function sendPublishReq(
@@ -113,7 +147,7 @@ export async function sendPublishReq(
 }
 
 export async function getBossData(
-  job: { encryptUserId: string; securityId: string },
+  job: { encryptUserId: string; securityId: string; bossSource?: number },
   errorMsg?: string,
   retries = 3,
 ): Promise<BossZpBossData> {
@@ -134,7 +168,7 @@ export async function getBossData(
     const body = new FormData()
     body.append('bossId', job.encryptUserId)
     body.append('securityId', job.securityId)
-    body.append('bossSrc', '0')
+    body.append('bossSrc', String(job.bossSource ?? 0))
 
     const res: {
       code: number

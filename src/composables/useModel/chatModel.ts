@@ -13,6 +13,11 @@ import {
 import type { ShallowReactive } from 'vue'
 
 import type { FormDataAi } from '@/types/formData'
+import type {
+  BossReplyDecision,
+  BossReplySessionState,
+  BossReplyStatus,
+} from '@/types/aiReply'
 import { renderTemplate } from '@/utils/ai'
 
 import type { ModelConf } from '.'
@@ -24,7 +29,56 @@ type MessageRole = (typeof role)[number]
 
 export interface Message extends ChatMessageProps {
   uiRole: MessageRole
+  bossDirection?: 'incoming' | 'outgoing'
+  bossSentAt?: number
   // messages?: ModelMessage[]
+}
+
+export interface ChatSessionMeta {
+  kind: 'boss'
+  title: string
+  subtitle?: string
+  avatar?: string
+  readOnly?: boolean
+  conversationId?: string
+  friendId?: string
+  friendSource?: number
+  encryptBossId?: string
+  encryptJobId?: string
+  securityId?: string
+  companyName?: string
+  jobName?: string
+  jobLid?: string
+  jobSalary?: string
+  jobDegree?: string
+  jobExperience?: string
+  jobAddress?: string
+  jobDescription?: string
+  jobSkills?: string[]
+  historyStatus?: 'idle' | 'loading' | 'ready' | 'partial' | 'error'
+  historyMessage?: string
+  historyMessageCount?: number
+  jobContextStatus?: 'idle' | 'loading' | 'ready' | 'partial' | 'error'
+  jobContextMessage?: string
+  conversationHistoryComplete?: boolean
+  unreadCount?: number
+  unreadState?: 'unknown' | 'read' | 'unread'
+  lastIncomingMessageId?: string
+}
+
+export type BossChatConnectionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'error'
+
+export type BossChatSnapshotStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+export interface BossChatRuntimeStatus<T extends string> {
+  status: T
+  message: string
 }
 
 export class VueChatState<UI_MESSAGE extends UIMessage> implements ChatState<UI_MESSAGE> {
@@ -81,8 +135,24 @@ export class VueChatState<UI_MESSAGE extends UIMessage> implements ChatState<UI_
 
 export class ChatModel {
   states: ShallowReactive<Map<string, VueChatState<Message>>> = shallowReactive(new Map())
+  sessions: ShallowReactive<Map<string, ChatSessionMeta>> = shallowReactive(new Map())
 
   jobs = ref<string[]>([])
+  bossConnection = ref<BossChatRuntimeStatus<BossChatConnectionStatus>>({
+    status: 'idle',
+    message: '实时连接尚未启动',
+  })
+  bossSnapshot = ref<BossChatRuntimeStatus<BossChatSnapshotStatus>>({
+    status: 'idle',
+    message: '会话摘要尚未读取',
+  })
+  bossReply = ref<BossChatRuntimeStatus<BossReplyStatus>>({
+    status: 'disabled',
+    message: 'AI 自动回复尚未启用',
+  })
+  bossReplySessions: ShallowReactive<Map<string, BossReplySessionState>> = shallowReactive(
+    new Map(),
+  )
 
   providers: Map<string, OpenAIProvider> = new Map()
   agents: Map<MessageRole, [ToolLoopAgent, ModelConf, FormDataAi]> = new Map()
@@ -99,6 +169,69 @@ export class ChatModel {
       },
       {} as { [key in MessageRole]: () => string },
     )
+  }
+
+  setBossConnection(status: BossChatConnectionStatus, message: string): void {
+    this.bossConnection.value = { status, message }
+  }
+
+  setBossSnapshot(status: BossChatSnapshotStatus, message: string): void {
+    this.bossSnapshot.value = { status, message }
+  }
+
+  setBossReply(status: BossReplyStatus, message: string): void {
+    this.bossReply.value = { status, message }
+  }
+
+  setBossReplySession(
+    sessionKey: string,
+    status: BossReplyStatus,
+    message: string,
+    decision?: BossReplyDecision,
+  ): void {
+    this.bossReplySessions.set(sessionKey, {
+      status,
+      message,
+      decision,
+      updatedAt: Date.now(),
+    })
+  }
+
+  ensureSession(
+    sessionKey: string,
+    meta: ChatSessionMeta,
+    position: 'front' | 'back' = 'front',
+  ): VueChatState<Message> {
+    let state = this.states.get(sessionKey)
+    if (!state) {
+      state = new VueChatState<Message>()
+      this.states.set(sessionKey, state)
+    }
+
+    const currentMeta = this.sessions.get(sessionKey)
+    this.sessions.set(sessionKey, {
+      ...currentMeta,
+      ...meta,
+      title: meta.title || currentMeta?.title || '未知会话',
+      subtitle: meta.subtitle || currentMeta?.subtitle,
+      avatar: meta.avatar || currentMeta?.avatar,
+      companyName: meta.companyName || currentMeta?.companyName,
+      jobName: meta.jobName || currentMeta?.jobName,
+    })
+    if (!this.jobs.value.includes(sessionKey)) {
+      this.jobs.value =
+        position === 'front'
+          ? [sessionKey, ...this.jobs.value]
+          : [...this.jobs.value, sessionKey]
+    }
+    return state
+  }
+
+  appendMessage(sessionKey: string, message: Message, meta: ChatSessionMeta): boolean {
+    const state = this.ensureSession(sessionKey, meta)
+    if (state.messages.some((item) => item.id === message.id)) return false
+    state.pushMessage(message)
+    return true
   }
 
   createAgent(
@@ -128,6 +261,29 @@ export class ChatModel {
     })
     this.agents.set(name, [agent, conf, model])
     return true
+  }
+
+  async generate(agentName: MessageRole, data: unknown): Promise<string> {
+    const agentState = this.agents.get(agentName)
+    if (!agentState) throw new Error(`Agent ${agentName} not found`)
+
+    const [agent, modelConf, model] = agentState
+    const timeout = modelConf.data?.other?.timeout ?? 60000
+    let messages: ModelMessage[]
+
+    if (typeof model.prompt === 'string') {
+      messages = [{ role: 'user', content: model.prompt }]
+    } else {
+      messages = jsonClone(model.prompt)
+    }
+    for (const message of messages) {
+      if (typeof message.content === 'string') {
+        message.content = renderTemplate(message.content, data)
+      }
+    }
+
+    const result = await agent.generate({ timeout, messages })
+    return result.text
   }
 
   async chat(

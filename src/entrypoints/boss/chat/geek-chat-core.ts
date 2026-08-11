@@ -1,5 +1,5 @@
 // @ts-nocheck
-import type { Root, Type } from 'protobufjs';
+import type { Root, Type } from 'protobufjs'
 import protobufjs from 'protobufjs'
 
 const ProtoFile =
@@ -200,6 +200,12 @@ type MessageStanza = {
   clientMid: number
 }
 
+type PresenceOptions = {
+  lastMessageId?: number
+  uniqid?: string
+  clientIP?: string
+}
+
 export class ProtoBufferMessage {
   protoRoot: Root
   ChatProtocol: Type
@@ -377,6 +383,29 @@ export class ProtoBufferMessage {
       userSource: e.friendSource || 0,
     }
     return this.createMessage.read(r)
+  }
+  createPresenceMessage(options: PresenceOptions = {}) {
+    const uniqidParts = (options.uniqid || '').split('.')
+    return this.createMessage.presence({
+      type: 1,
+      uid: this.config.userId,
+      lastMessageId: options.lastMessageId || 0,
+      clientInfo: {
+        version: '4.92',
+        system: '',
+        systemVersion: '',
+        model: '',
+        uniqid: uniqidParts.length >= 2 ? `${uniqidParts[1]}${uniqidParts[0]}` : '',
+        network: options.clientIP || '',
+        appid: 9018,
+        platform: this.config.platform,
+        channel: '-1',
+        ssid: '',
+        bssid: '',
+        longitude: 0,
+        latitude: 0,
+      },
+    })
   }
   createIqArray(e: MessageStanza, t) {
     var r

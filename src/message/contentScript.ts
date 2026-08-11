@@ -9,7 +9,7 @@ function genKey(key: string): StorageItemKey {
   return prefixes.some((prefix) => key.startsWith(prefix)) ? (key as StorageItemKey) : `sync:${key}`
 }
 
-export class ContentCounter implements BackgroundCounter {
+export class ContentCounter {
   public background: BackgroundCounter
   public routerHooks: Array<(path: string) => void> = []
 
@@ -45,6 +45,22 @@ export class ContentCounter implements BackgroundCounter {
 
   async fetch(...args: Parameters<typeof fetch>) {
     return this.background.fetch(...args)
+  }
+
+  async getFeishuNotificationStatus(
+    ...args: Parameters<BackgroundCounter['getFeishuNotificationStatus']>
+  ) {
+    return this.background.getFeishuNotificationStatus(...args)
+  }
+
+  async openOptionsPage(...args: Parameters<BackgroundCounter['openOptionsPage']>) {
+    return this.background.openOptionsPage(...args)
+  }
+
+  async notifyBossHumanHandoff(
+    ...args: Parameters<BackgroundCounter['notifyBossHumanHandoff']>
+  ) {
+    return this.background.notifyBossHumanHandoff(...args)
   }
 
   async getImage(...args: Parameters<BackgroundCounter['getImage']>) {

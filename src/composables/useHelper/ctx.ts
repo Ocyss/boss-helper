@@ -142,4 +142,32 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   async onJobCardClick(_key: string) {
     throw new Error('Method not implemented.')
   }
+
+  async triggerBossAiReply(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持 AI 主动处理会话')
+  }
+
+  async triggerBossAiFollowUp(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持 AI 主动跟进会话')
+  }
+
+  async loadBossSessionContext(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持读取 BOSS 会话上下文')
+  }
+
+  async markBossSessionRead(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持标记 BOSS 会话已读')
+  }
+
+  async pauseBossAiReply(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持暂停 AI 回复')
+  }
+
+  async resumeBossAiReply(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持恢复 AI 回复')
+  }
+
+  async sendBossAiDraft(_sessionKey: string): Promise<void> {
+    throw new Error('当前平台不支持发送 AI 回复草稿')
+  }
 }

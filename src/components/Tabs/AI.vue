@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
 
+import AIReplySettings from '@/components/AI/AIReplySettings.vue'
 import LLMModelManage from '@/components/AI/LLMModelManage.vue'
 import LLMPromptEdit from '@/components/AI/LLMPromptEdit.vue'
 import FormSwitch from '@/components/Tabs/ConfigItem/Form/FormSwitch.vue'
@@ -12,6 +13,7 @@ const helper = useHelper()
 const conf = useConf()
 const aiBoxShow = ref(false)
 const aiConfBoxShow = ref(false)
+const aiReplySettingsShow = ref(false)
 const aiBox = ref<'aiGreeting' | 'aiFiltering' | 'aiReply' | 'record'>('aiGreeting')
 
 function change(v: Partial<FormDataAi>) {
@@ -53,7 +55,6 @@ function change(v: Partial<FormDataAi>) {
         :label="formInfoData.aiReply.label"
         :data-help="formInfoData.aiReply['data-help']"
         :data="conf.formData.aiReply"
-        disabled
         @show="
           () => {
             aiBox = 'aiReply'
@@ -73,19 +74,24 @@ function change(v: Partial<FormDataAi>) {
     /> -->
     </div>
     <div>
-      <LLMModelManage>
-        <UButton
-          color="primary"
-          data-help="配置需要使用的LLM大模型"
-          @click="
-            () => {
-              aiConfBoxShow = true
-            }
-          "
-        >
-          模型配置
+      <div class="flex flex-wrap gap-2">
+        <LLMModelManage>
+          <UButton
+            color="primary"
+            data-help="配置需要使用的LLM大模型"
+            @click="
+              () => {
+                aiConfBoxShow = true
+              }
+            "
+          >
+            模型配置
+          </UButton>
+        </LLMModelManage>
+        <UButton color="neutral" variant="outline" @click="aiReplySettingsShow = true">
+          回复策略与通知
         </UButton>
-      </LLMModelManage>
+      </div>
     </div>
 
     <LLMPromptEdit
@@ -94,5 +100,6 @@ function change(v: Partial<FormDataAi>) {
       v-key="aiBox"
       :data="aiBox"
     />
+    <AIReplySettings v-if="aiReplySettingsShow" v-model="aiReplySettingsShow" />
   </div>
 </template>

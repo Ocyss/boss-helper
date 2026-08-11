@@ -1,18 +1,85 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Options Title</title>
+    <title>BossHelper 安全配置</title>
 
     <!-- Customize the manifest options -->
     <meta name="manifest.open_in_tab" content="true" />
     <meta name="manifest.browser_style" content="false" />
 
-    <!-- Set include/exclude if the page should be removed from some builds -->
-    <meta name="manifest.include" content="['chrome', 'firefox']" />
   </head>
   <body>
-    <!-- ... -->
+    <main class="page-shell">
+      <header>
+        <p class="eyebrow">BossHelper</p>
+        <h1>扩展安全配置</h1>
+        <p class="description">
+          此页面运行在扩展自身域名下，用于保存不应在 BOSS 页面中输入的飞书应用密钥。
+        </p>
+      </header>
+
+      <section class="card" aria-labelledby="feishu-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="feishu-title">飞书人工接管通知</h2>
+            <p>
+              使用智能体应用的 App ID/App Secret，通过机器人向群聊或本人发送拒答通知。
+            </p>
+          </div>
+          <label class="toggle-row">
+            <input id="enabled" type="checkbox" />
+            <span>启用</span>
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            <span>App ID</span>
+            <input id="app-id" type="text" autocomplete="off" placeholder="cli_xxx" />
+          </label>
+          <label>
+            <span>App Secret</span>
+            <input
+              id="app-secret"
+              type="password"
+              autocomplete="new-password"
+              placeholder="留空则保留已保存密钥"
+            />
+          </label>
+          <label>
+            <span>接收目标类型</span>
+            <select id="receive-id-type">
+              <option value="chat_id">群聊 chat_id</option>
+              <option value="open_id">用户 open_id</option>
+            </select>
+          </label>
+          <label>
+            <span>接收目标 ID</span>
+            <input id="receive-id" type="text" autocomplete="off" placeholder="oc_xxx" />
+          </label>
+        </div>
+
+        <p class="security-note">
+          App Secret 保存在浏览器扩展的 <code>storage.local</code> 中，不会进入 AI 提示词或普通配置导出；请勿在共享浏览器配置中保存个人密钥。
+        </p>
+
+        <div id="status" class="status" role="status" aria-live="polite">正在读取配置…</div>
+
+        <div class="actions">
+          <a
+            href="https://open.feishu.cn/document/mcp_open_tools/integrating-agents-with-feishu/overview"
+            target="_blank"
+            rel="noreferrer"
+          >
+            查看飞书官方说明
+          </a>
+          <button id="save" type="button" class="secondary">保存</button>
+          <button id="test" type="button" class="primary">保存并发送测试消息</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
   </body>
 </html>

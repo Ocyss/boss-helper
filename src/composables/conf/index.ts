@@ -26,7 +26,7 @@ export const appearanceConf = useStorageAsync(
     listSink: false,
     contentOffset: 25, // 0-25, 25则为关闭
     leftChat: false,
-    chatBoxWidth: 600,
+    chatBoxWidth: 1100,
     defaultShowChatBox: false,
   },
   ExtStorage,
@@ -127,6 +127,27 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
         from[`delay${key.charAt(0).toUpperCase() + key.slice(1)}`] = value
       })
       delete from['delay']
+      return from
+    },
+  ],
+  [
+    '20260811',
+    (from) => {
+      const prompt = from.aiReply?.prompt
+      const usesLegacyPlaceholder =
+        !prompt ||
+        (Array.isArray(prompt) &&
+          prompt.length === 1 &&
+          typeof prompt[0]?.content === 'string' &&
+          prompt[0].content.trim() === '帮我写一个回复的提示')
+
+      from.aiReply = {
+        ...defaultFormData.aiReply,
+        ...from.aiReply,
+        prompt: usesLegacyPlaceholder
+          ? defaultFormData.aiReply.prompt
+          : (prompt ?? defaultFormData.aiReply.prompt),
+      }
       return from
     },
   ],
