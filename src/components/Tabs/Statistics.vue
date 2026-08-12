@@ -122,6 +122,7 @@ onMounted(() => {
           color="primary"
           data-help="点击开始就会开始投递"
           :loading="helper.workflow?.status.value === 'running'"
+          :disabled="helper.workflow?.status.value === 'running'"
           @click="helper.start()"
         >
           {{ helper.workflow?.status.value === 'stop' ? '继续' : '开始' }}

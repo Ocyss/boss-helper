@@ -17,6 +17,26 @@ const toast = useToast()
 export const sameCompanyKey = 'local:sameCompany'
 export const sameHrKey = 'local:sameHr'
 
+function requestAbortError(signal?: AbortSignal): Error {
+  return signal?.reason instanceof Error ? signal.reason : new Error('请求已取消')
+}
+
+async function waitForRequestRetry(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw requestAbortError(signal)
+  const waitMs = 500 + Math.round(Math.random() * 250)
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, waitMs)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(requestAbortError(signal))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 export async function getJobDetail(params: { securityId: string; lid?: string }): Promise<{
   code: number
   message: string
@@ -77,12 +97,13 @@ export async function getChatJobBaseInfo(params: { securityId: string }): Promis
 
 export async function sendPublishReq(
   data: { securityId: string; encryptJobId: string },
-  errorMsg?: string,
-  retries = 3,
+  _errorMsg?: string,
+  retries = 2,
   _params = {},
+  signal?: AbortSignal,
 ) {
   if (retries === 0) {
-    throw new PublishError(errorMsg ?? '重试多次失败')
+    throw new PublishError(_errorMsg ?? '重试多次失败')
   }
   const url = new URL('https://www.zhipin.com/wapi/zpgeek/friend/add.json')
   Object.entries({
@@ -99,12 +120,23 @@ export async function sendPublishReq(
     })
     throw new PublishError('没有获取到token')
   }
+  let res: any
   try {
-    const res = await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { Zp_token: token },
-    }).then((r) => r.json())
+      signal,
+    })
+    res = await response.json()
+  } catch (e) {
+    logger.error('投递请求结果不明确，停止自动重试', e)
+    throw new PublishError(
+      `投递请求结果不明确，已停止自动重试；请先检查会话列表再继续${e instanceof Error && e.message ? `：${e.message}` : ''}`,
+      { cause: e },
+    )
+  }
 
+  try {
     res.code !== 0 && logger.error(`投递失败`, res)
 
     if (res.code === 1) {
@@ -113,20 +145,28 @@ export async function sendPublishReq(
       )
       // 命中限额弹窗 → 立刻发送确认请求
       if (content.includes('您今天已与120位BOSS沟通')) {
+        if (retries <= 1 || 'cid' in _params) throw new PublishError(content)
         try {
           const url = new URL('https://www.zhipin.com/wapi/zpCommon/actionLog/geek/chatremind.json')
           url.searchParams.set('ba', res.zpData.bizData.chatRemindDialog.ba)
           url.searchParams.set('action', 'addf-limit-popup-c')
-          await fetch(url, {
+          const response = await fetch(url, {
             method: 'POST',
             headers: { Zp_token: token },
+            signal,
           })
-
-          return sendPublishReq(data, undefined, retries, { cid: 1 })
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
         } catch (e) {
+          if (e instanceof BossHelperError) throw e
           logger.error('尝试确认投递限制失败', e)
-          throw new PublishError(`投递限制确认失败]${content}`)
+          throw new PublishError(
+            `120人限制确认请求结果不明确，已停止自动重试；请先检查会话列表再继续：${content}`,
+            { cause: e },
+          )
         }
+        await waitForRequestRetry(signal)
+        // 仅保留平台明确要求的 cid=1 业务重试；其传输或解析异常不会再次发送。
+        return await sendPublishReq(data, undefined, retries - 1, { cid: 1 }, signal)
       } else if (content.includes('您今天已与150位BOSS沟通')) {
         throw new LimitError(content)
       } else if (content.includes('操作过于频繁')) {
@@ -142,14 +182,19 @@ export async function sendPublishReq(
     if (e instanceof BossHelperError) {
       throw e
     }
-    return sendPublishReq(data, e?.message as string, retries - 1)
+    logger.error('投递响应处理异常，停止自动重试', e)
+    throw new PublishError(
+      `投递响应处理异常，已停止自动重试；请先检查会话列表再继续${e?.message ? `：${e.message}` : ''}`,
+      { cause: e },
+    )
   }
 }
 
 export async function getBossData(
   job: { encryptUserId: string; securityId: string; bossSource?: number },
   errorMsg?: string,
-  retries = 3,
+  retries = 2,
+  signal?: AbortSignal,
 ): Promise<BossZpBossData> {
   if (retries === 0) {
     throw new GreetError(errorMsg ?? '重试多次失败')
@@ -178,11 +223,14 @@ export async function getBossData(
       body: body,
       method: 'POST',
       headers: { Zp_token: token },
+      signal,
     }).then((r) => r.json())
 
     if (res.code !== 0) {
       if (res.message === '非好友关系') {
-        return await getBossData(job, '非好友关系', retries - 1)
+        if (retries <= 1) throw new GreetError('状态错误:非好友关系')
+        await waitForRequestRetry(signal)
+        return await getBossData(job, '非好友关系', retries - 1, signal)
       }
       throw new GreetError(`状态错误:${res.message}`)
     }
@@ -191,7 +239,10 @@ export async function getBossData(
     if (e instanceof GreetError) {
       throw e
     }
-    return getBossData(job, e?.message as string, retries - 1)
+    if (signal?.aborted) throw e
+    if (retries <= 1) throw new GreetError(e?.message ?? errorMsg ?? '获取Boss信息失败')
+    await waitForRequestRetry(signal)
+    return getBossData(job, e?.message as string, retries - 1, signal)
   }
 }
 

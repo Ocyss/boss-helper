@@ -82,6 +82,7 @@ export interface BossMessageJobContext {
 
 export interface BossRealtimeMessage {
   id: string
+  clientMessageId: string
   conversationId: string
   securityId: string
   participantId: string
@@ -191,9 +192,11 @@ export function parseBossChatProtocol(
       toId(message.mid) ||
       toId(message.cmid) ||
       `fallback:${fromId}:${toUserId}:${sentAt}:${bodyType}:${index}`
+    const clientMessageId = toId(message.cmid)
 
     return {
       id,
+      clientMessageId,
       conversationId: `${participantId || 'unknown'}-${participantSource}`,
       securityId,
       participantId,

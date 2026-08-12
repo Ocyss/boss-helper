@@ -1,10 +1,32 @@
 import { renderTemplate } from '@/utils/ai'
-import type { HelperContext } from '~/composables/useHelper'
+import type { HelperContext, JobData } from '~/composables/useHelper'
 
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
-import type { JobStatus, TaskContext, TaskResult } from './type';
+import type { JobStatus, TaskContext, TaskResult } from './type'
 import { defineTaskHandler } from './type'
 import { loadSet, parseFiltering, rangeMatch, rangeMatchFormat, saveSet } from './utils'
+
+type BossRepeatRawData = {
+  jobitem?: {
+    contact?: boolean
+    encryptBrandId?: string
+    encryptBossId?: string
+  }
+}
+
+function getBossRepeatRawData(rawData: unknown): BossRepeatRawData {
+  return (rawData ?? {}) as BossRepeatRawData
+}
+
+export function getSameCompanyIdentity(jobData: JobData, rawData: unknown): string {
+  const item = getBossRepeatRawData(rawData).jobitem
+  return item?.encryptBrandId || jobData.brand?.link || jobData.brand?.name || ''
+}
+
+export function getSameHrIdentity(jobData: JobData, rawData: unknown): string {
+  const item = getBossRepeatRawData(rawData).jobitem
+  return item?.encryptBossId || jobData.boss?.link || jobData.boss?.name || ''
+}
 
 export class DependencyMissingError extends Error {
   constructor(public taskId: string) {
@@ -67,41 +89,22 @@ export const taskResult = {
 }
 
 export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
+  private sameCompanySet: Map<string, number> | null = null
+  private sameHrSet: Map<string, number> | null = null
+
   SameCompanyFilter = defineTaskHandler<C, T, S>(
     '重复沟通-相同公司',
     async (ctx) => {
       if (!ctx.helper.conf.formData.sameCompanyFilter.value) {
         return
       }
-      const someSet = await loadSet(sameCompanyKey, ctx.helper.uid)
-      return {
-        fn: async (_, { jobData: data }) => {
-          if (someSet.has(data.key)) {
-            ctx.helper.statistics.todayData.value.repeat++
-            return taskResult.skip('相同公司已投递')
-          }
-        },
-        after: [
-          async (ctx, { jobData: data }) => {
-            someSet.set(data.key, Date.now())
-            if (ctx.index % 3 === 0) {
-              await saveSet(
-                sameCompanyKey,
-                ctx.helper.uid,
-                someSet,
-                ctx.helper.conf.formData.sameCompanyFilter.expire,
-              )
-            }
-          },
-        ],
-        onEnd: async (ctx) => {
-          await saveSet(
-            sameCompanyKey,
-            ctx.helper.uid,
-            someSet,
-            ctx.helper.conf.formData.sameCompanyFilter.expire,
-          )
-        },
+      this.sameCompanySet = await loadSet(sameCompanyKey, ctx.helper.uid)
+      return async (_, { jobData, rawData }) => {
+        const identity = getSameCompanyIdentity(jobData, rawData)
+        if (identity && this.sameCompanySet?.has(identity)) {
+          ctx.helper.statistics.todayData.value.repeat++
+          return taskResult.skip('相同公司已投递')
+        }
       }
     },
     { label: '相同公司' },
@@ -113,39 +116,72 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameHrFilter.value) {
         return
       }
-      const someSet = await loadSet(sameHrKey, ctx.helper.uid)
-      return {
-        fn: async (_, { jobData: data }) => {
-          if (data.key != null && someSet.has(data.key)) {
-            ctx.helper.statistics.todayData.value.repeat++
-            return taskResult.skip('相同hr已投递')
-          }
-        },
-        after: [
-          async (ctx, { jobData: data }) => {
-            someSet.set(data.key, Date.now())
-            if (ctx.index % 3 === 0) {
-              await saveSet(
-                sameHrKey,
-                ctx.helper.uid,
-                someSet,
-                ctx.helper.conf.formData.sameHrFilter.expire,
-              )
-            }
-          },
-        ],
-        onEnd: async (ctx) => {
-          await saveSet(
-            sameHrKey,
-            ctx.helper.uid,
-            someSet,
-            ctx.helper.conf.formData.sameHrFilter.expire,
-          )
-        },
+      this.sameHrSet = await loadSet(sameHrKey, ctx.helper.uid)
+      return async (_, { jobData, rawData }) => {
+        const identity = getSameHrIdentity(jobData, rawData)
+        if (identity && this.sameHrSet?.has(identity)) {
+          ctx.helper.statistics.todayData.value.repeat++
+          return taskResult.skip('相同hr已投递')
+        }
       }
     },
     { label: '相同HR' },
   )
+
+  deliveryRevalidation = defineTaskHandler<C, T, S>(
+    '投递前复验',
+    (ctx) => async (_, { jobData, rawData, state }) => {
+      const item = getBossRepeatRawData(rawData).jobitem
+      if (!state.delivery?.friendAdded && item?.contact) {
+        return taskResult.skip('发送前复验：岗位已沟通')
+      }
+
+      if (ctx.helper.conf.formData.sameCompanyFilter.value) {
+        const identity = getSameCompanyIdentity(jobData, rawData)
+        if (identity && this.sameCompanySet?.has(identity)) {
+          return taskResult.skip('发送前复验：相同公司已投递')
+        }
+      }
+      if (ctx.helper.conf.formData.sameHrFilter.value) {
+        const identity = getSameHrIdentity(jobData, rawData)
+        if (identity && this.sameHrSet?.has(identity)) {
+          return taskResult.skip('发送前复验：相同HR已投递')
+        }
+      }
+    },
+    { phase: 'commit', label: '投递前复验' },
+  )
+
+  async recordSuccessfulDelivery(
+    ctx: TaskContext<C, T, S>,
+    data: { jobData: JobData; rawData: T },
+  ): Promise<void> {
+    const now = Date.now()
+    if (this.sameCompanySet) {
+      const identity = getSameCompanyIdentity(data.jobData, data.rawData)
+      if (identity) {
+        this.sameCompanySet.set(identity, now)
+        await saveSet(
+          sameCompanyKey,
+          ctx.helper.uid,
+          this.sameCompanySet,
+          ctx.helper.conf.formData.sameCompanyFilter.expire,
+        )
+      }
+    }
+    if (this.sameHrSet) {
+      const identity = getSameHrIdentity(data.jobData, data.rawData)
+      if (identity) {
+        this.sameHrSet.set(identity, now)
+        await saveSet(
+          sameHrKey,
+          ctx.helper.uid,
+          this.sameHrSet,
+          ctx.helper.conf.formData.sameHrFilter.expire,
+        )
+      }
+    }
+  }
 
   jobTitle = defineTaskHandler<C, T, S>('岗位名', (ctx) => {
     if (!ctx.helper.conf.formData.jobTitle.enable) {
@@ -345,6 +381,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     {
       state: 'ai',
       stateMsg: 'AI筛选中',
+      concurrency: 'ai',
     },
   )
 
@@ -375,12 +412,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   })
 
   customGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+    '招呼语准备',
     (ctx) => {
       if (!ctx.helper.conf.formData.customGreeting.enable) {
         return
       }
-      return async (ctx, data) => {
+      return async (_, data) => {
         // if (ctx.bossData == null) {
         //   const bossData = await requestBossData(ctx.jobData.card!)
         //   ctx.bossData = bossData
@@ -403,26 +440,14 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
           }
         }
 
-        // ctx.message = msg
-
-        // const buf = new Message({
-        //   form_uid: uid.toString(),
-        //   to_uid: ctx.bossData.data.bossId.toString(),
-        //   to_name: ctx.bossData.data.encryptBossId, // encryptUserId
-        //   friend_source: ctx.bossData.data.bossSource,
-        //   content: msg,
-        // })
-
-        // await buf.send()
-
-        await ctx.helper.sendMessage?.(data, msg)
+        data.state.preparedGreeting = msg
       }
     },
-    { label: '自定义招呼语' },
+    { label: '准备自定义招呼语' },
   )
 
   aiGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+    '招呼语准备',
     (ctx) => {
       if (!ctx.helper.conf.formData.aiGreeting.enable) {
         return
@@ -431,11 +456,17 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
       return async (ctx, data) => {
-        const msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
-        await ctx.helper.sendMessage?.(data, msg)
+        data.state.preparedGreeting = await ctx.helper.chatModel
+          .chat('greetings', data)
+          .then((r) => r.text)
       }
     },
-    { label: 'AI招呼语', state: 'ai', stateMsg: '生成招呼语中' },
+    {
+      label: '准备AI招呼语',
+      state: 'ai',
+      stateMsg: '生成招呼语中',
+      concurrency: 'ai',
+    },
   )
 
   amap = defineTaskHandler<C, T, S>('高德地图', (ctx) => {

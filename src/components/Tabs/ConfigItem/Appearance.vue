@@ -122,7 +122,7 @@ watch(
       <UInputNumber
         v-model="appearanceConf.chatBoxWidth"
         :step="10"
-        :min="1100"
+        :min="900"
         :max="1500"
         size="sm"
         class="w-3/5"

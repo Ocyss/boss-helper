@@ -1,10 +1,14 @@
 import type { ContextLogger } from 'devlog-ui'
 
 import type { HelperContext, JobData } from '@/composables/useHelper'
+import type { FormDataInput } from '@/types/formData'
 
-import type { DeliveryWorkflow} from '.';
+import type { DeliveryWorkflow } from '.'
 import { useDeliveryWorkflow } from '.'
 import { DependencyMissingError } from './handles'
+
+export type TaskPhase = 'prepare' | 'commit'
+export type TaskConcurrency = 'default' | 'boss-detail' | 'ai'
 
 export type Task<C extends HelperContext<C, T, S>, T, S> = {
   id: string
@@ -16,6 +20,8 @@ export type Task<C extends HelperContext<C, T, S>, T, S> = {
   desc?: string
   state?: JobStatus
   stateMsg?: string
+  phase: TaskPhase
+  concurrency: TaskConcurrency
   onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
 }
 
@@ -26,6 +32,8 @@ export type TaskContext<C extends HelperContext<C, T, S>, T = any, S = any> = {
   helper: C
   index: number
   log: ContextLogger
+  runId: number
+  signal: AbortSignal
 }
 
 export const jobStatusList = [
@@ -47,6 +55,21 @@ export interface WorkflowState {
   amap?: {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>
+  }
+  preparedGreeting?: FormDataInput['value']
+  delivery?: {
+    friendAddAttempted: boolean
+    friendAdded: boolean
+    greetingSent: boolean
+    counted: boolean
+    status: 'pending' | 'friend_added' | 'completed' | 'partial'
+  }
+  preparation?: {
+    runId: number
+    preparedAt: number
+    expiresAt: number
+    configFingerprint: string
+    jobSnapshot: string
   }
 }
 
@@ -97,6 +120,8 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
     desc?: string
     state?: JobStatus
     stateMsg?: string
+    phase?: TaskPhase
+    concurrency?: TaskConcurrency
     onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
   },
 ): (options?: {
@@ -108,6 +133,8 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
   desc?: string
   state?: JobStatus
   stateMsg?: string
+  phase?: TaskPhase
+  concurrency?: TaskConcurrency
   onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
 }) => Task<C, T, S> {
   return (options) => {
@@ -120,6 +147,8 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
       desc: s = opt?.desc,
       state: st = opt?.state,
       stateMsg: sm = opt?.stateMsg,
+      phase: p = opt?.phase ?? 'prepare',
+      concurrency: c = opt?.concurrency ?? 'default',
       onEnd: oe = opt?.onEnd,
     } = options || {}
     return {
@@ -132,6 +161,8 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
       desc: s,
       state: st,
       stateMsg: sm,
+      phase: p,
+      concurrency: c,
       onEnd: oe,
     }
   }

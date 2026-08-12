@@ -33,6 +33,11 @@ export interface BossReadMessageTarget {
   friendSource: number
 }
 
+export interface BossSentTextReceipt {
+  clientMessageId: string
+  sentAt: number
+}
+
 type BossChatSocketStateListener = (state: BossChatSocketState) => void
 
 const MAX_DEDUPLICATED_MESSAGES = 1000
@@ -64,7 +69,7 @@ export class GeekChatClientManager {
     return () => this.stateListeners.delete(listener)
   }
 
-  async sendText(target: BossTextMessageTarget, text: string): Promise<void> {
+  async sendText(target: BossTextMessageTarget, text: string): Promise<BossSentTextReceipt> {
     const normalizedText = text.trim()
     if (!normalizedText) throw new Error('回复内容不能为空')
     if (!this.client?.connected || !this.msgBuilder) {
@@ -76,13 +81,15 @@ export class GeekChatClientManager {
       throw new Error('当前会话缺少发送消息所需的 HR 标识')
     }
 
+    const clientMid = this.nextClientMid()
+    const sentAt = Date.now()
     const message = this.msgBuilder.createTextMessage(
       {
         uid,
         friendSource: target.friendSource,
         encryptUid: target.encryptUid,
         encryptGid: '',
-        clientMid: this.nextClientMid(),
+        clientMid,
       },
       { text: normalizedText },
     )
@@ -98,6 +105,8 @@ export class GeekChatClientManager {
         },
       )
     })
+
+    return { clientMessageId: String(clientMid), sentAt }
   }
 
   async markRead(target: BossReadMessageTarget, messageId: string): Promise<void> {

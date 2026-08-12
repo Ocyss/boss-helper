@@ -17,7 +17,7 @@ type ChatBoxSlideoverContent = NonNullable<SlideoverProps['content']> & {
   }
 }
 
-const MIN_CHAT_BOX_WIDTH = 1100
+const MIN_CHAT_BOX_WIDTH = 900
 const open = defineModel('open', { default: false })
 const following = ref(true)
 const chatMessages = useTemplateRef('chatMessages') // TODO: auto scroll
@@ -161,21 +161,6 @@ const selectedContextLoading = computed(
     selectedSession.value?.jobContextStatus === 'loading',
 )
 
-const bossConnectionIndicatorClass = computed(() => {
-  switch (helper.chatModel.bossConnection.value.status) {
-    case 'connected':
-      return 'bg-emerald-500'
-    case 'connecting':
-    case 'reconnecting':
-      return 'bg-amber-500'
-    case 'disconnected':
-    case 'error':
-      return 'bg-red-500'
-    default:
-      return 'bg-gray-400'
-  }
-})
-
 const bossReplyIndicatorClass = computed(() => {
   switch (helper.chatModel.bossReply.value.status) {
     case 'ready':
@@ -260,11 +245,14 @@ async function copySelectedReply(): Promise<void> {
 }
 
 async function sendSelectedDraft(): Promise<void> {
-  if (!selectJob.value) return
-  if (!window.confirm('确认将当前 AI 草稿发送给这位 HR？')) return
+  const sessionKey = selectJob.value
+  if (!sessionKey || replyActionLoading.value) return
   replyActionLoading.value = true
   try {
-    await helper.sendBossAiDraft(selectJob.value)
+    await helper.sendBossAiDraft(sessionKey)
+    if (helper.chatModel.bossReplySessions.get(sessionKey)?.status === 'sent') {
+      toast.add({ title: 'AI 草稿已发送', color: 'success' })
+    }
   } catch (error) {
     toast.add({
       title: error instanceof Error ? error.message : String(error),
@@ -440,7 +428,7 @@ onUnmounted(() => {
     :content="slideoverContentProps"
     :ui="{
       body: 'flex min-h-0 flex-1 overflow-hidden p-0',
-      content: 'top-14 z-190 w-[1100px] max-w-[96vw]',
+      content: 'top-14 z-190 w-[900px] max-w-[96vw]',
     }"
   >
     <template #header>
@@ -680,14 +668,8 @@ onUnmounted(() => {
           </div>
 
           <div v-if="isBossHelper" class="shrink-0 space-y-2 p-2 pb-0 text-xs">
-            <div class="rounded-lg border border-default bg-muted/40 px-3 py-2">
-              <div class="flex items-center gap-2 font-medium">
-                <span class="size-2 shrink-0 rounded-full" :class="bossConnectionIndicatorClass" />
-                <span>{{ helper.chatModel.bossConnection.value.message }}</span>
-              </div>
-              <div class="mt-1 text-muted">
-                {{ helper.chatModel.bossSnapshot.value.message }}
-              </div>
+            <div class="rounded-lg border border-default bg-muted/40 px-3 py-2 text-muted">
+              {{ helper.chatModel.bossSnapshot.value.message }}
             </div>
 
             <div class="rounded-lg border border-default bg-muted/40 px-3 py-2">
@@ -760,6 +742,7 @@ onUnmounted(() => {
                       size="xs"
                       class="ml-2"
                       :loading="replyActionLoading"
+                      :disabled="replyActionLoading"
                       @click="sendSelectedDraft"
                     >
                       确认发送
@@ -770,7 +753,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 p-2">
+          <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
             <div
               v-if="isBossHelper && !selectJob"
               class="flex h-full items-center justify-center px-6 text-center text-sm text-muted"
@@ -865,8 +848,7 @@ onUnmounted(() => {
         v-if="selectedSession?.readOnly"
         class="py-2 pl-64 pr-3 text-center text-xs text-muted max-md:pl-52"
       >
-        HR 新消息会实时触发 AI；也可选择已有会话后处理消息或主动跟进。是否自动发送由 AI
-        回复策略决定
+        HR 新消息按 AI 回复策略处理；手动处理已有会话或主动跟进只生成草稿
       </div>
       <UChatPrompt
         v-else-if="selectJob || !isBossHelper"

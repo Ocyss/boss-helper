@@ -12,6 +12,47 @@ function parseJson(value: string): unknown {
   return JSON.parse(fenced?.[1] ?? trimmed)
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function normalizeReplyForSafetyCheck(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u00ad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, '')
+}
+
+function hasInternalEvidenceMarker(
+  reply: string,
+  allowedEvidenceIds: ReadonlySet<string>,
+): boolean {
+  const normalizedReply = normalizeReplyForSafetyCheck(reply)
+  const exactTokens = new Set([...allowedEvidenceIds].map(normalizeReplyForSafetyCheck))
+  for (const id of allowedEvidenceIds) {
+    const normalizedId = normalizeReplyForSafetyCheck(id)
+    if (normalizedId.startsWith('knowledge:')) {
+      exactTokens.add(normalizedId.slice('knowledge:'.length))
+    }
+  }
+
+  for (const token of exactTokens) {
+    if (!token) continue
+    const escapedToken = escapeRegExp(token)
+    if (
+      new RegExp(`(?:\\[\\s*${escapedToken}\\s*\\]|【\\s*${escapedToken}\\s*】)`, 'iu').test(
+        normalizedReply,
+      )
+    ) {
+      return true
+    }
+  }
+
+  // 兜底拦截裸露或组合引用；技术名词如 Java、Vue 3 不匹配这些内部命名规则。
+  return /(?:\[\s*job\s*\]|【\s*job\s*】|(?:knowledge|message)\s*:|\bevidenceIds?\b|可用\s*证据\s*ID|\bK\d{2,}\b|\[[^\]\r\n]*(?:(?:knowledge|message):[^\]\r\n]+|\bK\d{2,}\b)[^\]\r\n]*\]|【[^】\r\n]*(?:(?:knowledge|message):[^】\r\n]+|\bK\d{2,}\b)[^】\r\n]*】)/iu.test(
+    normalizedReply,
+  )
+}
+
 export function validateBossReplyDecision(
   value: string | unknown,
   allowedEvidenceIds: ReadonlySet<string>,
@@ -42,6 +83,9 @@ export function validateBossReplyDecision(
 
   if (action === 'reply') {
     if (!reply) throw new Error('AI 选择回复，但没有返回回复内容')
+    if (hasInternalEvidenceMarker(reply, allowedEvidenceIds)) {
+      throw new Error('AI 回复正文包含内部证据标记，已转人工处理')
+    }
     if (reply.length > maxReplyLength) {
       throw new Error(`AI 回复超过 ${maxReplyLength} 字限制`)
     }

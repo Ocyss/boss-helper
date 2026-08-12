@@ -1,13 +1,30 @@
 <script lang="ts" setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { useConf } from '@/composables/conf'
 import { counter } from '@/message'
 import type { BossReplyKnowledgeItem, BossReplyMode } from '@/types/aiReply'
+import type { Prompt } from '@/types/formData'
+import {
+  BOSS_REPLY_MARKDOWN_MAX_BYTES,
+  BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS,
+  parseBossReplyMarkdown,
+  type BossReplyMarkdownImport,
+} from '@/utils/bossReplyMarkdown'
 import { jsonClone } from '@/utils/deepmerge'
 
 interface KnowledgeDraft extends Omit<BossReplyKnowledgeItem, 'keywords'> {
   keywordsText: string
+}
+
+interface MarkdownImportPreview {
+  fileName: string
+  data: BossReplyMarkdownImport
+  importKnowledge: boolean
+  replaceSystemPrompt: boolean
+  replaceUserPrompt: boolean
+  confirmKnowledge: boolean
+  overwriteConflicts: boolean
 }
 
 const show = defineModel<boolean>({ required: true })
@@ -16,13 +33,14 @@ const toast = useToast()
 
 const modeItems = [
   { label: '仅生成草稿（推荐先使用）', value: 'draft' },
-  { label: '校验通过后自动发送', value: 'auto' },
+  { label: 'HR 新消息校验通过后自动发送', value: 'auto' },
 ]
-const mode = ref<BossReplyMode>(conf.formData.aiReply.mode)
+const mode = ref<BossReplyMode>(normalizeReplyMode(conf.formData.aiReply.mode))
 const browserNotification = ref(conf.formData.aiReply.browserNotification)
 const feishuNotification = ref(conf.formData.aiReply.feishuNotification)
 const sendDelaySeconds = ref(conf.formData.aiReply.sendDelaySeconds)
 const maxReplyLength = ref(conf.formData.aiReply.maxReplyLength)
+const prompt = ref<Prompt>(jsonClone(conf.formData.aiReply.prompt))
 const knowledge = ref<KnowledgeDraft[]>(
   jsonClone(
     Array.isArray(conf.formData.aiReply.knowledge) ? conf.formData.aiReply.knowledge : [],
@@ -36,6 +54,40 @@ const feishuConfigEnabled = ref(false)
 const feishuConfigReady = ref(false)
 const saving = ref(false)
 const feishuStatusLoading = ref(false)
+const markdownFileInput = ref<HTMLInputElement>()
+const markdownPreview = ref<MarkdownImportPreview>()
+
+function normalizeReplyMode(value: unknown): BossReplyMode {
+  if (value === 'auto') return 'auto'
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'value' in value &&
+    (value as { value?: unknown }).value === 'auto'
+  ) {
+    return 'auto'
+  }
+  return 'draft'
+}
+
+function normalizeKnowledgeId(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toUpperCase() : ''
+}
+
+const markdownConflicts = computed(() => {
+  if (!markdownPreview.value) return []
+  const existingById = new Map(
+    knowledge.value.map((item) => [normalizeKnowledgeId(item.id), item] as const),
+  )
+  return markdownPreview.value.data.knowledge.filter((item) => {
+    const existing = existingById.get(normalizeKnowledgeId(item.id))
+    if (!existing) return false
+    return (
+      existing.title.trim() !== item.title.trim() ||
+      existing.content.trim() !== item.content.trim()
+    )
+  })
+})
 
 function addKnowledge(): void {
   knowledge.value.push({
@@ -53,17 +105,156 @@ function removeKnowledge(index: number): void {
 }
 
 function toKnowledgeItems(): BossReplyKnowledgeItem[] {
-  return knowledge.value.map((item) => ({
-    id: item.id,
-    title: item.title.trim(),
-    content: item.content.trim(),
-    keywords: item.keywordsText
-      .split(/[，,]/)
-      .map((keyword) => keyword.trim())
-      .filter(Boolean),
-    enabled: item.enabled,
-    confirmed: item.confirmed,
-  }))
+  const ids = new Set<string>()
+  return knowledge.value.map((item) => {
+    const id = normalizeKnowledgeId(item.id)
+    if (!id) throw new Error('知识 ID 不能为空')
+    if (ids.has(id)) throw new Error(`知识库存在重复 ID：[${id}]`)
+    ids.add(id)
+
+    return {
+      id,
+      title: item.title.trim(),
+      content: item.content.trim(),
+      keywords: item.keywordsText
+        .split(/[，,]/)
+        .map((keyword) => keyword.trim())
+        .filter(Boolean),
+      enabled: item.enabled,
+      confirmed: item.confirmed,
+    }
+  })
+}
+
+function openMarkdownFile(): void {
+  markdownFileInput.value?.click()
+}
+
+async function onMarkdownFileChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  try {
+    if (!file.name.toLowerCase().endsWith('.md')) throw new Error('请选择 .md 文件')
+    if (file.size > BOSS_REPLY_MARKDOWN_MAX_BYTES) {
+      throw new Error(`Markdown 文件不能超过 ${BOSS_REPLY_MARKDOWN_MAX_BYTES / 1024} KiB`)
+    }
+    const data = parseBossReplyMarkdown(await file.text())
+    markdownPreview.value = {
+      fileName: file.name,
+      data,
+      importKnowledge: data.knowledge.length > 0,
+      replaceSystemPrompt: false,
+      replaceUserPrompt: false,
+      confirmKnowledge: false,
+      overwriteConflicts: false,
+    }
+  } catch (error) {
+    markdownPreview.value = undefined
+    toast.add({
+      title: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  }
+}
+
+function replacePromptMessage(role: 'system' | 'user', content: string): void {
+  const nextMessage = { role, content } as const
+  const remainingMessages = prompt.value.filter((message) => message.role !== role)
+
+  // 系统约束始终置顶；用户载荷放在末尾，避免遗留同角色消息继续影响模型。
+  prompt.value =
+    role === 'system' ? [nextMessage, ...remainingMessages] : [...remainingMessages, nextMessage]
+}
+
+function applyMarkdownImport(): void {
+  const preview = markdownPreview.value
+  if (!preview) return
+
+  try {
+    if (
+      !preview.importKnowledge &&
+      !preview.replaceSystemPrompt &&
+      !preview.replaceUserPrompt
+    ) {
+      throw new Error('请至少选择一项导入内容')
+    }
+    if (preview.importKnowledge && !preview.confirmKnowledge) {
+      throw new Error('请先逐项预览，并勾选“已人工核对全部知识卡片”')
+    }
+    if (
+      preview.importKnowledge &&
+      markdownConflicts.value.length > 0 &&
+      !preview.overwriteConflicts
+    ) {
+      throw new Error('存在同 ID 不同内容的知识卡片，请明确允许覆盖或取消导入')
+    }
+
+    if (preview.importKnowledge) {
+      const importedById = new Map(
+        preview.data.knowledge.map((item) => {
+          const id = normalizeKnowledgeId(item.id)
+          return [id, { ...item, id }] as const
+        }),
+      )
+      const existingIds = new Set(
+        knowledge.value.map((item) => normalizeKnowledgeId(item.id)),
+      )
+      const mergedKnowledge = knowledge.value.map((existing) => {
+        const existingId = normalizeKnowledgeId(existing.id)
+        const imported = importedById.get(existingId)
+        if (!imported) return { ...existing, id: existingId }
+
+        const hasSameContent =
+          existing.title.trim() === imported.title.trim() &&
+          existing.content.trim() === imported.content.trim()
+        if (hasSameContent) {
+          return { ...existing, id: existingId, enabled: true, confirmed: true }
+        }
+
+        return {
+          ...imported,
+          enabled: true,
+          confirmed: true,
+          keywordsText: imported.keywords.join('，'),
+        }
+      })
+      mergedKnowledge.push(
+        ...preview.data.knowledge
+          .filter((item) => !existingIds.has(normalizeKnowledgeId(item.id)))
+          .map((item) => ({
+            ...item,
+            id: normalizeKnowledgeId(item.id),
+            enabled: true,
+            confirmed: true,
+            keywordsText: item.keywords.join('，'),
+          })),
+      )
+      if (mergedKnowledge.length > BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS) {
+        throw new Error(`合并后知识库不能超过 ${BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS} 条`)
+      }
+      knowledge.value = mergedKnowledge
+    }
+    if (preview.replaceSystemPrompt && preview.data.systemPrompt) {
+      replacePromptMessage('system', preview.data.systemPrompt)
+    }
+    if (preview.replaceUserPrompt && preview.data.userPrompt) {
+      replacePromptMessage('user', preview.data.userPrompt)
+    }
+
+    toast.add({
+      title: '已应用到当前弹窗，点击“保存”后才会写入配置',
+      color: 'success',
+    })
+    markdownPreview.value = undefined
+  } catch (error) {
+    toast.add({
+      title: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  }
 }
 
 async function save(): Promise<void> {
@@ -73,12 +264,13 @@ async function save(): Promise<void> {
       throw new Error('请先在扩展安全配置页启用并完成飞书配置')
     }
     Object.assign(conf.formData.aiReply, {
-      mode: mode.value,
+      mode: normalizeReplyMode(mode.value),
       browserNotification: browserNotification.value,
       feishuNotification: feishuNotification.value,
       sendDelaySeconds: Math.min(30, Math.max(0, sendDelaySeconds.value)),
       maxReplyLength: Math.min(1000, Math.max(20, maxReplyLength.value)),
       knowledge: toKnowledgeItems(),
+      prompt: jsonClone(prompt.value),
     })
     await conf.confSaving()
     show.value = false
@@ -156,11 +348,109 @@ onMounted(() => void refreshFeishuStatus())
         <div class="flex items-center justify-between gap-3">
           <div>
             <h3 class="font-medium">本地知识库</h3>
-            <p class="text-xs text-muted">只有同时启用并确认的内容才允许成为回复证据。</p>
+            <p class="text-xs text-muted">
+              只有同时启用并确认的内容才允许成为回复证据；Markdown 知识卡使用“[K01]
+              标题”格式。
+            </p>
           </div>
-          <UButton size="sm" color="neutral" variant="outline" @click="addKnowledge">
-            添加知识
-          </UButton>
+          <div class="flex flex-wrap justify-end gap-2">
+            <input
+              ref="markdownFileInput"
+              type="file"
+              accept=".md,text/markdown,text/plain"
+              class="hidden"
+              @change="onMarkdownFileChange"
+            />
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-file-up"
+              @click="openMarkdownFile"
+            >
+              导入 Markdown
+            </UButton>
+            <UButton size="sm" color="neutral" variant="outline" @click="addKnowledge">
+              添加知识
+            </UButton>
+          </div>
+        </div>
+
+        <div
+          v-if="markdownPreview"
+          class="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-3"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-medium">导入预览：{{ markdownPreview.fileName }}</h4>
+              <p class="text-xs text-muted">
+                已识别 {{ markdownPreview.data.knowledge.length }}
+                条知识卡片。此处应用后仍需点击底部“保存”。
+              </p>
+            </div>
+            <UButton
+              icon="i-lucide-x"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              title="取消本次导入"
+              @click="markdownPreview = undefined"
+            />
+          </div>
+
+          <div class="space-y-2 rounded-md border border-default bg-default p-3">
+            <UCheckbox
+              v-model="markdownPreview.importKnowledge"
+              :label="`导入知识库（${markdownPreview.data.knowledge.length} 条）`"
+            />
+            <UCheckbox
+              v-model="markdownPreview.replaceSystemPrompt"
+              label="替换系统提示词（默认不替换）"
+              :disabled="!markdownPreview.data.systemPrompt"
+            />
+            <UCheckbox
+              v-model="markdownPreview.replaceUserPrompt"
+              label="替换调用载荷提示词（默认不替换）"
+              :disabled="!markdownPreview.data.userPrompt"
+            />
+          </div>
+
+          <div
+            v-if="markdownPreview.importKnowledge"
+            class="max-h-64 space-y-2 overflow-y-auto"
+          >
+            <div
+              v-for="item in markdownPreview.data.knowledge"
+              :key="item.id"
+              class="rounded-md border border-default bg-default p-3"
+            >
+              <div class="text-sm font-medium">[{{ item.id }}] {{ item.title }}</div>
+              <pre class="mt-1 whitespace-pre-wrap font-sans text-xs text-muted">{{ item.content }}</pre>
+            </div>
+          </div>
+
+          <div
+            v-if="markdownPreview.importKnowledge && markdownConflicts.length > 0"
+            class="space-y-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm"
+          >
+            <p>
+              检测到同 ID 不同内容：{{ markdownConflicts.map((item) => item.id).join('、') }}。
+              未明确同意前不会覆盖现有知识。
+            </p>
+            <UCheckbox
+              v-model="markdownPreview.overwriteConflicts"
+              label="允许用本文件内容覆盖上述冲突卡片"
+            />
+          </div>
+
+          <UCheckbox
+            v-if="markdownPreview.importKnowledge"
+            v-model="markdownPreview.confirmKnowledge"
+            label="我已逐项核对全部知识卡片，确认内容可作为 AI 回复依据"
+          />
+          <div class="flex justify-end">
+            <UButton size="sm" @click="applyMarkdownImport">应用所选内容</UButton>
+          </div>
         </div>
 
         <div

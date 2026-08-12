@@ -23,7 +23,7 @@ import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 
 import { GeekChatClientManager } from './chat'
-import type { BossChatSocketState } from './chat'
+import type { BossChatSocketState, BossSentTextReceipt } from './chat'
 import {
   fetchBossConversationHistory,
   fetchBossConversationPage,
@@ -88,6 +88,71 @@ function formatActiveTime(timestamp: number): string {
 function clampFiniteNumber(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback
+}
+
+function getBossReplyMode(value: unknown): 'auto' | 'draft' {
+  if (value === 'auto') return 'auto'
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'value' in value &&
+    (value as { value?: unknown }).value === 'auto'
+  ) {
+    return 'auto'
+  }
+  return 'draft'
+}
+
+function normalizeBossTimestamp(value: number | undefined): number {
+  if (!value || !Number.isFinite(value)) return 0
+  return value < 1_000_000_000_000 ? value * 1000 : value
+}
+
+function getShanghaiDate(): string {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts()
+  const partMap = new Map(parts.map((part) => [part.type, part.value] as const))
+  return `${partMap.get('year')}-${partMap.get('month')}-${partMap.get('day')}`
+}
+
+function getExplicitKnowledgeExpiry(content: string): {
+  declared: boolean
+  validUntil?: string
+} {
+  const validityLines = content.split(/\r?\n/).filter((line) => /有效期\s*[：:]/u.test(line))
+  if (validityLines.length === 0) return { declared: false }
+
+  const dates = new Set<string>()
+  for (const line of validityLines) {
+    for (const match of line.matchAll(/\b(\d{4})[-.](\d{2})[-.](\d{2})\b/gu)) {
+      const [, year, month, day] = match
+      if (!year || !month || !day) continue
+      const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+      if (
+        date.getUTCFullYear() === Number(year) &&
+        date.getUTCMonth() === Number(month) - 1 &&
+        date.getUTCDate() === Number(day)
+      ) {
+        dates.add(`${year}-${month}-${day}`)
+      }
+    }
+  }
+
+  // 声明了有效期但缺少唯一、合法的绝对日期时，不允许该卡进入自动回复证据。
+  const [validUntil] = dates
+  return dates.size === 1 && validUntil
+    ? { declared: true, validUntil }
+    : { declared: true }
+}
+
+function isKnowledgeCurrentlyValid(content: string, currentDate: string): boolean {
+  const expiry = getExplicitKnowledgeExpiry(content)
+  if (!expiry.declared) return true
+  return Boolean(expiry.validUntil && currentDate <= expiry.validUntil)
 }
 
 function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
@@ -165,8 +230,13 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   private readonly pausedReplySessions = new Set<string>()
   private readonly replyTasks = new Map<string, Promise<void>>()
   private readonly replyDraftVersions = new Map<string, string>()
+  private readonly pendingLocalOutgoingMessages = new Map<
+    string,
+    { sessionKey: string; text: string; sentAt: number }
+  >()
   private readonly sessionJobDetails = new Map<string, BossZpDetailData>()
   private readonly sessionContextTasks = new Map<string, Promise<void>>()
+  private outgoingMessageQueue: Promise<void> = Promise.resolve()
   private replyPausedSessionsLoaded = false
   private replyConfigWatcher?: () => void
 
@@ -255,53 +325,82 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     await this.workflow.executeAll(this._jobDataMap)
   }
 
+  private enqueueOutgoingMessage<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.outgoingMessageQueue.then(operation)
+    // 调用方仍收到本次错误，但队列尾始终恢复，避免一次失败阻塞后续消息。
+    this.outgoingMessageQueue = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
+  private async waitForOutgoingMessageInterval(): Promise<void> {
+    const seconds = clampFiniteNumber(this.conf.formData.delayMessageSending, 0, 99999, 2)
+    if (seconds > 0) await delay(seconds)
+  }
+
+  private async publishBossMessage(message: unknown): Promise<void> {
+    if (!this.geek.client?.connected || !this.geek.msgBuilder) {
+      throw new Error('BOSS WS 尚未连接，无法发送消息')
+    }
+    const payload = this.geek.msgBuilder.encode(message)
+    await new Promise<void>((resolve, reject) => {
+      this.geek.client.publish('chat', payload, { qos: 1, retain: true }, (error) => {
+        if (error) reject(error)
+        else resolve()
+      })
+    })
+  }
+
   async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
     logger.debug('发送消息', { jobKey: data.jobData.key, msg: msgs })
 
-    const stanza = {
-      uid: Number(data.rawData.boss.data.bossId),
-      friendSource: data.rawData.detail.bossInfo.bossSource ?? 0,
-      encryptUid: data.rawData.jobitem.encryptBossId,
-      encryptGid: '',
-      clientMid: Date.now(),
-    }
-    if (typeof msgs === 'string') {
-      msgs = [{ type: 'text', content: msgs }]
-    }
-    for (const msg of msgs) {
-      var m
-      // Each chat message needs its own client id; reusing one makes later messages look duplicated.
-      stanza.clientMid = Date.now()
-      if (msg.type === 'image') {
-        const response = await counter.getImage(msg.image)
-        if (!response.success) {
-          throw new Error('图片未上传或已过期')
-        }
-        const u8Array = new Uint8Array(response.buffer)
-        const file = new File([u8Array.buffer], response.name, { type: response.type })
-        const img = await uploadImage(data.rawData.boss.data.securityId, file)
-
-        m = this.geek.msgBuilder.createImageMessage(stanza, {
-          content: {
-            iid: 0,
-            ...img,
-          },
-        })
-      } else if (msg.type === 'text') {
-        this.pendingMessages.value = msg.content
-        await delay(this.conf.formData.delayMessageSending)
-        m = this.geek.msgBuilder.createTextMessage(stanza, {
-          text: this.pendingMessages.value,
-        })
-        this.pendingMessages.value = undefined
-      } else {
-        throw new Error('不支持的消息类型:' + msg['type'])
+    const messages = typeof msgs === 'string' ? [{ type: 'text', content: msgs } as const] : msgs
+    await this.enqueueOutgoingMessage(async () => {
+      const stanza = {
+        uid: Number(data.rawData.boss.data.bossId),
+        friendSource: data.rawData.detail.bossInfo.bossSource ?? 0,
+        encryptUid: data.rawData.jobitem.encryptBossId,
+        encryptGid: '',
+        clientMid: Date.now(),
       }
-      this.geek.client.publish('chat', this.geek.msgBuilder.encode(m), {
-        qos: 1,
-        retain: true,
-      })
-    }
+      for (const msg of messages) {
+        let message: unknown
+        // 每条消息使用独立 client id，避免后续消息被服务端识别成重复消息。
+        stanza.clientMid = Date.now()
+        if (msg.type === 'image') {
+          const response = await counter.getImage(msg.image)
+          if (!response.success) {
+            throw new Error('图片未上传或已过期')
+          }
+          const u8Array = new Uint8Array(response.buffer)
+          const file = new File([u8Array.buffer], response.name, { type: response.type })
+          const img = await uploadImage(data.rawData.boss.data.securityId, file)
+
+          await this.waitForOutgoingMessageInterval()
+          message = this.geek.msgBuilder.createImageMessage(stanza, {
+            content: {
+              iid: 0,
+              ...img,
+            },
+          })
+        } else if (msg.type === 'text') {
+          this.pendingMessages.value = msg.content
+          try {
+            await this.waitForOutgoingMessageInterval()
+            const pendingText = this.pendingMessages.value?.trim()
+            if (!pendingText) throw new Error('待发送消息为空，已取消发送')
+            message = this.geek.msgBuilder.createTextMessage(stanza, { text: pendingText })
+          } finally {
+            this.pendingMessages.value = undefined
+          }
+        } else {
+          throw new Error('不支持的消息类型:' + msg['type'])
+        }
+        await this.publishBossMessage(message)
+      }
+    })
   }
 
   private handleChatSocketState(state: BossChatSocketState): void {
@@ -428,7 +527,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 
       this.chatModel.setBossSnapshot(
         'ready',
-        `已自动读取 ${page.items.length} 个会话摘要；新消息由 WS 实时追加`,
+        `已自动读取 ${page.items.length} 个会话摘要；新消息会实时追加`,
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误'
@@ -510,36 +609,44 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 
     const participantName = message.participantName || '未知招聘者'
     const outgoing = message.direction === 'outgoing'
-    const added = this.chatModel.appendMessage(
-      sessionKey,
-      {
-        id: `boss-ws-${message.id}`,
-        role: outgoing ? 'user' : 'assistant',
-        uiRole: 'boss',
-        side: outgoing ? 'right' : 'left',
-        parts: [{ type: 'text', text: message.text }],
-        bossDirection: outgoing ? 'outgoing' : 'incoming',
-        bossSentAt: message.sentAt,
-        avatar: {
-          src: outgoing ? this.userInfo.avatar : message.participantAvatar,
-          alt: outgoing ? this.userInfo.name : participantName,
-        },
-      },
-      {
-        kind: 'boss',
-        title: participantName,
-        subtitle: message.participantCompany || 'BOSS 实时消息',
-        avatar: message.participantAvatar,
-        readOnly: true,
-        conversationId: message.conversationId,
-        friendId: message.participantId,
-        friendSource: message.participantSource,
-        securityId: message.securityId,
-        companyName: message.participantCompany,
-      },
-    )
+    const reconciled = outgoing && this.reconcileLocalOutgoingMessage(sessionKey, message)
+    const added = reconciled
+      ? false
+      : this.chatModel.appendMessage(
+          sessionKey,
+          {
+            id: `boss-ws-${message.id}`,
+            role: outgoing ? 'user' : 'assistant',
+            uiRole: 'boss',
+            side: outgoing ? 'right' : 'left',
+            parts: [{ type: 'text', text: message.text }],
+            bossDirection: outgoing ? 'outgoing' : 'incoming',
+            bossSentAt: normalizeBossTimestamp(message.sentAt),
+            avatar: {
+              src: outgoing ? this.userInfo.avatar : message.participantAvatar,
+              alt: outgoing ? this.userInfo.name : participantName,
+            },
+          },
+          {
+            kind: 'boss',
+            title: participantName,
+            subtitle: message.participantCompany || 'BOSS 实时消息',
+            avatar: message.participantAvatar,
+            readOnly: true,
+            conversationId: message.conversationId,
+            friendId: message.participantId,
+            friendSource: message.participantSource,
+            securityId: message.securityId,
+            companyName: message.participantCompany,
+          },
+        )
 
-    if (added) {
+    if (reconciled) {
+      logger.debug('已使用 BOSS WS 回环更新本地发送消息 ID', {
+        clientMessageId: message.clientMessageId,
+        serverMessageId: message.id,
+      })
+    } else if (added) {
       logger.info('已接收 BOSS WS 文本消息', {
         direction: message.direction,
       })
@@ -582,7 +689,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
     this.chatModel.setBossReply(
       'ready',
-      config.mode === 'auto' ? 'AI 自动回复已启用' : 'AI 回复草稿模式已启用',
+      getBossReplyMode(config.mode) === 'auto'
+        ? 'AI 自动回复已启用'
+        : 'AI 回复草稿模式已启用',
     )
   }
 
@@ -622,6 +731,156 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       },
       'back',
     )
+  }
+
+  private getBossMessageText(message: Message): string {
+    return (message.parts ?? [])
+      .map((part) => ('text' in part && typeof part.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+
+  private updateLocalSessionAfterSend(sessionKey: string): void {
+    const state = this.chatModel.states.get(sessionKey)
+    const meta = this.chatModel.sessions.get(sessionKey)
+    if (!state || !meta) return
+
+    const historyMessageCount = state.messages.filter((message) => message.uiRole === 'boss').length
+    this.updateSessionMeta(sessionKey, {
+      unreadCount: 0,
+      unreadState: 'read',
+      historyStatus: meta.conversationHistoryComplete ? 'ready' : 'partial',
+      historyMessage: meta.conversationHistoryComplete
+        ? `已读取全部 ${historyMessageCount} 条文本记录`
+        : `已读取最近 ${historyMessageCount} 条文本记录，较早记录未加载`,
+      historyMessageCount,
+    })
+  }
+
+  private appendLocalOutgoingMessage(
+    sessionKey: string,
+    text: string,
+    receipt: BossSentTextReceipt,
+  ): void {
+    const meta = this.chatModel.sessions.get(sessionKey)
+    if (!meta) return
+    const state = this.chatModel.ensureSession(sessionKey, meta)
+
+    const normalizedText = text.trim()
+    const echoedMessage = [...state.messages].reverse().find((message) => {
+      if (message.bossDirection !== 'outgoing') return false
+      if (this.getBossMessageText(message) !== normalizedText) return false
+      return Math.abs(normalizeBossTimestamp(message.bossSentAt) - receipt.sentAt) <= 10_000
+    })
+    // 极少数情况下服务端回环先于 MQTT publish 回调到达，此时沿用服务端消息。
+    if (!echoedMessage) {
+      const localId = `boss-ws-${receipt.clientMessageId}`
+      this.chatModel.appendMessage(
+        sessionKey,
+        {
+          id: localId,
+          role: 'user',
+          uiRole: 'boss',
+          side: 'right',
+          parts: [{ type: 'text', text: normalizedText }],
+          bossDirection: 'outgoing',
+          bossSentAt: receipt.sentAt,
+          avatar: {
+            src: this.userInfo.avatar,
+            alt: this.userInfo.name,
+          },
+        },
+        meta,
+      )
+      this.pendingLocalOutgoingMessages.set(receipt.clientMessageId, {
+        sessionKey,
+        text: normalizedText,
+        sentAt: receipt.sentAt,
+      })
+      for (const [clientMessageId, pending] of this.pendingLocalOutgoingMessages) {
+        if (receipt.sentAt - pending.sentAt > 5 * 60_000) {
+          this.pendingLocalOutgoingMessages.delete(clientMessageId)
+        }
+      }
+      if (this.pendingLocalOutgoingMessages.size > 1000) {
+        const oldestClientMessageId = this.pendingLocalOutgoingMessages.keys().next().value
+        if (oldestClientMessageId) {
+          this.pendingLocalOutgoingMessages.delete(oldestClientMessageId)
+        }
+      }
+    }
+    this.updateLocalSessionAfterSend(sessionKey)
+  }
+
+  private reconcileLocalOutgoingMessage(
+    sessionKey: string,
+    message: BossRealtimeMessage,
+  ): boolean {
+    const state = this.chatModel.states.get(sessionKey)
+    if (!state) return false
+
+    let clientMessageId = message.clientMessageId
+    const exactPending = this.pendingLocalOutgoingMessages.get(clientMessageId)
+    if (!exactPending || exactPending.sessionKey !== sessionKey) {
+      const candidates = [...this.pendingLocalOutgoingMessages.entries()]
+        .filter(
+          ([, pending]) =>
+            pending.sessionKey === sessionKey &&
+            pending.text === message.text.trim() &&
+            Math.abs(pending.sentAt - normalizeBossTimestamp(message.sentAt)) <= 30_000,
+        )
+        .sort(
+          (left, right) =>
+            Math.abs(left[1].sentAt - normalizeBossTimestamp(message.sentAt)) -
+            Math.abs(right[1].sentAt - normalizeBossTimestamp(message.sentAt)),
+        )
+      clientMessageId = candidates[0]?.[0] || ''
+    }
+    if (!clientMessageId) return false
+
+    const localId = `boss-ws-${clientMessageId}`
+    const serverId = `boss-ws-${message.id}`
+    const localIndex = state.messages.findIndex((item) => item.id === localId)
+    if (localIndex === -1) {
+      this.pendingLocalOutgoingMessages.delete(clientMessageId)
+      return false
+    }
+
+    const serverIndex = state.messages.findIndex((item) => item.id === serverId)
+    if (serverIndex !== -1 && serverIndex !== localIndex) {
+      state.messages = state.messages.filter((_, index) => index !== localIndex)
+    } else {
+      const localMessage = state.messages[localIndex]!
+      state.replaceMessage(localIndex, {
+        ...localMessage,
+        id: serverId,
+        bossSentAt: normalizeBossTimestamp(message.sentAt) || localMessage.bossSentAt,
+      })
+    }
+    this.pendingLocalOutgoingMessages.delete(clientMessageId)
+    this.updateLocalSessionAfterSend(sessionKey)
+    return true
+  }
+
+  private async sendBossReplyText(sessionKey: string, text: string): Promise<void> {
+    await this.enqueueOutgoingMessage(async () => {
+      const meta = this.chatModel.sessions.get(sessionKey)
+      if (!meta?.friendId || !meta.encryptBossId) {
+        throw new Error('当前会话缺少 WS 发送所需的 HR 标识')
+      }
+
+      await this.waitForOutgoingMessageInterval()
+      const receipt = await this.geek.sendText(
+        {
+          uid: meta.friendId,
+          friendSource: meta.friendSource ?? 0,
+          encryptUid: meta.encryptBossId,
+        },
+        text,
+      )
+      this.appendLocalOutgoingMessage(sessionKey, text, receipt)
+    })
   }
 
   private mergeSessionJobContext(
@@ -1066,6 +1325,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     ].filter(Boolean)
     if (jobLines.length > 0) allowedEvidenceIds.add('job')
 
+    const currentDate = getShanghaiDate()
     const configuredKnowledge = Array.isArray(this.conf.formData.aiReply.knowledge)
       ? this.conf.formData.aiReply.knowledge
       : []
@@ -1077,7 +1337,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           typeof item.id === 'string' &&
           item.id &&
           typeof item.content === 'string' &&
-          item.content.trim(),
+          item.content.trim() &&
+          isKnowledgeCurrentlyValid(item.content, currentDate),
       )
       .slice(0, 50)
       .map((item) => {
@@ -1117,6 +1378,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           trigger === 'follow_up'
             ? '根据岗位信息和最近聊天自然承接，生成一条推进沟通的主动跟进；不要重复已发送内容。若对方已明确拒绝、刚刚跟进过或上下文不足，则忽略或转人工。'
             : '判断最新 HR 内容是否需要回复；需要时只回答已确认的信息，并自然承接当前对话。',
+        currentDate,
         candidate: `${this.userInfo.name || '当前求职者'}（ID：${this.userInfo.id || '未知'}）`,
         recruiter: `${sessionMeta?.title || '未知招聘者'}${companyName ? ` · ${companyName}` : ''}`,
         job: jobLines.length ? `[job]\n${jobLines.join('\n')}` : '（未读取到对应岗位 JD）',
@@ -1124,9 +1386,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         recentConversation: recentConversationText,
         knowledge: knowledgeLines.length ? knowledgeLines.join('\n') : '（尚未配置已确认知识）',
         availableEvidenceIds: [...allowedEvidenceIds].join('、') || '（无）',
-        conversationHistoryComplete:
-          sessionMeta?.historyMessage ||
-          (sessionMeta?.conversationHistoryComplete ? '完整' : '不完整'),
+        conversationHistoryComplete: sessionMeta?.conversationHistoryComplete ? '完整' : '不完整',
         maxReplyLength: clampFiniteNumber(
           this.conf.formData.aiReply.maxReplyLength,
           20,
@@ -1201,7 +1461,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   ): Promise<void> {
     await this.loadPausedReplySessions()
     const config = this.conf.formData.aiReply
-    const executionMode = config.mode === 'auto' ? 'auto' : 'draft'
+    // 用户主动处理和主动跟进只生成草稿；仅 HR 实时入站消息允许按配置自动发送。
+    const executionMode = trigger === 'incoming' ? getBossReplyMode(config.mode) : 'draft'
     await this.loadBossSessionContext(sessionKey)
     const context = this.buildBossReplyContext(sessionKey, messages, trigger)
 
@@ -1325,7 +1586,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         this.chatModel.setBossReplySession(sessionKey, 'paused', '发送前已停用或暂停，未发送')
         return
       }
-      if (this.conf.formData.aiReply.mode !== 'auto') {
+      if (getBossReplyMode(this.conf.formData.aiReply.mode) !== 'auto') {
         this.replyDraftVersions.set(sessionKey, context.latestMessageId)
         this.chatModel.setBossReplySession(
           sessionKey,
@@ -1375,14 +1636,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         )
         return
       }
-      await this.geek.sendText(
-        {
-          uid: meta.friendId,
-          friendSource: meta.friendSource ?? 0,
-          encryptUid: meta.encryptBossId,
-        },
-        decision.reply,
-      )
+      await this.sendBossReplyText(sessionKey, decision.reply)
       this.chatModel.setBossReplySession(
         sessionKey,
         'sent',
@@ -1519,14 +1773,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       sessionState.decision,
     )
     try {
-      await this.geek.sendText(
-        {
-          uid: meta.friendId,
-          friendSource: meta.friendSource ?? 0,
-          encryptUid: meta.encryptBossId,
-        },
-        reply,
-      )
+      await this.sendBossReplyText(sessionKey, reply)
       this.replyDraftVersions.delete(sessionKey)
       this.chatModel.setBossReplySession(
         sessionKey,

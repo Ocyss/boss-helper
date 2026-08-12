@@ -32,6 +32,7 @@ export interface BossReplyPromptContext {
   trigger: BossReplyTrigger
   triggerLabel: string
   taskInstruction: string
+  currentDate: string
   candidate: string
   recruiter: string
   job: string

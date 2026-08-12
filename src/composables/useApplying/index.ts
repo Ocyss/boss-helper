@@ -5,6 +5,7 @@ import { PipelineCacheManager } from '@/composables/usePipelineCache'
 import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
 
 import type { HelperContext } from '../useHelper'
+import { LimitError, RateLimitError } from './deliverError'
 import { DependencyMissingError } from './handles'
 import type {
   Handler,
@@ -90,6 +91,90 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
   return res
 }
 
+const PREPARE_BATCH_SIZE = 10
+const PREPARED_TTL_MS = 10 * 60_000
+
+class WorkflowCancelledError extends Error {}
+class PreparedStaleError extends Error {}
+
+class Semaphore {
+  private active = 0
+  private readonly waiters: Array<() => void> = []
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(fn: () => Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) throw new WorkflowCancelledError('任务已取消')
+    while (this.active >= this.limit) {
+      if (signal.aborted) throw new WorkflowCancelledError('任务已取消')
+      await new Promise<void>((resolve, reject) => {
+        const wake = () => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        }
+        const onAbort = () => {
+          signal.removeEventListener('abort', onAbort)
+          const index = this.waiters.indexOf(wake)
+          if (index >= 0) this.waiters.splice(index, 1)
+          reject(new WorkflowCancelledError('任务已取消'))
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        this.waiters.push(wake)
+      })
+    }
+    if (signal.aborted) throw new WorkflowCancelledError('任务已取消')
+    this.active++
+    try {
+      return await fn()
+    } finally {
+      this.active--
+      this.waiters.shift()?.()
+    }
+  }
+}
+
+function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new WorkflowCancelledError('任务已取消'))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new WorkflowCancelledError('任务已取消'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function hashSnapshot(value: unknown): string {
+  let raw: string
+  try {
+    raw = JSON.stringify(value) ?? String(value)
+  } catch {
+    raw = String(value)
+  }
+  let hashA = 0x811c9dc5
+  let hashB = 0x9e3779b9
+  for (let index = 0; index < raw.length; index++) {
+    const char = raw.charCodeAt(index)
+    hashA = Math.imul(hashA ^ char, 0x01000193)
+    hashB = Math.imul(hashB ^ char, 0x85ebca6b)
+  }
+  return `${(hashA >>> 0).toString(36)}-${(hashB >>> 0).toString(36)}`
+}
+
+function getJobSnapshot<T, S>(data: WorkflowData<T, S>): string {
+  const item = (data.rawData as any)?.jobitem
+  return hashSnapshot({
+    key: data.jobData.key,
+    securityId: item?.securityId ?? '',
+    encryptJobId: item?.encryptJobId ?? '',
+    encryptBossId: item?.encryptBossId ?? '',
+  })
+}
+
 export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S>(
   items: Array<Task<C, T, S> | TaskPipeline<C, T, S> | (() => Task<C, T, S>)>,
   helper: C,
@@ -110,6 +195,116 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   >([])
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
+  const detailSemaphore = new Semaphore(1)
+  const aiSemaphore = new Semaphore(2)
+  const commitSemaphore = new Semaphore(1)
+  let executeAllActive = false
+  let executeActive = false
+  let activeRunId = 0
+  let activeController: AbortController | null = null
+  let activePageSignature = ''
+
+  type RunContext = {
+    runId: number
+    signal: AbortSignal
+    pageSignature: string
+    configFingerprint: string
+  }
+
+  type PreparedItem = {
+    data: WorkflowData<T, S>
+    index: number
+    runId: number
+    preparedAt: number
+    expiresAt: number
+    configFingerprint: string
+    jobSnapshot: string
+  }
+
+  const readyQueue: PreparedItem[] = []
+  const currentPageSignature = () => hashSnapshot(helper.jobList.value.map((job) => job.key))
+  const currentConfigFingerprint = () =>
+    hashSnapshot({
+      formData: helper.conf.formData,
+      models: helper.models.modelData.value,
+    })
+  const withAccountDeliveryLock = async (
+    onUnavailable: () => void | Promise<void>,
+    task: () => Promise<void>,
+  ): Promise<void> => {
+    type BrowserLockManager = {
+      request(
+        name: string,
+        options: { mode: 'exclusive'; ifAvailable: true },
+        callback: (lock: object | null) => Promise<void>,
+      ): Promise<void>
+    }
+    const lockManager =
+      typeof navigator === 'undefined'
+        ? undefined
+        : (navigator as Navigator & { locks?: BrowserLockManager }).locks
+    if (!lockManager) {
+      logger.warn('当前浏览器不支持 Web Locks，跨标签页投递互斥已降级为当前实例互斥')
+      return task()
+    }
+
+    const accountKey = hashSnapshot(helper.uid || 'unknown-account')
+    return lockManager.request(
+      `boss-helper:delivery:${accountKey}`,
+      { mode: 'exclusive', ifAvailable: true },
+      async (lock) => {
+        if (lock) await task()
+        else await onUnavailable()
+      },
+    )
+  }
+  const invalidateActiveRun = (reason: string) => {
+    activeRunId++
+    activeController?.abort(reason)
+    activeController = null
+    activePageSignature = ''
+    readyQueue.length = 0
+  }
+  const startPageRun = (rebuildFingerprint?: string): RunContext => {
+    const configFingerprint = currentConfigFingerprint()
+    if (rebuildFingerprint && configFingerprint !== rebuildFingerprint) {
+      throw new WorkflowCancelledError('投递配置已变化，请重新点击开始以重建流程')
+    }
+    invalidateActiveRun('开始新一页准备')
+    activeController = new AbortController()
+    activePageSignature = currentPageSignature()
+    return {
+      runId: activeRunId,
+      signal: activeController.signal,
+      pageSignature: activePageSignature,
+      configFingerprint,
+    }
+  }
+  const assertRunActive = (run: RunContext) => {
+    const pageChanged = Boolean(
+      run.pageSignature && currentPageSignature() !== run.pageSignature,
+    )
+    const configChanged = currentConfigFingerprint() !== run.configFingerprint
+    if (
+      run.signal.aborted ||
+      run.runId !== activeRunId ||
+      status.value !== 'running' ||
+      pageChanged ||
+      configChanged
+    ) {
+      if (!run.signal.aborted && (pageChanged || configChanged)) {
+        invalidateActiveRun(pageChanged ? '页面岗位已变化' : '投递配置已变化')
+      }
+      const signalReason = typeof run.signal.reason === 'string' ? run.signal.reason : ''
+      throw new WorkflowCancelledError(
+        pageChanged
+          ? '页面岗位已变化，已停止本轮投递'
+          : configChanged
+            ? '投递配置已变化，请重新点击开始以重建流程'
+            : signalReason || '准备结果已失效',
+      )
+    }
+  }
 
   const rebuild = async () => {
     const _ctx: TaskContext<C, T, S> = {
@@ -117,6 +312,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       now: new Date(),
       index: 0,
       log: logger.withContext({ id: 'workflow-rebuild' }),
+      runId: activeRunId,
+      signal: new AbortController().signal,
     }
     const taskMap = new Map<string, Task<C, T, S>>()
     const _resolvedHandlers = new Map<string, any>()
@@ -210,142 +407,376 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     data: WorkflowData<T, S>,
     index: number,
     log: ContextLogger,
+    run: RunContext,
   ) => {
-    let res: TaskResult | void = undefined
-    const isStop = () => status.value === 'stop'
-    const handler = resolvedHandlers.get(task.id)
-    if (!handler || isStop()) return
+    const invoke = async () => {
+      let res: TaskResult | void = undefined
+      const handler = resolvedHandlers.get(task.id)
+      if (!handler) return
 
-    const fns = [...task.before, handler, ...task.after]
-    log = log.withContext({ task_id: task.id })
-
-    for (const fn of fns) {
-      try {
-        res = meginResults(
-          await fn(
-            {
-              helper,
-              now: new Date(),
-              index,
-              log,
-            },
-            data,
-          ),
-        )
-        if (res?.isSkip || isStop()) break
-      } catch (e) {
-        if (e instanceof DependencyMissingError) {
-          const dep = resolvedHandlers.get(e.taskId)
-          if (dep) {
-            await dep(
+      const fns = [...task.before, handler, ...task.after]
+      const taskLog = log.withContext({ task_id: task.id })
+      for (const fn of fns) {
+        assertRunActive(run)
+        try {
+          res = meginResults(
+            await fn(
               {
                 helper,
                 now: new Date(),
                 index,
-                log,
+                log: taskLog,
+                runId: run.runId,
+                signal: run.signal,
               },
               data,
-            )
-            res = meginResults(
-              await fn(
+            ),
+          )
+          assertRunActive(run)
+          if (res?.isSkip) break
+        } catch (e) {
+          if (e instanceof DependencyMissingError) {
+            const dep = resolvedHandlers.get(e.taskId)
+            if (dep) {
+              await dep(
                 {
                   helper,
                   now: new Date(),
                   index,
-                  log,
+                  log: taskLog,
+                  runId: run.runId,
+                  signal: run.signal,
                 },
                 data,
-              ),
-            )
-            if (res?.isSkip || isStop()) break
-            continue
+              )
+              res = meginResults(
+                await fn(
+                  {
+                    helper,
+                    now: new Date(),
+                    index,
+                    log: taskLog,
+                    runId: run.runId,
+                    signal: run.signal,
+                  },
+                  data,
+                ),
+              )
+              assertRunActive(run)
+              if (res?.isSkip) break
+              continue
+            }
           }
+          throw e
         }
-        throw e
+      }
+      return res
+    }
+
+    const withRetry = async (maxRetries: number) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await invoke()
+        } catch (e) {
+          if (
+            e instanceof WorkflowCancelledError ||
+            e instanceof RateLimitError ||
+            e instanceof LimitError ||
+            attempt >= maxRetries
+          ) {
+            throw e
+          }
+          await waitForRetry(500 * 2 ** attempt + Math.round(Math.random() * 250), run.signal)
+        }
       }
     }
-    return res
+
+    if (task.concurrency === 'boss-detail') {
+      return detailSemaphore.run(() => withRetry(1), run.signal)
+    }
+    if (task.concurrency === 'ai') {
+      return aiSemaphore.run(() => withRetry(2), run.signal)
+    }
+    return invoke()
   }
 
-  const execute = async (data: WorkflowData<T, S>, index = 0) => {
-    const isStop = () => status.value === 'stop'
-    helper.statistics.todayData.value.total++
+  type ExecutionOutcome = 'completed' | 'skipped' | 'failed'
+
+  const executeTasks = async (
+    tasks: Task<C, T, S>[],
+    data: WorkflowData<T, S>,
+    index: number,
+    run: RunContext,
+  ): Promise<ExecutionOutcome> => {
     const log = logger.withContext({
       id: 'workflow-execute',
       job_key: data.jobData.key,
       job_name: data.jobData.jobName,
     })
-    try {
-      let skipPipeline = false
-      let errorLog = false
-      for (const t of pipeline.value) {
-        let res: void | TaskResult = undefined
-        try {
-          if (isStop()) break
-          helper.jobResultMaps.set(data.jobData.key, {
-            status: t.state || 'running',
-            msg: t.stateMsg || '运行中',
-          })
-          res = await executeTask(t, data, index, log)
-          if (res != null) {
-            res.msg ??= t.label ?? t.id
-            res.status ??= res.isSkip ? 'warn' : undefined
-            if (res.isSkip) {
-              skipPipeline = true
-              break
-            }
+    for (const task of tasks) {
+      let result: void | TaskResult
+      try {
+        assertRunActive(run)
+        helper.jobResultMaps.set(data.jobData.key, {
+          status: task.state || 'running',
+          msg: task.stateMsg || '运行中',
+        })
+        result = await executeTask(task, data, index, log, run)
+        if (result != null) {
+          result.msg ??= task.label ?? task.id
+          result.status ??= result.isSkip ? 'warn' : undefined
+        }
+      } catch (e) {
+        if (e instanceof RateLimitError || e instanceof LimitError) throw e
+        if (e instanceof WorkflowCancelledError) throw e
+        if (run.signal.aborted) {
+          throw new WorkflowCancelledError(
+            typeof run.signal.reason === 'string' ? run.signal.reason : '准备结果已失效',
+          )
+        }
+        result = {
+          isSkip: true,
+          status: 'error',
+          reason: `任务${task.label ?? task.id}执行失败: ${e instanceof Error ? e.message : JSON.stringify(e)}`,
+          msg: `报错/${task.label ?? task.id}`,
+        }
+        log.error(`任务${task.label ?? task.id}执行失败`, e)
+      }
+
+      if (result != null) {
+        helper.jobResultMaps.set(data.jobData.key, {
+          ...(helper.jobResultMaps.get(data.jobData.key) ?? {}),
+          ...result,
+        })
+        if (result.status) {
+          helper.statistics.todayData.value.tasks[task.id] ??= {}
+          helper.statistics.todayData.value.tasks[task.id]![result.status] ??= 0
+          helper.statistics.todayData.value.tasks[task.id]![result.status]! += 1
+        }
+        if (result.isSkip) {
+          if (result.status !== 'error') {
+            log.warn(`投递过滤: ${data.jobData.jobName}`, result.msg, result.reason)
           }
-          if (isStop()) break
-        } catch (e) {
-          res = {
-            isSkip: true,
-            status: 'error',
-            reason: `任务${t.label ?? t.id}执行失败: ${e instanceof Error ? e.message : JSON.stringify(e)}`,
-            msg: `报错/${t.label ?? t.id}`,
-          }
-          log.error(`任务${t.label ?? t.id}执行失败`, e)
-          skipPipeline = true
-          errorLog = true
-          break
-        } finally {
-          if (res != null) {
-            helper.jobResultMaps.set(data.jobData.key, {
-              ...(helper.jobResultMaps.get(data.jobData.key) ?? {}),
-              ...res,
-            })
-            if (res.status) {
-              helper.statistics.todayData.value.tasks[t.id] ??= {}
-              helper.statistics.todayData.value.tasks[t.id]![res.status] ??= 0
-              helper.statistics.todayData.value.tasks[t.id]![res.status]! += 1
-            }
-          }
+          return result.status === 'error' ? 'failed' : 'skipped'
         }
       }
-      if (!skipPipeline) {
-        helper.jobResultMaps.set(data.jobData.key, {
-          status: 'success',
-          msg: '投递成功',
-        })
-        helper.statistics.todayData.value.success++
-      } else if (!errorLog) {
-        const r = helper.jobResultMaps.get(data.jobData.key)
-        log.warn(`投递过滤: ${data.jobData.jobName}`, r?.msg, r?.reason)
-      }
-    } catch (e) {
-      status.value = 'error'
-      throw e
+    }
+    return 'completed'
+  }
+
+  const prepareJob = async (
+    data: WorkflowData<T, S>,
+    index: number,
+    run: RunContext,
+  ): Promise<PreparedItem | null> => {
+    helper.statistics.todayData.value.total++
+    const beforeConfig = currentConfigFingerprint()
+    const beforeJob = getJobSnapshot(data)
+    const outcome = await executeTasks(
+      pipeline.value.filter((task) => task.phase === 'prepare'),
+      data,
+      index,
+      run,
+    )
+    if (outcome !== 'completed') return null
+    assertRunActive(run)
+    if (
+      beforeConfig !== currentConfigFingerprint() ||
+      beforeJob !== getJobSnapshot(data)
+    ) {
+      helper.jobResultMaps.set(data.jobData.key, {
+        status: 'warn',
+        msg: '准备结果失效',
+        reason: '准备期间配置或岗位安全参数发生变化',
+      })
+      return null
+    }
+
+    const preparedAt = Date.now()
+    data.state.preparation = {
+      runId: run.runId,
+      preparedAt,
+      expiresAt: preparedAt + PREPARED_TTL_MS,
+      configFingerprint: beforeConfig,
+      jobSnapshot: beforeJob,
+    }
+    helper.jobResultMaps.set(data.jobData.key, {
+      status: 'wait',
+      msg: '准备完成，等待串行投递',
+    })
+    return {
+      data,
+      index,
+      runId: run.runId,
+      preparedAt,
+      expiresAt: preparedAt + PREPARED_TTL_MS,
+      configFingerprint: beforeConfig,
+      jobSnapshot: beforeJob,
     }
   }
 
-  const executeAll = async (rawDataMap: Map<string, T>) => {
-    await rebuild()
+  const assertDeliveryLimit = () => {
+    const limit = Number(helper.conf.formData.deliveryLimit.value)
+    if (
+      Number.isFinite(limit) &&
+      limit > 0 &&
+      helper.statistics.todayData.value.success >= limit
+    ) {
+      throw new LimitError(`已达到设定投递上限 ${limit}`)
+    }
+  }
 
+  const validatePrepared = (item: PreparedItem, rawDataMap: Map<string, T>, run: RunContext) => {
+    assertRunActive(run)
+    if (item.runId !== run.runId || item.expiresAt < Date.now()) {
+      throw new PreparedStaleError('准备结果已过期')
+    }
+    if (item.configFingerprint !== currentConfigFingerprint()) {
+      throw new PreparedStaleError('配置已变化，准备结果已作废')
+    }
+    const currentRawData = rawDataMap.get(item.data.jobData.key)
+    if (!currentRawData) throw new PreparedStaleError('岗位已不在当前页面')
+    const currentData = { ...item.data, rawData: currentRawData }
+    if (item.jobSnapshot !== getJobSnapshot(currentData)) {
+      throw new PreparedStaleError('岗位安全参数已变化')
+    }
+    if (!helper.jobList.value.some((job) => job.key === item.data.jobData.key)) {
+      throw new PreparedStaleError('岗位已不在当前页面')
+    }
+
+    const delivery = item.data.state.delivery
+    if (delivery?.friendAdded) return
+    if (!delivery?.friendAdded && (currentRawData as any)?.jobitem?.contact) {
+      throw new PreparedStaleError('岗位已沟通')
+    }
+    assertDeliveryLimit()
+  }
+
+  const commitPrepared = async (
+    item: PreparedItem,
+    rawDataMap: Map<string, T>,
+    run: RunContext,
+  ) => {
+    return commitSemaphore.run(async () => {
+      try {
+        validatePrepared(item, rawDataMap, run)
+      } catch (e) {
+        if (e instanceof LimitError) throw e
+        if (e instanceof WorkflowCancelledError) throw e
+        helper.jobResultMaps.set(item.data.jobData.key, {
+          status: 'warn',
+          msg: '准备结果失效',
+          reason: e instanceof Error ? e.message : String(e),
+        })
+        return
+      }
+
+      current.value = item.index + 1
+      helper.currentJob.value = item.data.jobData.key
+      let outcome: ExecutionOutcome = 'failed'
+      let cancellation: WorkflowCancelledError | null = null
+      try {
+        outcome = await executeTasks(
+          pipeline.value.filter((task) => task.phase === 'commit'),
+          item.data,
+          item.index,
+          run,
+        )
+      } catch (e) {
+        if (e instanceof WorkflowCancelledError && item.data.state.delivery?.friendAdded) {
+          cancellation = e
+        } else {
+          throw e
+        }
+      }
+      const delivery = item.data.state.delivery
+
+      if (delivery?.friendAdded && !delivery.counted) {
+        helper.statistics.todayData.value.success++
+        delivery.counted = true
+      }
+
+      if (outcome === 'completed' && !cancellation) {
+        if (delivery) delivery.status = 'completed'
+        helper.jobResultMaps.set(item.data.jobData.key, {
+          status: 'success',
+          msg: '投递成功',
+        })
+        if (helper.conf.formData.useCache.value) {
+          try {
+            await cachePipelineResult(
+              item.data.jobData.key,
+              item.data.jobData.jobName,
+              item.data.jobData.brand?.name ?? '',
+              'success',
+              '投递成功',
+            )
+          } catch (e) {
+            logger.warn('写入投递成功缓存失败', e)
+          }
+        }
+      } else if (delivery?.friendAdded) {
+        delivery.status = 'partial'
+        const previous = helper.jobResultMaps.get(item.data.jobData.key)
+        helper.jobResultMaps.set(item.data.jobData.key, {
+          status: 'error',
+          msg: '部分成功',
+          reason: `friend/add 已成功，不会重复投递；后续步骤失败：${cancellation?.message ?? previous?.reason ?? previous?.msg ?? '未知错误'}`,
+        })
+      }
+
+      if (delivery?.friendAddAttempted) {
+        await delay(
+          helper.conf.formData.delayDeliveryInterval,
+          () => status.value !== 'running' || run.signal.aborted,
+        )
+      }
+      if (cancellation) throw cancellation
+    }, run.signal)
+  }
+
+  const executeUnlocked = async (data: WorkflowData<T, S>, index = 0) => {
+    const restoreStatus = status.value
+    try {
+      if (status.value !== 'running') status.value = 'running'
+      const run = startPageRun()
+      const prepared = await prepareJob(data, index, run)
+      if (prepared) {
+        await commitPrepared(prepared, new Map([[data.jobData.key, data.rawData]]), run)
+      }
+    } finally {
+      invalidateActiveRun('单岗位执行结束')
+      status.value = restoreStatus
+    }
+  }
+
+  const execute = async (data: WorkflowData<T, S>, index = 0) => {
+    if (executeAllActive || executeActive) {
+      throw new Error('投递任务正在运行，请勿重复启动')
+    }
+    executeActive = true
+    try {
+      await withAccountDeliveryLock(
+        () => {
+          throw new Error('同一 BOSS 账号正在其他标签页投递，请稍后再试')
+        },
+        () => executeUnlocked(data, index),
+      )
+    } finally {
+      executeActive = false
+    }
+  }
+
+  const executeAllUnlocked = async (rawDataMap: Map<string, T>) => {
     let stepMsg = ''
     errorMessage.value = null
     status.value = 'running'
-    const isStop = () => status.value === 'stop'
+    const isStop = () => status.value !== 'running'
+    let rebuildFingerprint = ''
 
     try {
+      await rebuild()
+      rebuildFingerprint = currentConfigFingerprint()
       while (status.value === 'running') {
         if (helper.jobList.value.length === 0) {
           stepMsg = '没有职位可投递'
@@ -364,26 +795,58 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           helper.jobResultMaps.set(job.key, v)
         })
 
+        const pageFingerprintBeforeDelay = currentPageSignature()
+        // 保留原有的每页启动等待，准备并行不能缩短用户配置的页面间隔。
         await delay(helper.conf.formData.delayDeliveryStarts, isStop)
+        if (isStop()) break
+        if (currentPageSignature() !== pageFingerprintBeforeDelay) {
+          throw new WorkflowCancelledError('页面岗位已变化，已停止本轮投递')
+        }
+        if (currentConfigFingerprint() !== rebuildFingerprint) {
+          throw new WorkflowCancelledError('投递配置已变化，请重新点击开始以重建流程')
+        }
 
-        for (const [index, jobData] of helper.jobList.value.entries()) {
-          current.value = index + 1
-          if (isStop()) break
-          const status = helper.jobResultMaps.get(jobData.key)?.status
-          if (status === 'success' || status === 'warn') {
-            continue
+        const run = startPageRun(rebuildFingerprint)
+        const pageJobs = [...helper.jobList.value]
+        for (
+          let offset = 0;
+          offset < pageJobs.length && status.value === 'running';
+          offset += PREPARE_BATCH_SIZE
+        ) {
+          // 准备本身不产生站内副作用，但达到上限后也不再继续消耗详情和模型请求。
+          assertDeliveryLimit()
+          const batch = pageJobs.slice(offset, offset + PREPARE_BATCH_SIZE)
+          const prepared = await Promise.all(
+            batch.map(async (jobData, batchIndex) => {
+              const index = offset + batchIndex
+              const previousStatus = helper.jobResultMaps.get(jobData.key)?.status
+              if (previousStatus === 'success' || previousStatus === 'warn') return null
+              const rawData = rawDataMap.get(jobData.key)
+              if (!rawData) {
+                helper.jobResultMaps.set(jobData.key, {
+                  status: 'error',
+                  msg: '岗位原始数据不存在',
+                })
+                return null
+              }
+              const state = stateMaps.value.get(jobData.key) || {}
+              stateMaps.value.set(jobData.key, state)
+              const data = { jobData, rawData, state }
+              helper.jobMaps.set(jobData.key, data)
+              return prepareJob(data, index, run)
+            }),
+          )
+          if (run.signal.aborted) throw new WorkflowCancelledError('准备任务已取消')
+          if (status.value !== 'running') break
+          readyQueue.push(...prepared.filter((item): item is PreparedItem => item != null))
+          while (readyQueue.length > 0 && status.value === 'running') {
+            const item = readyQueue.shift()!
+            await commitPrepared(item, rawDataMap, run)
           }
-          const data = {
-            jobData,
-            rawData: rawDataMap.get(jobData.key)!,
-            state: stateMaps.value.get(jobData.key) || {},
-          }
-          helper.jobMaps.set(jobData.key, data)
-          helper.currentJob.value = jobData.key
-          await execute(data, index)
-          await delay(helper.conf.formData.delayDeliveryInterval, isStop)
         }
         if (isStop()) break
+        invalidateActiveRun('当前页处理完成')
+        const pageFingerprintBeforeNext = currentPageSignature()
         const hasMore = await helper.loadMoreJob(
           delay(helper.conf.formData.delayDeliveryPageNext, isStop),
         )
@@ -392,10 +855,24 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           stepMsg = '投递结束, 无法继续下一页'
           break
         }
+        if (currentConfigFingerprint() !== rebuildFingerprint) {
+          throw new WorkflowCancelledError('投递配置已变化，请重新点击开始以重建流程')
+        }
+        if (currentPageSignature() === pageFingerprintBeforeNext) {
+          throw new WorkflowCancelledError('下一页岗位未发生变化，已停止本轮投递')
+        }
       }
     } catch (e) {
-      logger.error('投递未知错误', e)
-      stepMsg = `未知错误: ${e instanceof Error ? e.message : JSON.stringify(e)}`
+      if (e instanceof RateLimitError || e instanceof LimitError) {
+        invalidateActiveRun(e.message)
+        status.value = 'error'
+        stepMsg = e.message
+      } else if (e instanceof WorkflowCancelledError) {
+        stepMsg = status.value === 'stop' ? '投递已暂停' : e.message || '准备结果已失效'
+      } else {
+        logger.error('投递未知错误', e)
+        stepMsg = `未知错误: ${e instanceof Error ? e.message : JSON.stringify(e)}`
+      }
     } finally {
       if (!stepMsg) {
         stepMsg = '投递结束'
@@ -409,11 +886,14 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       const now = new Date()
       for (const t of pipeline.value) {
         try {
+          const controller = new AbortController()
           await t.onEnd?.({
             now,
             helper,
             index: 0,
             log: logger.withContext({ id: 'workflow-end' }),
+            runId: activeRunId,
+            signal: controller.signal,
           })
         } catch (e) {
           logger.error('onEnd error', t.id, e)
@@ -422,7 +902,28 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
   }
 
-  const stop = () => (status.value = 'stop')
+  const executeAll = async (rawDataMap: Map<string, T>) => {
+    if (executeAllActive || executeActive) {
+      void helper.notification('投递任务正在运行，请勿重复启动')
+      return
+    }
+    executeAllActive = true
+    try {
+      await withAccountDeliveryLock(
+        () => {
+          void helper.notification('同一 BOSS 账号正在其他标签页投递，请稍后再试')
+        },
+        () => executeAllUnlocked(rawDataMap),
+      )
+    } finally {
+      executeAllActive = false
+    }
+  }
+
+  const stop = () => {
+    status.value = 'stop'
+    invalidateActiveRun('用户暂停')
+  }
   const reset = () => {
     status.value = 'pending'
     helper.jobList.value.forEach((job) => {

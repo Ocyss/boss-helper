@@ -14,6 +14,7 @@ export * from './info'
 
 const formDataPresetKey = 'local:FormDataPrese'
 const formDataPresetsKey = 'local:FormDataPreses'
+const CHAT_BOX_WIDTH_MIGRATION_VERSION = 2
 
 export const appearanceConf = useStorageAsync(
   'appearance-conf',
@@ -26,11 +27,20 @@ export const appearanceConf = useStorageAsync(
     listSink: false,
     contentOffset: 25, // 0-25, 25则为关闭
     leftChat: false,
-    chatBoxWidth: 1100,
+    chatBoxWidth: 900,
+    // 旧配置没有该字段，因此首次加载时会执行一次 900px 宽度迁移。
+    chatBoxWidthMigrationVersion: 1,
     defaultShowChatBox: false,
   },
   ExtStorage,
-  { mergeDefaults: true },
+  {
+    mergeDefaults: true,
+    onReady(value) {
+      if (value.chatBoxWidthMigrationVersion >= CHAT_BOX_WIDTH_MIGRATION_VERSION) return
+      value.chatBoxWidth = 900
+      value.chatBoxWidthMigrationVersion = CHAT_BOX_WIDTH_MIGRATION_VERSION
+    },
+  },
 )
 const isLoading = ref(true)
 const formData: FormData = reactive(defaultFormData)
