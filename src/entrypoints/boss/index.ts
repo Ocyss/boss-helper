@@ -36,7 +36,6 @@ import {
 } from './chat/conversation-list'
 import type { BossMessageJobContext, BossRealtimeMessage } from './chat/message-parser'
 import { parseBossChatProtocol } from './chat/message-parser'
-import { mountBossChatMvp, unmountBossChatMvp } from './chat/mvp-panel'
 import type { BoosJobData } from './delivery'
 import { bossWorkflow } from './delivery'
 import { BossReplyBatcher } from './reply/batcher'
@@ -323,6 +322,36 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         encryptGid: '',
         clientMid: Date.now(),
       }
+      const friendId = String(data.rawData.boss.data.bossId)
+      const friendSource = data.rawData.detail.bossInfo.bossSource ?? 0
+      const conversationId = `${friendId}-${friendSource}`
+      const sessionKey = `boss-chat:${conversationId}`
+      const sessionMeta: ChatSessionMeta = {
+        kind: 'boss',
+        title: data.rawData.boss.data.name || data.rawData.jobitem.bossName || '未知招聘者',
+        subtitle: [data.jobData.brand?.name, data.jobData.jobName].filter(Boolean).join(' · '),
+        avatar: data.rawData.jobitem.bossAvatar,
+        readOnly: true,
+        conversationId,
+        friendId,
+        friendSource,
+        encryptBossId: data.rawData.jobitem.encryptBossId,
+        encryptJobId: data.rawData.jobitem.encryptJobId,
+        securityId: data.rawData.jobitem.securityId,
+        jobLid: data.rawData.jobitem.lid,
+        companyName: data.jobData.brand?.name,
+        jobName: data.jobData.jobName,
+        jobDescription: data.jobData.jobDescription,
+        historyStatus: 'partial',
+        historyMessage: '由本次投递创建会话；较早聊天记录尚未读取',
+        historyMessageCount: 0,
+        jobContextStatus: 'ready',
+        jobContextMessage: '已从本次投递岗位读取 JD',
+        conversationHistoryComplete: false,
+        unreadCount: 0,
+        unreadState: 'read',
+      }
+      this.chatModel.ensureSession(sessionKey, sessionMeta, 'front')
       for (const msg of messages) {
         let message: unknown
         // 每条消息使用独立 client id，避免后续消息被服务端识别成重复消息。
@@ -349,7 +378,16 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
             await this.waitForOutgoingMessageInterval()
             const pendingText = this.pendingMessages.value?.trim()
             if (!pendingText) throw new Error('待发送消息为空，已取消发送')
-            message = this.geek.msgBuilder.createTextMessage(stanza, { text: pendingText })
+            const receipt = await this.geek.sendText(
+              {
+                uid: friendId,
+                friendSource,
+                encryptUid: data.rawData.jobitem.encryptBossId,
+              },
+              pendingText,
+            )
+            this.appendLocalOutgoingMessage(sessionKey, pendingText, receipt)
+            continue
           } finally {
             this.pendingMessages.value = undefined
           }
@@ -550,7 +588,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       message.contentType !== 'text' ||
       !message.text
     ) {
-      logger.debug('忽略非 MVP 范围的 BOSS WS 消息', {
+      logger.debug('忽略非实时文本范围的 BOSS WS 消息', {
         direction: message.direction,
         contentType: message.contentType,
         rawType: message.rawType,
@@ -2336,7 +2374,6 @@ export default defineUnlistedScript(async () => {
     path === '/web/geek/chat' || path.startsWith('/web/geek/chat/')
 
   if (isChatPage(window.location.pathname)) {
-    await mountBossChatMvp()
     return
   }
 
@@ -2363,10 +2400,8 @@ export default defineUnlistedScript(async () => {
     }) => {
       // hookChatSocket()
       if (isChatPage(to.path)) {
-        void mountBossChatMvp()
         return
       }
-      unmountBossChatMvp()
       void bossHelpCtx.onMount(to.path)
     },
   )

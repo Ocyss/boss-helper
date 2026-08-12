@@ -57,6 +57,7 @@ export interface WorkflowState {
     distance?: Awaited<ReturnType<typeof amapDistance>>
   }
   preparedGreeting?: FormDataInput['value']
+  preparedGreetingSource?: 'custom' | 'ai'
   delivery?: {
     friendAddAttempted: boolean
     friendAdded: boolean

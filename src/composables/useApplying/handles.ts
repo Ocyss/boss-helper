@@ -1,5 +1,6 @@
 import type { CandidateKnowledgeTask } from '@/types/aiReply'
 import { renderTemplate } from '@/utils/ai'
+import { validateAiGreetingText } from '@/utils/aiGreeting'
 import {
   formatCandidateKnowledge,
   getCurrentShanghaiDate,
@@ -515,6 +516,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         }
 
         data.state.preparedGreeting = msg
+        data.state.preparedGreetingSource = 'custom'
       }
     },
     { label: '准备自定义招呼语' },
@@ -530,12 +532,18 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
       return async (ctx, data) => {
-        data.state.preparedGreeting = await ctx.helper.chatModel
+        const candidateFactMessages = buildCandidateFactMessage(ctx, data, 'greeting')
+        if (candidateFactMessages.length === 0) {
+          throw new Error('缺少已确认且允许用于 AI 招呼的候选人事实，已阻止生成和发送')
+        }
+        const content = await ctx.helper.chatModel
           .chat('greetings', data, {
             disableMessages: true,
-            additionalMessages: buildCandidateFactMessage(ctx, data, 'greeting'),
+            additionalMessages: candidateFactMessages,
           })
           .then((r) => r.text)
+        data.state.preparedGreeting = validateAiGreetingText(content)
+        data.state.preparedGreetingSource = 'ai'
       }
     },
     {
