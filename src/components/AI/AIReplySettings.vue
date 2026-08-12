@@ -3,17 +3,26 @@ import { computed, onMounted, ref } from 'vue'
 
 import { useConf } from '@/composables/conf'
 import { counter } from '@/message'
-import type { BossReplyKnowledgeItem, BossReplyMode } from '@/types/aiReply'
+import type {
+  BossReplyMode,
+  CandidateKnowledgeItem,
+  CandidateKnowledgeTaskAccess,
+  CandidateProfileConfig,
+} from '@/types/aiReply'
 import type { Prompt } from '@/types/formData'
 import {
   BOSS_REPLY_MARKDOWN_MAX_BYTES,
   BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS,
   parseBossReplyMarkdown,
-  type BossReplyMarkdownImport,
 } from '@/utils/bossReplyMarkdown'
+import type { BossReplyMarkdownImport } from '@/utils/bossReplyMarkdown'
+import {
+  normalizeCandidateKnowledgeItem,
+  normalizeCandidateProfile,
+} from '@/utils/candidateProfile'
 import { jsonClone } from '@/utils/deepmerge'
 
-interface KnowledgeDraft extends Omit<BossReplyKnowledgeItem, 'keywords'> {
+interface KnowledgeDraft extends Omit<CandidateKnowledgeItem, 'keywords'> {
   keywordsText: string
 }
 
@@ -25,6 +34,8 @@ interface MarkdownImportPreview {
   replaceUserPrompt: boolean
   confirmKnowledge: boolean
   overwriteConflicts: boolean
+  importTasks: CandidateKnowledgeTaskAccess
+  autoReplyAllowed: boolean
 }
 
 const show = defineModel<boolean>({ required: true })
@@ -36,19 +47,32 @@ const modeItems = [
   { label: 'HR 新消息校验通过后自动发送', value: 'auto' },
 ]
 const mode = ref<BossReplyMode>(normalizeReplyMode(conf.formData.aiReply.mode))
+const partialReplyEnabled = ref(conf.formData.aiReply.partialReplyEnabled !== false)
 const browserNotification = ref(conf.formData.aiReply.browserNotification)
 const feishuNotification = ref(conf.formData.aiReply.feishuNotification)
 const sendDelaySeconds = ref(conf.formData.aiReply.sendDelaySeconds)
 const maxReplyLength = ref(conf.formData.aiReply.maxReplyLength)
 const prompt = ref<Prompt>(jsonClone(conf.formData.aiReply.prompt))
+const candidateProfile = normalizeCandidateProfile(conf.formData.candidateProfile)
+const policies = ref<CandidateProfileConfig['policies']>(jsonClone(candidateProfile.policies))
 const knowledge = ref<KnowledgeDraft[]>(
-  jsonClone(
-    Array.isArray(conf.formData.aiReply.knowledge) ? conf.formData.aiReply.knowledge : [],
-  ).map((item) => ({
-    ...item,
-    keywordsText: Array.isArray(item.keywords) ? item.keywords.join('，') : '',
-  })),
+  jsonClone(candidateProfile.knowledge).map((rawItem) => {
+    const item = normalizeCandidateKnowledgeItem(rawItem)
+    return {
+      ...item,
+      keywordsText: Array.isArray(item.keywords) ? item.keywords.join('，') : '',
+    }
+  }),
 )
+const retrievalModeItems = [
+  { label: '按关键词相关度', value: 'keyword' },
+  { label: '按配置顺序', value: 'all' },
+]
+const policyItems = [
+  { key: 'filtering' as const, label: 'AI 筛选' },
+  { key: 'greeting' as const, label: 'AI 招呼' },
+  { key: 'reply' as const, label: 'AI 回复' },
+]
 
 const feishuConfigEnabled = ref(false)
 const feishuConfigReady = ref(false)
@@ -56,6 +80,7 @@ const saving = ref(false)
 const feishuStatusLoading = ref(false)
 const markdownFileInput = ref<HTMLInputElement>()
 const markdownPreview = ref<MarkdownImportPreview>()
+const replySettingsBodyRef = ref<HTMLElement>()
 
 function normalizeReplyMode(value: unknown): BossReplyMode {
   if (value === 'auto') return 'auto'
@@ -83,8 +108,7 @@ const markdownConflicts = computed(() => {
     const existing = existingById.get(normalizeKnowledgeId(item.id))
     if (!existing) return false
     return (
-      existing.title.trim() !== item.title.trim() ||
-      existing.content.trim() !== item.content.trim()
+      existing.title.trim() !== item.title.trim() || existing.content.trim() !== item.content.trim()
     )
   })
 })
@@ -97,6 +121,15 @@ function addKnowledge(): void {
     keywordsText: '',
     enabled: true,
     confirmed: false,
+    tasks: {
+      filtering: false,
+      greeting: false,
+      reply: true,
+    },
+    autoReplyAllowed: false,
+    source: '',
+    confirmedAt: '',
+    validUntil: '',
   })
 }
 
@@ -104,15 +137,24 @@ function removeKnowledge(index: number): void {
   knowledge.value.splice(index, 1)
 }
 
-function toKnowledgeItems(): BossReplyKnowledgeItem[] {
+function toKnowledgeItems(): CandidateKnowledgeItem[] {
+  if (knowledge.value.length > BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS) {
+    throw new Error(`知识库不能超过 ${BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS} 条`)
+  }
   const ids = new Set<string>()
   return knowledge.value.map((item) => {
     const id = normalizeKnowledgeId(item.id)
     if (!id) throw new Error('知识 ID 不能为空')
     if (ids.has(id)) throw new Error(`知识库存在重复 ID：[${id}]`)
+    if (!item.title.trim()) throw new Error(`[${id}] 标题不能为空`)
+    if (!item.content.trim()) throw new Error(`[${id}] 正文不能为空`)
+    if (Array.from(item.title.trim()).length > 100) throw new Error(`[${id}] 标题不能超过 100 字`)
+    if (Array.from(item.content.trim()).length > 2000) {
+      throw new Error(`[${id}] 正文不能超过 2000 字`)
+    }
     ids.add(id)
 
-    return {
+    const normalized = normalizeCandidateKnowledgeItem({
       id,
       title: item.title.trim(),
       content: item.content.trim(),
@@ -122,7 +164,19 @@ function toKnowledgeItems(): BossReplyKnowledgeItem[] {
         .filter(Boolean),
       enabled: item.enabled,
       confirmed: item.confirmed,
-    }
+      tasks: {
+        filtering: item.tasks.filtering,
+        greeting: item.tasks.greeting,
+        reply: item.tasks.reply,
+      },
+      autoReplyAllowed: item.tasks.reply && item.autoReplyAllowed,
+      source: item.source.trim(),
+      confirmedAt: item.confirmedAt,
+      validUntil: item.validUntil,
+    })
+    if (item.confirmedAt && !normalized.confirmedAt) throw new Error(`[${id}] 确认日期无效`)
+    if (item.validUntil && !normalized.validUntil) throw new Error(`[${id}] 有效期无效`)
+    return normalized
   })
 }
 
@@ -150,6 +204,12 @@ async function onMarkdownFileChange(event: Event): Promise<void> {
       replaceUserPrompt: false,
       confirmKnowledge: false,
       overwriteConflicts: false,
+      importTasks: {
+        filtering: false,
+        greeting: false,
+        reply: true,
+      },
+      autoReplyAllowed: false,
     }
   } catch (error) {
     markdownPreview.value = undefined
@@ -174,11 +234,7 @@ function applyMarkdownImport(): void {
   if (!preview) return
 
   try {
-    if (
-      !preview.importKnowledge &&
-      !preview.replaceSystemPrompt &&
-      !preview.replaceUserPrompt
-    ) {
+    if (!preview.importKnowledge && !preview.replaceSystemPrompt && !preview.replaceUserPrompt) {
       throw new Error('请至少选择一项导入内容')
     }
     if (preview.importKnowledge && !preview.confirmKnowledge) {
@@ -193,15 +249,21 @@ function applyMarkdownImport(): void {
     }
 
     if (preview.importKnowledge) {
+      const configureImportedItem = (item: CandidateKnowledgeItem): KnowledgeDraft => ({
+        ...normalizeCandidateKnowledgeItem(item),
+        tasks: { ...preview.importTasks },
+        autoReplyAllowed: preview.autoReplyAllowed,
+        enabled: true,
+        confirmed: true,
+        keywordsText: item.keywords.join('，'),
+      })
       const importedById = new Map(
         preview.data.knowledge.map((item) => {
           const id = normalizeKnowledgeId(item.id)
-          return [id, { ...item, id }] as const
+          return [id, configureImportedItem({ ...item, id })] as const
         }),
       )
-      const existingIds = new Set(
-        knowledge.value.map((item) => normalizeKnowledgeId(item.id)),
-      )
+      const existingIds = new Set(knowledge.value.map((item) => normalizeKnowledgeId(item.id)))
       const mergedKnowledge = knowledge.value.map((existing) => {
         const existingId = normalizeKnowledgeId(existing.id)
         const imported = importedById.get(existingId)
@@ -211,26 +273,22 @@ function applyMarkdownImport(): void {
           existing.title.trim() === imported.title.trim() &&
           existing.content.trim() === imported.content.trim()
         if (hasSameContent) {
-          return { ...existing, id: existingId, enabled: true, confirmed: true }
+          return {
+            ...existing,
+            id: existingId,
+            enabled: true,
+            confirmed: true,
+            tasks: { ...preview.importTasks },
+            autoReplyAllowed: preview.autoReplyAllowed,
+          }
         }
 
-        return {
-          ...imported,
-          enabled: true,
-          confirmed: true,
-          keywordsText: imported.keywords.join('，'),
-        }
+        return imported
       })
       mergedKnowledge.push(
         ...preview.data.knowledge
           .filter((item) => !existingIds.has(normalizeKnowledgeId(item.id)))
-          .map((item) => ({
-            ...item,
-            id: normalizeKnowledgeId(item.id),
-            enabled: true,
-            confirmed: true,
-            keywordsText: item.keywords.join('，'),
-          })),
+          .map((item) => configureImportedItem(item)),
       )
       if (mergedKnowledge.length > BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS) {
         throw new Error(`合并后知识库不能超过 ${BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS} 条`)
@@ -265,12 +323,16 @@ async function save(): Promise<void> {
     }
     Object.assign(conf.formData.aiReply, {
       mode: normalizeReplyMode(mode.value),
+      partialReplyEnabled: partialReplyEnabled.value,
       browserNotification: browserNotification.value,
       feishuNotification: feishuNotification.value,
       sendDelaySeconds: Math.min(30, Math.max(0, sendDelaySeconds.value)),
       maxReplyLength: Math.min(1000, Math.max(20, maxReplyLength.value)),
-      knowledge: toKnowledgeItems(),
       prompt: jsonClone(prompt.value),
+    })
+    conf.formData.candidateProfile = normalizeCandidateProfile({
+      knowledge: toKnowledgeItems(),
+      policies: jsonClone(policies.value),
     })
     await conf.confSaving()
     show.value = false
@@ -317,12 +379,12 @@ onMounted(() => void refreshFeishuStatus())
 <template>
   <UModal
     v-model:open="show"
-    title="AI 回复策略与通知"
+    title="AI 回复策略与候选人事实"
     :dismissible="false"
     :ui="{ content: 'sm:max-w-3xl', body: 'space-y-5 max-h-[70vh] overflow-y-auto' }"
   >
     <template #body>
-      <section class="space-y-3">
+      <section ref="replySettingsBodyRef" class="space-y-3">
         <h3 class="font-medium">回复策略</h3>
         <UFormField label="执行模式">
           <USelectMenu
@@ -330,6 +392,7 @@ onMounted(() => void refreshFeishuStatus())
             :items="modeItems"
             label-key="label"
             value-key="value"
+            :portal="replySettingsBodyRef?.parentElement?.parentElement ?? false"
             class="w-full"
           />
         </UFormField>
@@ -342,14 +405,18 @@ onMounted(() => void refreshFeishuStatus())
           </UFormField>
         </div>
         <UCheckbox v-model="browserNotification" label="人工接管或草稿生成时显示浏览器通知" />
+        <UCheckbox
+          v-model="partialReplyEnabled"
+          label="多问题中仅部分可答时，回复有依据的部分并告警人工处理其余问题"
+        />
       </section>
 
       <section class="space-y-3 border-t border-default pt-4">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <h3 class="font-medium">本地知识库</h3>
+            <h3 class="font-medium">共享候选人事实库</h3>
             <p class="text-xs text-muted">
-              只有同时启用并确认的内容才允许成为回复证据；Markdown 知识卡使用“[K01]
+              只有同时启用、人工确认且授权给当前任务的事实才会注入模型；Markdown 知识卡使用“[K01]
               标题”格式。
             </p>
           </div>
@@ -413,19 +480,31 @@ onMounted(() => void refreshFeishuStatus())
               label="替换调用载荷提示词（默认不替换）"
               :disabled="!markdownPreview.data.userPrompt"
             />
+            <div v-if="markdownPreview.importKnowledge" class="border-t border-default pt-2">
+              <p class="mb-2 text-xs font-medium text-muted">导入知识适用任务</p>
+              <div class="flex flex-wrap gap-4">
+                <UCheckbox v-model="markdownPreview.importTasks.filtering" label="AI 筛选" />
+                <UCheckbox v-model="markdownPreview.importTasks.greeting" label="AI 招呼" />
+                <UCheckbox v-model="markdownPreview.importTasks.reply" label="AI 回复" />
+                <UCheckbox
+                  v-model="markdownPreview.autoReplyAllowed"
+                  label="允许自动回复直接引用"
+                  :disabled="!markdownPreview.importTasks.reply"
+                />
+              </div>
+            </div>
           </div>
 
-          <div
-            v-if="markdownPreview.importKnowledge"
-            class="max-h-64 space-y-2 overflow-y-auto"
-          >
+          <div v-if="markdownPreview.importKnowledge" class="max-h-64 space-y-2 overflow-y-auto">
             <div
               v-for="item in markdownPreview.data.knowledge"
               :key="item.id"
               class="rounded-md border border-default bg-default p-3"
             >
               <div class="text-sm font-medium">[{{ item.id }}] {{ item.title }}</div>
-              <pre class="mt-1 whitespace-pre-wrap font-sans text-xs text-muted">{{ item.content }}</pre>
+              <pre class="mt-1 whitespace-pre-wrap font-sans text-xs text-muted">{{
+                item.content
+              }}</pre>
             </div>
           </div>
 
@@ -446,10 +525,46 @@ onMounted(() => void refreshFeishuStatus())
           <UCheckbox
             v-if="markdownPreview.importKnowledge"
             v-model="markdownPreview.confirmKnowledge"
-            label="我已逐项核对全部知识卡片，确认内容可作为 AI 回复依据"
+            label="我已逐项核对全部知识卡片，确认内容可用于上方选定的 AI 任务"
           />
           <div class="flex justify-end">
             <UButton size="sm" @click="applyMarkdownImport">应用所选内容</UButton>
+          </div>
+        </div>
+
+        <div class="space-y-3 rounded-lg border border-default bg-muted/30 p-3">
+          <div>
+            <h4 class="text-sm font-medium">任务检索策略</h4>
+            <p class="text-xs text-muted">
+              每个任务只会从已授权事实中选取配置数量；按关键词无命中时保持配置顺序兜底。
+            </p>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <div
+              v-for="policyItem in policyItems"
+              :key="policyItem.key"
+              class="space-y-2 rounded-md border border-default bg-default p-3"
+            >
+              <div class="text-sm font-medium">{{ policyItem.label }}</div>
+              <UFormField label="检索方式">
+                <USelectMenu
+                  v-model="policies[policyItem.key].retrievalMode"
+                  :items="retrievalModeItems"
+                  label-key="label"
+                  value-key="value"
+                  :portal="replySettingsBodyRef?.parentElement?.parentElement ?? false"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField label="最多注入条数">
+                <UInputNumber
+                  v-model="policies[policyItem.key].maxKnowledgeItems"
+                  :min="1"
+                  :max="50"
+                  class="w-full"
+                />
+              </UFormField>
+            </div>
           </div>
         </div>
 
@@ -481,13 +596,30 @@ onMounted(() => void refreshFeishuStatus())
             placeholder="关键词，用逗号分隔，例如：到岗，入职"
             class="w-full"
           />
-          <div class="flex flex-wrap gap-4">
+          <div class="grid gap-2 sm:grid-cols-3">
+            <UInput v-model="item.source" placeholder="事实来源，例如：简历" />
+            <UFormField label="确认日期">
+              <UInput v-model="item.confirmedAt" type="date" class="w-full" />
+            </UFormField>
+            <UFormField label="有效期（留空为长期）">
+              <UInput v-model="item.validUntil" type="date" class="w-full" />
+            </UFormField>
+          </div>
+          <div class="flex flex-wrap gap-4 rounded-md bg-muted/40 p-2">
             <UCheckbox v-model="item.enabled" label="启用" />
             <UCheckbox v-model="item.confirmed" label="内容已人工确认" />
+            <UCheckbox v-model="item.tasks.filtering" label="用于 AI 筛选" />
+            <UCheckbox v-model="item.tasks.greeting" label="用于 AI 招呼" />
+            <UCheckbox v-model="item.tasks.reply" label="用于 AI 回复" />
+            <UCheckbox
+              v-model="item.autoReplyAllowed"
+              label="允许自动回复直接引用"
+              :disabled="!item.tasks.reply"
+            />
           </div>
         </div>
         <p v-if="knowledge.length === 0" class="text-sm text-muted">
-          暂无知识。没有确定依据时，AI 必须拒答并转人工。
+          暂无候选人事实。AI 回复没有确定依据时必须拒答并转人工。
         </p>
       </section>
 

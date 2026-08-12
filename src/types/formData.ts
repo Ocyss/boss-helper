@@ -1,3 +1,5 @@
+import type { BossReplyMode, CandidateKnowledgeItem, CandidateProfileConfig } from './aiReply'
+
 export interface Statistics {
   date: string
   success: number
@@ -35,6 +37,7 @@ export interface FormData {
   aiGreeting: FormDataAi
   aiFiltering: FormDataAi & { score: number }
   aiReply: FormDataAiReply
+  candidateProfile: CandidateProfileConfig
   amap: {
     key: string
     origins: string
@@ -111,8 +114,10 @@ export interface FormDataAi {
 }
 
 export interface FormDataAiReply extends FormDataAi {
-  mode: import('./aiReply').BossReplyMode
-  knowledge: import('./aiReply').BossReplyKnowledgeItem[]
+  mode: BossReplyMode
+  partialReplyEnabled: boolean
+  /** @deprecated 旧版回复专属知识，仅作为迁移来源。 */
+  knowledge?: CandidateKnowledgeItem[]
   browserNotification: boolean
   feishuNotification: boolean
   sendDelaySeconds: number

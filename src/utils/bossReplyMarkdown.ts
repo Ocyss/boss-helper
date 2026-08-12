@@ -1,4 +1,8 @@
-import type { BossReplyKnowledgeItem } from '@/types/aiReply'
+import type { CandidateKnowledgeItem } from '@/types/aiReply'
+import {
+  inferCandidateKnowledgeKeywords,
+  normalizeCandidateKnowledgeItem,
+} from '@/utils/candidateProfile'
 
 export const BOSS_REPLY_MARKDOWN_MAX_BYTES = 256 * 1024
 export const BOSS_REPLY_MARKDOWN_MAX_KNOWLEDGE_ITEMS = 50
@@ -8,7 +12,7 @@ export const BOSS_REPLY_MARKDOWN_MAX_CONTENT_LENGTH = 2000
 export interface BossReplyMarkdownImport {
   systemPrompt: string
   userPrompt: string
-  knowledge: BossReplyKnowledgeItem[]
+  knowledge: CandidateKnowledgeItem[]
 }
 
 type ImportSection = 'systemPrompt' | 'userPrompt' | 'knowledge'
@@ -107,11 +111,11 @@ function unwrapFirstFence(section: string): string {
   return section.trim()
 }
 
-function parseKnowledge(section: string): BossReplyKnowledgeItem[] {
+function parseKnowledge(section: string): CandidateKnowledgeItem[] {
   if (!section) return []
 
   const content = unwrapFirstFence(section)
-  const items: BossReplyKnowledgeItem[] = []
+  const items: CandidateKnowledgeItem[] = []
   const ids = new Set<string>()
   let current: { id: string; title: string; content: string[] } | undefined
 
@@ -120,18 +124,18 @@ function parseKnowledge(section: string): BossReplyKnowledgeItem[] {
     const itemContent = current.content.join('\n').trim()
     if (!itemContent) throw new Error(`[${current.id}] “${current.title}”缺少知识正文`)
     if (getTextLength(itemContent) > BOSS_REPLY_MARKDOWN_MAX_CONTENT_LENGTH) {
-      throw new Error(
-        `[${current.id}] 正文超过 ${BOSS_REPLY_MARKDOWN_MAX_CONTENT_LENGTH} 个字符`,
-      )
+      throw new Error(`[${current.id}] 正文超过 ${BOSS_REPLY_MARKDOWN_MAX_CONTENT_LENGTH} 个字符`)
     }
-    items.push({
-      id: current.id,
-      title: current.title,
-      content: itemContent,
-      keywords: [],
-      enabled: true,
-      confirmed: false,
-    })
+    items.push(
+      normalizeCandidateKnowledgeItem({
+        id: current.id,
+        title: current.title,
+        content: itemContent,
+        keywords: inferCandidateKnowledgeKeywords(current.title, itemContent),
+        enabled: true,
+        confirmed: false,
+      }),
+    )
   }
 
   for (const line of content.split('\n')) {

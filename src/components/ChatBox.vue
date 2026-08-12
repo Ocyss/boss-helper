@@ -26,12 +26,18 @@ const sessionReadFilter = ref<BossSessionReadFilter>('all')
 
 const helper = useHelper()
 const isBossHelper = computed(() => helper.key === 'boss')
-const selectJob = ref(
-  helper.chatModel.jobs.value.length > 0 ? helper.chatModel.jobs.value[0] : null,
+// ChatModel.jobs 同时承载岗位 AI 处理记录；BOSS 会话面板只允许展示已登记会话。
+const visibleSessionKeys = computed(() =>
+  isBossHelper.value
+    ? helper.chatModel.jobs.value.filter(
+        (key) => helper.chatModel.sessions.get(key)?.kind === 'boss',
+      )
+    : helper.chatModel.jobs.value,
 )
+const selectJob = ref<string | null>(null)
 
 const sessions = computed(() =>
-  helper.chatModel.jobs.value.map((key) => {
+  visibleSessionKeys.value.map((key) => {
     const state = helper.chatModel.states.get(key)
     const lastMessage = state?.messages.at(-1)
     const lastText = (lastMessage?.parts ?? [])
@@ -149,12 +155,11 @@ const toast = useToast()
 
 const messages = computed(() => {
   if (!selectJob.value) return
+  if (isBossHelper.value && selectedSession.value?.kind !== 'boss') return
   return helper.chatModel.states.get(selectJob.value)
 })
 
-const selectedHasMessages = computed(
-  () => Boolean(messages.value?.messagesRef.value.length),
-)
+const selectedHasMessages = computed(() => Boolean(messages.value?.messagesRef.value.length))
 const selectedContextLoading = computed(
   () =>
     selectedSession.value?.historyStatus === 'loading' ||
@@ -185,7 +190,7 @@ const selectedReplyPaused = computed(() =>
 )
 
 async function triggerSelectedReply(): Promise<void> {
-  if (!selectJob.value) return
+  if (!selectJob.value || selectedSession.value?.kind !== 'boss') return
   replyActionLoading.value = true
   try {
     await helper.triggerBossAiReply(selectJob.value)
@@ -200,7 +205,7 @@ async function triggerSelectedReply(): Promise<void> {
 }
 
 async function triggerSelectedFollowUp(): Promise<void> {
-  if (!selectJob.value) return
+  if (!selectJob.value || selectedSession.value?.kind !== 'boss') return
   replyActionLoading.value = true
   try {
     await helper.triggerBossAiFollowUp(selectJob.value)
@@ -215,7 +220,7 @@ async function triggerSelectedFollowUp(): Promise<void> {
 }
 
 async function toggleSelectedReplyPause(): Promise<void> {
-  if (!selectJob.value) return
+  if (!selectJob.value || selectedSession.value?.kind !== 'boss') return
   replyActionLoading.value = true
   try {
     if (selectedReplyPaused.value) await helper.resumeBossAiReply(selectJob.value)
@@ -246,7 +251,7 @@ async function copySelectedReply(): Promise<void> {
 
 async function sendSelectedDraft(): Promise<void> {
   const sessionKey = selectJob.value
-  if (!sessionKey || replyActionLoading.value) return
+  if (!sessionKey || selectedSession.value?.kind !== 'boss' || replyActionLoading.value) return
   replyActionLoading.value = true
   try {
     await helper.sendBossAiDraft(sessionKey)
@@ -266,16 +271,17 @@ async function sendSelectedDraft(): Promise<void> {
 watch(
   () => helper.currentJob.value,
   (v) => {
-    if (following.value && v) {
+    if (following.value && v && visibleSessionKeys.value.includes(v)) {
       selectJob.value = v
     }
   },
 )
 
 watch(
-  () => helper.chatModel.jobs.value[0],
-  (firstSession) => {
-    if (!selectJob.value && firstSession) selectJob.value = firstSession
+  visibleSessionKeys,
+  (sessionKeys) => {
+    if (selectJob.value && sessionKeys.includes(selectJob.value)) return
+    selectJob.value = sessionKeys[0] ?? null
   },
   { immediate: true },
 )
@@ -283,7 +289,7 @@ watch(
 watch(
   selectJob,
   (sessionKey) => {
-    if (!isBossHelper.value || !sessionKey) return
+    if (!isBossHelper.value || !sessionKey || selectedSession.value?.kind !== 'boss') return
     void helper.loadBossSessionContext(sessionKey).catch((error) => {
       toast.add({
         title: error instanceof Error ? error.message : String(error),
@@ -302,7 +308,8 @@ watch(
     () => selectedSession.value?.unreadState,
   ],
   ([isOpen, sessionKey, unreadCount, unreadState]) => {
-    if (!isBossHelper.value || !isOpen || !sessionKey) return
+    if (!isBossHelper.value || !isOpen || !sessionKey || selectedSession.value?.kind !== 'boss')
+      return
     if (unreadState === 'read' && !unreadCount) return
     void helper.markBossSessionRead(sessionKey).catch((error) => {
       toast.add({
@@ -315,6 +322,7 @@ watch(
 )
 
 function onClient(jobKey: string) {
+  if (!visibleSessionKeys.value.includes(jobKey)) return
   selectJob.value = jobKey
   following.value = false
 }
@@ -629,7 +637,10 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="mt-2 grid gap-1 text-xs text-muted">
-              <div class="flex min-w-0 items-center gap-1.5" :title="selectedSession?.historyMessage">
+              <div
+                class="flex min-w-0 items-center gap-1.5"
+                :title="selectedSession?.historyMessage"
+              >
                 <UIcon
                   :name="
                     selectedSession?.historyStatus === 'error'
@@ -725,17 +736,18 @@ onUnmounted(() => {
                   原因：{{ selectedReply.decision.reason }}
                 </div>
                 <div
+                  v-if="selectedReply.decision?.needsHumanReview"
+                  class="mt-1 text-amber-600 dark:text-amber-400"
+                >
+                  待人工核验：{{ selectedReply.decision.unansweredTopics.join('、') }}
+                </div>
+                <div
                   v-if="selectedReply.decision?.reply"
                   class="mt-2 whitespace-pre-wrap rounded-md bg-default px-3 py-2 text-sm"
                 >
                   {{ selectedReply.decision.reply }}
                   <div v-if="selectedReply.status === 'draft'" class="mt-2 flex justify-end">
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      variant="outline"
-                      @click="copySelectedReply"
-                    >
+                    <UButton size="xs" color="neutral" variant="outline" @click="copySelectedReply">
                       复制草稿
                     </UButton>
                     <UButton

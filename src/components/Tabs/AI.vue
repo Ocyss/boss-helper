@@ -89,7 +89,7 @@ function change(v: Partial<FormDataAi>) {
           </UButton>
         </LLMModelManage>
         <UButton color="neutral" variant="outline" @click="aiReplySettingsShow = true">
-          回复策略与通知
+          回复策略与候选人事实
         </UButton>
       </div>
     </div>

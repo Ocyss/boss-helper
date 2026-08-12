@@ -4,13 +4,41 @@ export type BossReplyTrigger = 'incoming' | 'manual' | 'follow_up'
 
 export type BossReplyAction = 'reply' | 'ignore' | 'need_human'
 
-export interface BossReplyKnowledgeItem {
+export type CandidateKnowledgeTask = 'filtering' | 'greeting' | 'reply'
+
+export type CandidateKnowledgeRetrievalMode = 'all' | 'keyword'
+
+export interface CandidateKnowledgeTaskAccess {
+  filtering: boolean
+  greeting: boolean
+  reply: boolean
+}
+
+export interface CandidateKnowledgeItem {
   id: string
   title: string
   content: string
   keywords: string[]
   enabled: boolean
   confirmed: boolean
+  tasks: CandidateKnowledgeTaskAccess
+  autoReplyAllowed: boolean
+  source: string
+  confirmedAt: string
+  validUntil: string
+}
+
+/** @deprecated 仅用于兼容旧配置名称，新代码统一使用 CandidateKnowledgeItem。 */
+export type BossReplyKnowledgeItem = CandidateKnowledgeItem
+
+export interface CandidateKnowledgePolicy {
+  maxKnowledgeItems: number
+  retrievalMode: CandidateKnowledgeRetrievalMode
+}
+
+export interface CandidateProfileConfig {
+  knowledge: CandidateKnowledgeItem[]
+  policies: Record<CandidateKnowledgeTask, CandidateKnowledgePolicy>
 }
 
 export interface BossReplyDecision {
@@ -19,6 +47,8 @@ export interface BossReplyDecision {
   reply: string
   reason: string
   evidenceIds: string[]
+  needsHumanReview: boolean
+  unansweredTopics: string[]
 }
 
 export interface BossReplyMessage {

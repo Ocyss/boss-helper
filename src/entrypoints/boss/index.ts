@@ -19,6 +19,11 @@ import type {
   BossReplyTrigger,
 } from '@/types/aiReply'
 import type { FormDataInput } from '@/types/formData'
+import {
+  BOSS_REPLY_PARTIAL_REVIEW_PROTOCOL,
+  buildBossReplyTopicRewriteProtocol,
+} from '@/utils/bossReplyProtocol'
+import { getCurrentShanghaiDate, selectCandidateKnowledge } from '@/utils/candidateProfile'
 import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 
@@ -35,7 +40,7 @@ import { mountBossChatMvp, unmountBossChatMvp } from './chat/mvp-panel'
 import type { BoosJobData } from './delivery'
 import { bossWorkflow } from './delivery'
 import { BossReplyBatcher } from './reply/batcher'
-import { validateBossReplyDecision } from './reply/decision'
+import { findUnansweredTopicsInReply, validateBossReplyDecision } from './reply/decision'
 import { getBossData, getChatJobBaseInfo, getJobDetail, uploadImage } from './requests'
 import type { BossZpDetailData, BossZpJobItemData } from './types'
 
@@ -106,53 +111,6 @@ function getBossReplyMode(value: unknown): 'auto' | 'draft' {
 function normalizeBossTimestamp(value: number | undefined): number {
   if (!value || !Number.isFinite(value)) return 0
   return value < 1_000_000_000_000 ? value * 1000 : value
-}
-
-function getShanghaiDate(): string {
-  const parts = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts()
-  const partMap = new Map(parts.map((part) => [part.type, part.value] as const))
-  return `${partMap.get('year')}-${partMap.get('month')}-${partMap.get('day')}`
-}
-
-function getExplicitKnowledgeExpiry(content: string): {
-  declared: boolean
-  validUntil?: string
-} {
-  const validityLines = content.split(/\r?\n/).filter((line) => /有效期\s*[：:]/u.test(line))
-  if (validityLines.length === 0) return { declared: false }
-
-  const dates = new Set<string>()
-  for (const line of validityLines) {
-    for (const match of line.matchAll(/\b(\d{4})[-.](\d{2})[-.](\d{2})\b/gu)) {
-      const [, year, month, day] = match
-      if (!year || !month || !day) continue
-      const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
-      if (
-        date.getUTCFullYear() === Number(year) &&
-        date.getUTCMonth() === Number(month) - 1 &&
-        date.getUTCDate() === Number(day)
-      ) {
-        dates.add(`${year}-${month}-${day}`)
-      }
-    }
-  }
-
-  // 声明了有效期但缺少唯一、合法的绝对日期时，不允许该卡进入自动回复证据。
-  const [validUntil] = dates
-  return dates.size === 1 && validUntil
-    ? { declared: true, validUntil }
-    : { declared: true }
-}
-
-function isKnowledgeCurrentlyValid(content: string, currentDate: string): boolean {
-  const expiry = getExplicitKnowledgeExpiry(content)
-  if (!expiry.declared) return true
-  return Boolean(expiry.validUntil && currentDate <= expiry.validUntil)
 }
 
 function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
@@ -409,19 +367,13 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         this.chatModel.setBossConnection('idle', '实时连接尚未启动')
         break
       case 'connecting':
-        this.chatModel.setBossConnection(
-          'connecting',
-          state.detail || '正在连接 BOSS 实时消息…',
-        )
+        this.chatModel.setBossConnection('connecting', state.detail || '正在连接 BOSS 实时消息…')
         break
       case 'connected':
         this.chatModel.setBossConnection('connected', 'WS 已连接，等待 HR 新消息')
         break
       case 'reconnecting':
-        this.chatModel.setBossConnection(
-          'reconnecting',
-          state.detail || '实时连接中断，正在重连…',
-        )
+        this.chatModel.setBossConnection('reconnecting', state.detail || '实时连接中断，正在重连…')
         break
       case 'disconnected':
         this.chatModel.setBossConnection(
@@ -689,9 +641,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
     this.chatModel.setBossReply(
       'ready',
-      getBossReplyMode(config.mode) === 'auto'
-        ? 'AI 自动回复已启用'
-        : 'AI 回复草稿模式已启用',
+      getBossReplyMode(config.mode) === 'auto' ? 'AI 自动回复已启用' : 'AI 回复草稿模式已启用',
     )
   }
 
@@ -813,10 +763,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     this.updateLocalSessionAfterSend(sessionKey)
   }
 
-  private reconcileLocalOutgoingMessage(
-    sessionKey: string,
-    message: BossRealtimeMessage,
-  ): boolean {
+  private reconcileLocalOutgoingMessage(sessionKey: string, message: BossRealtimeMessage): boolean {
     const state = this.chatModel.states.get(sessionKey)
     if (!state) return false
 
@@ -947,8 +894,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       friendId: relationData.bossId ? String(relationData.bossId) : meta.friendId,
       friendSource: relationData.bossSource ?? meta.friendSource,
       encryptBossId: relationData.encryptBossId || meta.encryptBossId,
-      encryptJobId:
-        relationData.encryptJobId || relationJob.encryptJobId || meta.encryptJobId,
+      encryptJobId: relationData.encryptJobId || relationJob.encryptJobId || meta.encryptJobId,
       securityId: relationData.securityId || meta.securityId,
       jobLid: relationData.lid || relationJob.lid || meta.jobLid,
     })
@@ -992,10 +938,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         BOSS_HISTORY_PAGE_SIZE,
         maxMessageId,
       )
-      rawMessages =
-        page === 1
-          ? history.messages
-          : [...history.messages, ...(rawMessages || [])]
+      rawMessages = page === 1 ? history.messages : [...history.messages, ...(rawMessages || [])]
       if (!history.hasMore) {
         complete = true
         break
@@ -1140,26 +1083,23 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 
   private getVisibleReplyMessages(sessionKey: string): BossReplyMessage[] {
     const state = this.chatModel.states.get(sessionKey)
-    return (state?.messages ?? [])
-      .slice(-24)
-      .flatMap((item) => {
-        const text = (item.parts ?? [])
-          .map((part) => ('text' in part && typeof part.text === 'string' ? part.text : ''))
-          .filter(Boolean)
-          .join('\n')
-          .trim()
-        if (!text) return []
+    return (state?.messages ?? []).slice(-24).flatMap((item) => {
+      const text = (item.parts ?? [])
+        .map((part) => ('text' in part && typeof part.text === 'string' ? part.text : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+      if (!text) return []
 
-        return [
-          {
-            id: item.id,
-            direction:
-              item.bossDirection ?? (item.side === 'right' ? 'outgoing' : 'incoming'),
-            text: text.slice(0, 4000),
-            sentAt: item.bossSentAt ?? 0,
-          } satisfies BossReplyMessage,
-        ]
-      })
+      return [
+        {
+          id: item.id,
+          direction: item.bossDirection ?? (item.side === 'right' ? 'outgoing' : 'incoming'),
+          text: text.slice(0, 4000),
+          sentAt: item.bossSentAt ?? 0,
+        } satisfies BossReplyMessage,
+      ]
+    })
   }
 
   private async ensureSessionJobDetail(sessionKey: string): Promise<void> {
@@ -1174,9 +1114,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       return
     }
 
-    const workflow = meta.encryptJobId
-      ? this.jobMaps.get(`boss::${meta.encryptJobId}`)
-      : undefined
+    const workflow = meta.encryptJobId ? this.jobMaps.get(`boss::${meta.encryptJobId}`) : undefined
     const existing = workflow?.jobData
     if (existing?.jobDescription?.trim()) {
       this.mergeSessionJobContext(sessionKey, {
@@ -1325,31 +1263,30 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     ].filter(Boolean)
     if (jobLines.length > 0) allowedEvidenceIds.add('job')
 
-    const currentDate = getShanghaiDate()
-    const configuredKnowledge = Array.isArray(this.conf.formData.aiReply.knowledge)
-      ? this.conf.formData.aiReply.knowledge
-      : []
-    const knowledgeLines = configuredKnowledge
-      .filter(
-        (item) =>
-          item.enabled &&
-          item.confirmed &&
-          typeof item.id === 'string' &&
-          item.id &&
-          typeof item.content === 'string' &&
-          item.content.trim() &&
-          isKnowledgeCurrentlyValid(item.content, currentDate),
-      )
-      .slice(0, 50)
-      .map((item) => {
-        const evidenceId = `knowledge:${item.id}`
-        allowedEvidenceIds.add(evidenceId)
-        const keywords = Array.isArray(item.keywords)
-          ? item.keywords.filter((keyword) => typeof keyword === 'string' && keyword).join('、')
-          : ''
-        const title = typeof item.title === 'string' ? item.title : ''
-        return `[${evidenceId}] ${title || '未命名'}：${item.content.slice(0, 2000)}${keywords ? `（关键词：${keywords}）` : ''}`
-      })
+    const currentDate = getCurrentShanghaiDate()
+    const knowledgeQuery = [
+      jobLines.join('\n'),
+      messages.map((item) => item.text).join('\n'),
+      recentConversation.map((item) => item.text).join('\n'),
+    ].join('\n')
+    const configuredKnowledge = selectCandidateKnowledge(
+      this.conf.formData.candidateProfile,
+      'reply',
+      {
+        query: knowledgeQuery,
+        currentDate,
+        autoReplyOnly: trigger === 'incoming' && this.conf.formData.aiReply.mode === 'auto',
+      },
+    )
+    const knowledgeLines = configuredKnowledge.map((item) => {
+      const evidenceId = `knowledge:${item.id}`
+      allowedEvidenceIds.add(evidenceId)
+      const keywords = Array.isArray(item.keywords)
+        ? item.keywords.filter((keyword) => typeof keyword === 'string' && keyword).join('、')
+        : ''
+      const title = typeof item.title === 'string' ? item.title : ''
+      return `[${evidenceId}] ${title || '未命名'}：${item.content.slice(0, 2000)}${keywords ? `（关键词：${keywords}）` : ''}`
+    })
 
     const incomingMessages = messages.length
       ? messages
@@ -1363,7 +1300,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         ? '（无新消息；本次由用户明确发起主动跟进）'
         : '（无；本次由用户主动选择当前会话发起）'
     const latestMessage =
-      messages[messages.length - 1]?.text || recentConversation[recentConversation.length - 1]?.text || ''
+      messages[messages.length - 1]?.text ||
+      recentConversation[recentConversation.length - 1]?.text ||
+      ''
 
     return {
       prompt: {
@@ -1387,12 +1326,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         knowledge: knowledgeLines.length ? knowledgeLines.join('\n') : '（尚未配置已确认知识）',
         availableEvidenceIds: [...allowedEvidenceIds].join('、') || '（无）',
         conversationHistoryComplete: sessionMeta?.conversationHistoryComplete ? '完整' : '不完整',
-        maxReplyLength: clampFiniteNumber(
-          this.conf.formData.aiReply.maxReplyLength,
-          20,
-          1000,
-          300,
-        ),
+        maxReplyLength: clampFiniteNumber(this.conf.formData.aiReply.maxReplyLength, 20, 1000, 300),
       },
       allowedEvidenceIds,
       latestMessage,
@@ -1501,12 +1435,55 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     this.chatModel.setBossReply('generating', '正在分析 BOSS 会话')
 
     try {
-      const rawDecision = await this.chatModel.generate('boss', { reply: context.prompt })
-      const decision = validateBossReplyDecision(
+      const runtimeReplyProtocol = config.partialReplyEnabled
+        ? [{ role: 'system' as const, content: BOSS_REPLY_PARTIAL_REVIEW_PROTOCOL }]
+        : []
+      let rawDecision = await this.chatModel.generate(
+        'boss',
+        { reply: context.prompt },
+        {
+          additionalMessages: runtimeReplyProtocol,
+        },
+      )
+      let decision = validateBossReplyDecision(
         rawDecision,
         context.allowedEvidenceIds,
         context.prompt.maxReplyLength,
       )
+      const leakedTopics = decision.needsHumanReview
+        ? findUnansweredTopicsInReply(decision.reply, decision.unansweredTopics)
+        : []
+      if (leakedTopics.length > 0) {
+        rawDecision = await this.chatModel.generate(
+          'boss',
+          { reply: context.prompt },
+          {
+            additionalMessages: [
+              ...runtimeReplyProtocol,
+              { role: 'system', content: buildBossReplyTopicRewriteProtocol(leakedTopics) },
+            ],
+          },
+        )
+        decision = validateBossReplyDecision(
+          rawDecision,
+          context.allowedEvidenceIds,
+          context.prompt.maxReplyLength,
+        )
+        const remainingLeakedTopics = decision.needsHumanReview
+          ? findUnansweredTopicsInReply(decision.reply, decision.unansweredTopics)
+          : []
+        const missingReviewTopics = leakedTopics.filter(
+          (topic) => !decision.unansweredTopics.includes(topic),
+        )
+        if (
+          decision.action === 'reply' &&
+          (!decision.needsHumanReview ||
+            remainingLeakedTopics.length > 0 ||
+            missingReviewTopics.length > 0)
+        ) {
+          throw new Error('AI 纠正后仍未完全避开待人工核验主题')
+        }
+      }
       if (!this.conf.formData.aiReply.enable) {
         this.chatModel.setBossReplySession(sessionKey, 'disabled', 'AI 回复已停用，本轮结果未使用')
         await this.refreshBossReplyState()
@@ -1523,6 +1500,16 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           trigger,
           'AI 生成期间聊天内容已变化，旧结果已作废',
           this.getVisibleReplyMessages(sessionKey).at(-1)?.text || context.latestMessage,
+          decision,
+        )
+        return
+      }
+      if (decision.needsHumanReview && this.conf.formData.aiReply.partialReplyEnabled === false) {
+        await this.handoffBossReply(
+          sessionKey,
+          trigger,
+          '部分回复已在配置中关闭，本轮未发送并转人工处理',
+          context.latestMessage,
           decision,
         )
         return
@@ -1551,15 +1538,30 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       }
 
       if (executionMode !== 'auto') {
+        const reviewReason = decision.needsHumanReview
+          ? `部分问题待人工核验：${decision.unansweredTopics.join('、')}`
+          : ''
         this.replyDraftVersions.set(sessionKey, context.latestMessageId)
         this.chatModel.setBossReplySession(
           sessionKey,
           'draft',
-          'AI 已生成回复草稿，未自动发送',
+          reviewReason
+            ? `AI 已避开无依据内容并生成部分回复草稿；${reviewReason}`
+            : 'AI 已生成回复草稿，未自动发送',
           decision,
         )
-        this.chatModel.setBossReply('ready', 'AI 回复草稿已生成')
-        if (config.browserNotification) {
+        this.chatModel.setBossReply(
+          decision.needsHumanReview ? 'awaiting_human' : 'ready',
+          reviewReason || 'AI 回复草稿已生成',
+        )
+        if (decision.needsHumanReview) {
+          await this.sendBossReplyNotifications(
+            sessionKey,
+            trigger,
+            `${reviewReason}；已生成可确认的部分回复草稿`,
+            context.latestMessage,
+          )
+        } else if (config.browserNotification) {
           void counter
             .notify({
               type: 'basic',
@@ -1584,6 +1586,16 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       }
       if (!this.conf.formData.aiReply.enable || this.pausedReplySessions.has(sessionKey)) {
         this.chatModel.setBossReplySession(sessionKey, 'paused', '发送前已停用或暂停，未发送')
+        return
+      }
+      if (decision.needsHumanReview && this.conf.formData.aiReply.partialReplyEnabled === false) {
+        await this.handoffBossReply(
+          sessionKey,
+          trigger,
+          '发送前已关闭部分回复，结果未发送并转人工处理',
+          context.latestMessage,
+          decision,
+        )
         return
       }
       if (getBossReplyMode(this.conf.formData.aiReply.mode) !== 'auto') {
@@ -1637,12 +1649,22 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         return
       }
       await this.sendBossReplyText(sessionKey, decision.reply)
-      this.chatModel.setBossReplySession(
-        sessionKey,
-        'sent',
-        'AI 回复已通过 BOSS WS 发送',
-        decision,
-      )
+      if (decision.needsHumanReview) {
+        const reviewReason = `已发送有依据的部分回复；待人工核验：${decision.unansweredTopics.join('、')}`
+        this.pausedReplySessions.add(sessionKey)
+        await this.persistPausedReplySessions()
+        this.chatModel.setBossReplySession(sessionKey, 'awaiting_human', reviewReason, decision)
+        this.replyDraftVersions.delete(sessionKey)
+        this.chatModel.setBossReply('awaiting_human', reviewReason)
+        await this.sendBossReplyNotifications(
+          sessionKey,
+          trigger,
+          reviewReason,
+          context.latestMessage,
+        )
+        return
+      }
+      this.chatModel.setBossReplySession(sessionKey, 'sent', 'AI 回复已通过 BOSS WS 发送', decision)
       this.replyDraftVersions.delete(sessionKey)
       this.chatModel.setBossReply('ready', 'AI 回复已发送，等待 HR 新消息')
     } catch (error) {
@@ -1665,9 +1687,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     trigger: BossReplyTrigger,
   ): Promise<void> {
     const previous = this.replyTasks.get(sessionKey) ?? Promise.resolve()
-    const task = previous.catch(() => undefined).then(() =>
-      this.processBossReply(sessionKey, messages, trigger),
-    )
+    const task = previous
+      .catch(() => undefined)
+      .then(() => this.processBossReply(sessionKey, messages, trigger))
     this.replyTasks.set(sessionKey, task)
     try {
       await task
@@ -1723,6 +1745,19 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     const reply = sessionState?.decision?.reply?.trim()
     if (sessionState?.status !== 'draft' || !reply) throw new Error('当前会话没有待发送草稿')
     if (!this.conf.formData.aiReply.enable) throw new Error('AI 回复已停用，未发送草稿')
+    if (
+      sessionState.decision.needsHumanReview &&
+      this.conf.formData.aiReply.partialReplyEnabled === false
+    ) {
+      await this.handoffBossReply(
+        sessionKey,
+        'manual',
+        '部分回复已在配置中关闭，草稿未发送并转人工处理',
+        this.getVisibleReplyMessages(sessionKey).at(-1)?.text || '',
+        sessionState.decision,
+      )
+      return
+    }
 
     const currentLatestId = this.getVisibleReplyMessages(sessionKey).at(-1)?.id || ''
     if (currentLatestId !== this.replyDraftVersions.get(sessionKey)) {
@@ -1775,6 +1810,19 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     try {
       await this.sendBossReplyText(sessionKey, reply)
       this.replyDraftVersions.delete(sessionKey)
+      if (sessionState.decision.needsHumanReview) {
+        const reviewReason = `部分回复草稿已发送；待人工核验：${sessionState.decision.unansweredTopics.join('、')}`
+        this.pausedReplySessions.add(sessionKey)
+        await this.persistPausedReplySessions()
+        this.chatModel.setBossReplySession(
+          sessionKey,
+          'awaiting_human',
+          reviewReason,
+          sessionState.decision,
+        )
+        this.chatModel.setBossReply('awaiting_human', reviewReason)
+        return
+      }
       this.chatModel.setBossReplySession(
         sessionKey,
         'sent',

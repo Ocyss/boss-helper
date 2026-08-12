@@ -19,7 +19,27 @@ function escapeRegExp(value: string): string {
 function normalizeReplyForSafetyCheck(value: string): string {
   return value
     .normalize('NFKC')
-    .replace(/[\u00ad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, '')
+    .replace(/\u{034f}/gu, '')
+    .replace(
+      /[\u{00ad}\u{061c}\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2060}-\u{206f}\u{feff}]/gu,
+      '',
+    )
+}
+
+function buildTopicMatchTerms(topic: string): string[] {
+  const normalizedTopic = normalizeReplyForSafetyCheck(topic).replace(/\s+/gu, '')
+  const coreTopic = normalizedTopic.replace(/期望|目前|当前|具体|个人|相关|信息|问题|情况/gu, '')
+  return [...new Set([normalizedTopic, coreTopic])].filter((item) => item.length >= 2)
+}
+
+export function findUnansweredTopicsInReply(
+  reply: string,
+  unansweredTopics: readonly string[],
+): string[] {
+  const normalizedReply = normalizeReplyForSafetyCheck(reply).replace(/\s+/gu, '')
+  return unansweredTopics.filter((topic) =>
+    buildTopicMatchTerms(topic).some((term) => normalizedReply.includes(term)),
+  )
 }
 
 function hasInternalEvidenceMarker(
@@ -69,10 +89,21 @@ export function validateBossReplyDecision(
   const reply = typeof parsed.reply === 'string' ? parsed.reply.trim() : ''
   const evidenceIds = Array.isArray(parsed.evidenceIds)
     ? [
-        ...new Set(
-          parsed.evidenceIds.filter((item): item is string => typeof item === 'string'),
-        ),
+        ...new Set(parsed.evidenceIds.filter((item): item is string => typeof item === 'string')),
       ].slice(0, 20)
+    : []
+  const needsHumanReview = parsed.needsHumanReview === true
+  const unansweredTopics = Array.isArray(parsed.unansweredTopics)
+    ? [
+        ...new Set(
+          parsed.unansweredTopics
+            .filter((item): item is string => typeof item === 'string')
+            .map((item) => item.trim())
+            .filter(Boolean),
+        ),
+      ]
+        .slice(0, 10)
+        .map((item) => item.slice(0, 80))
     : []
 
   if (!intent) throw new Error('AI 未返回意图标识')
@@ -92,6 +123,12 @@ export function validateBossReplyDecision(
     if (evidenceIds.length === 0) {
       throw new Error('AI 回复缺少可验证证据')
     }
+    if (needsHumanReview && unansweredTopics.length === 0) {
+      throw new Error('AI 标记了部分回复，但没有说明待人工核验的主题')
+    }
+    if (!needsHumanReview && unansweredTopics.length > 0) {
+      throw new Error('AI 返回了待核验主题，但没有标记需要人工核验')
+    }
   }
 
   return {
@@ -100,5 +137,7 @@ export function validateBossReplyDecision(
     reason: reason.slice(0, 500),
     reply: action === 'reply' ? reply : '',
     evidenceIds,
+    needsHumanReview: action === 'reply' && needsHumanReview,
+    unansweredTopics: action === 'reply' && needsHumanReview ? unansweredTopics : [],
   }
 }

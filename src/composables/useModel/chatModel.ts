@@ -12,12 +12,8 @@ import {
 } from 'ai'
 import type { ShallowReactive } from 'vue'
 
-import type { FormDataAi } from '@/types/formData'
-import type {
-  BossReplyDecision,
-  BossReplySessionState,
-  BossReplyStatus,
-} from '@/types/aiReply'
+import type { BossReplyDecision, BossReplySessionState, BossReplyStatus } from '@/types/aiReply'
+import type { FormDataAi, Prompt } from '@/types/formData'
 import { renderTemplate } from '@/utils/ai'
 
 import type { ModelConf } from '.'
@@ -220,9 +216,7 @@ export class ChatModel {
     })
     if (!this.jobs.value.includes(sessionKey)) {
       this.jobs.value =
-        position === 'front'
-          ? [sessionKey, ...this.jobs.value]
-          : [...this.jobs.value, sessionKey]
+        position === 'front' ? [sessionKey, ...this.jobs.value] : [...this.jobs.value, sessionKey]
     }
     return state
   }
@@ -263,7 +257,11 @@ export class ChatModel {
     return true
   }
 
-  async generate(agentName: MessageRole, data: unknown): Promise<string> {
+  async generate(
+    agentName: MessageRole,
+    data: unknown,
+    { additionalMessages = [] }: { additionalMessages?: Prompt } = {},
+  ): Promise<string> {
     const agentState = this.agents.get(agentName)
     if (!agentState) throw new Error(`Agent ${agentName} not found`)
 
@@ -281,6 +279,8 @@ export class ChatModel {
         message.content = renderTemplate(message.content, data)
       }
     }
+    // 运行时协议作为纯文本追加，不参与业务模板渲染。
+    messages.push(...jsonClone(additionalMessages))
 
     const result = await agent.generate({ timeout, messages })
     return result.text
@@ -289,7 +289,10 @@ export class ChatModel {
   async chat(
     agentName: MessageRole,
     data: WorkflowData<any, any>,
-    { disableMessages = false }: { disableMessages?: boolean } = {},
+    {
+      disableMessages = false,
+      additionalMessages = [],
+    }: { disableMessages?: boolean; additionalMessages?: Prompt } = {},
   ) {
     const _agent = this.agents.get(agentName)
     if (!_agent) {
@@ -315,8 +318,10 @@ export class ChatModel {
         msg.content = renderTemplate(msg.content, data)
       }
     }
+    // 补充事实作为纯数据追加，不再经过模板渲染，避免事实正文中的 {{ }} 被执行。
+    messages.push(...jsonClone(additionalMessages))
     let state: VueChatState<Message>
-    if (!this.states.has(data.jobData.key)) {
+    if (disableMessages || !this.states.has(data.jobData.key)) {
       state = new VueChatState<Message>()
       state.pushMessage({
         id: this.generateId[agentName](),

@@ -4,6 +4,7 @@ import { reactive, ref, toRaw } from 'vue'
 import { counter } from '@/message'
 import { ExtStorage } from '@/message'
 import type { ConfigLevel, FormData } from '@/types/formData'
+import { normalizeCandidateProfile } from '@/utils/candidateProfile'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
@@ -161,6 +162,17 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
       return from
     },
   ],
+  [
+    '20260812',
+    (from) => {
+      from.candidateProfile = normalizeCandidateProfile(
+        from.candidateProfile,
+        Array.isArray(from.aiReply?.knowledge) ? from.aiReply.knowledge : [],
+      )
+      if (from.aiReply) delete from.aiReply.knowledge
+      return from
+    },
+  ],
 ]
 
 export const useConf = () => {
@@ -183,6 +195,12 @@ export const useConf = () => {
         color: 'error',
       })
     }
+    // 兼容版本号已被手动修改、但仍只包含旧 aiReply.knowledge 的导入文件。
+    from.candidateProfile = normalizeCandidateProfile(
+      from.candidateProfile,
+      Array.isArray(from.aiReply?.knowledge) ? from.aiReply.knowledge : [],
+    )
+    if (from.aiReply) delete from.aiReply.knowledge
     return from
   }
 
@@ -237,7 +255,9 @@ export const useConf = () => {
   }
 
   async function confReload() {
-    const v = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
+    const stored = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
+    const migrated = (await formDataHandler(stored)) ?? stored
+    const v = deepmerge<FormData>(defaultFormData, migrated)
     deepmerge(formData, v, { clone: false })
     logger.debug('formData已重置')
     toast.add({
@@ -247,7 +267,9 @@ export const useConf = () => {
   }
 
   async function confExport() {
-    const data = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
+    const stored = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
+    const migrated = (await formDataHandler(stored)) ?? stored
+    const data = deepmerge<FormData>(defaultFormData, migrated)
     exportJson(data, '打招呼配置')
   }
 
