@@ -36,28 +36,71 @@ export function rangeMatch(rangeStr: string, form: FormDataRange): boolean {
   }
 }
 
-export function parseFiltering(content: string) {
-  interface Item {
-    reason: string
-    score: number
-  }
-  const res = parseGptJson<{
-    negative: Item[]
-    positive: Item[]
-  }>(content)
+export interface FilteringItem {
+  reason: string
+  score: number
+}
 
-  const hand = (acc: { score: number; reason: string }, curr: Item) => ({
+export interface FilteringResponse {
+  negative: FilteringItem[]
+  positive: FilteringItem[]
+}
+
+export class FilteringResponseError extends Error {
+  override name = 'FilteringResponseError'
+}
+
+function parseFilteringItems(value: unknown, field: keyof FilteringResponse): FilteringItem[] {
+  if (!Array.isArray(value)) {
+    throw new FilteringResponseError(`AI 筛选结果缺少 ${field} 数组`)
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw new FilteringResponseError(`AI 筛选结果 ${field}[${index}] 不是对象`)
+    }
+
+    const reason = 'reason' in item && typeof item.reason === 'string' ? item.reason.trim() : ''
+    const score = 'score' in item ? item.score : undefined
+    if (!reason) {
+      throw new FilteringResponseError(`AI 筛选结果 ${field}[${index}] 缺少理由`)
+    }
+    if (typeof score !== 'number' || !Number.isInteger(score) || score <= 0 || score > 100) {
+      throw new FilteringResponseError(
+        `AI 筛选结果 ${field}[${index}] 的分数必须是 1 至 100 的整数`,
+      )
+    }
+
+    return { reason, score }
+  })
+}
+
+export function parseFiltering(content: string) {
+  const parsed: unknown = parseGptJson(content)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new FilteringResponseError('AI 筛选未返回有效 JSON 对象')
+  }
+
+  const res: FilteringResponse = {
+    negative: parseFilteringItems('negative' in parsed ? parsed.negative : undefined, 'negative'),
+    positive: parseFilteringItems('positive' in parsed ? parsed.positive : undefined, 'positive'),
+  }
+  if (res.negative.length + res.positive.length === 0) {
+    throw new FilteringResponseError('AI 筛选未返回任何评分项')
+  }
+
+  const hand = (acc: { score: number; reason: string }, curr: FilteringItem) => ({
     score: acc.score + Math.abs(curr.score),
     reason: `${acc.reason}\n${curr.reason}/(${Math.abs(curr.score)}分)`,
   })
   const data = {
-    negative: res?.negative?.reduce(hand, { score: 0, reason: '' }),
-    positive: res?.positive?.reduce(hand, { score: 0, reason: '' }),
+    negative: res.negative.reduce(hand, { score: 0, reason: '' }),
+    positive: res.positive.reduce(hand, { score: 0, reason: '' }),
   }
 
-  const rating = (data?.positive?.score ?? 0) - (data?.negative?.score ?? 0)
+  const rating = data.positive.score - data.negative.score
 
-  const message = `分数${rating}\n消极:${data?.negative?.reason}\n\n积极:${data?.positive?.reason}`
+  const message = `分数${rating}\n消极:${data.negative.reason}\n\n积极:${data.positive.reason}`
 
   return { res, message, rating, data }
 }

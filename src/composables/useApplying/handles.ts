@@ -10,7 +10,14 @@ import type { HelperContext, JobData } from '~/composables/useHelper'
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
 import type { JobStatus, TaskContext, TaskResult } from './type'
 import { defineTaskHandler } from './type'
-import { loadSet, parseFiltering, rangeMatch, rangeMatchFormat, saveSet } from './utils'
+import {
+  FilteringResponseError,
+  loadSet,
+  parseFiltering,
+  rangeMatch,
+  rangeMatchFormat,
+  saveSet,
+} from './utils'
 
 type BossRepeatRawData = {
   jobitem?: {
@@ -406,13 +413,40 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiFiltering.model', 'AI筛选模型未配置')
       }
       return async (ctx, data) => {
-        const content = await ctx.helper.chatModel
-          .chat('filtering', data, {
-            disableMessages: true,
-            additionalMessages: buildCandidateFactMessage(ctx, data, 'filtering'),
-          })
-          .then((r) => r.text)
-        const { message, rating } = parseFiltering(content)
+        if (!data.jobData.jobDescription?.trim()) {
+          throw new Error('岗位 JD 为空，无法执行 AI 筛选')
+        }
+
+        const candidateFactMessages = buildCandidateFactMessage(ctx, data, 'filtering')
+        const requestFiltering = (repairReason?: string) =>
+          ctx.helper.chatModel
+            .chat('filtering', data, {
+              disableMessages: true,
+              additionalMessages: [
+                ...candidateFactMessages,
+                ...(repairReason
+                  ? [
+                      {
+                        role: 'user' as const,
+                        content: `上一次输出不符合 AI 筛选协议：${repairReason}。请重新判断，并且只返回包含 negative、positive 两个数组的 JSON；每项必须包含非空 reason 和 1 至 100 的整数 score，两个数组合计至少一项。`,
+                      },
+                    ]
+                  : []),
+              ],
+            })
+            .then((r) => r.text)
+
+        let content = await requestFiltering()
+        let result: ReturnType<typeof parseFiltering>
+        try {
+          result = parseFiltering(content)
+        } catch (error) {
+          if (!(error instanceof FilteringResponseError)) throw error
+          content = await requestFiltering(error.message)
+          result = parseFiltering(content)
+        }
+
+        const { message, rating } = result
         if (rating < (ctx.helper.conf.formData.aiFiltering.score ?? 10)) {
           return taskResult.skip(message)
         }

@@ -288,6 +288,8 @@ export const defaultFormData: FormData = {
     negative: aiFilteringItem[]; // 扣分项
     positive: aiFilteringItem[] ; // 加分项
   }
+
+  negative 和 positive 两个字段必须同时存在；允许其中一个为空，但两个数组合计至少包含一个评分项。
   
   ## 求职者需求
   - 加分: 双休,早九晚五,新技术,机会多,年轻人多 每个加分项 10分
@@ -379,7 +381,10 @@ export const defaultFormData: FormData = {
     enable: false,
   },
   delayDeliveryStarts: 3,
+  delayJobReadIntervalMin: 3,
+  delayJobReadIntervalMax: 10,
   delayDeliveryInterval: 5,
+  delayDeliveryIntervalMax: 10,
   delayDeliveryPageNext: 60,
   delayMessageSending: 2,
   version: '20260812',

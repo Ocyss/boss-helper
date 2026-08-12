@@ -94,6 +94,15 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
 const PREPARE_BATCH_SIZE = 10
 const PREPARED_TTL_MS = 10 * 60_000
 
+function randomDelaySeconds(min: number, max: number): number {
+  const normalizedMin = Math.max(0, Math.floor(Number.isFinite(min) ? min : 0))
+  const normalizedMax = Math.max(
+    normalizedMin,
+    Math.floor(Number.isFinite(max) ? max : normalizedMin),
+  )
+  return normalizedMin + Math.floor(Math.random() * (normalizedMax - normalizedMin + 1))
+}
+
 class WorkflowCancelledError extends Error {}
 class PreparedStaleError extends Error {}
 
@@ -196,7 +205,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
   const detailSemaphore = new Semaphore(1)
-  const aiSemaphore = new Semaphore(2)
+  const aiSemaphore = new Semaphore(PREPARE_BATCH_SIZE)
   const commitSemaphore = new Semaphore(1)
   let executeAllActive = false
   let executeActive = false
@@ -281,9 +290,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
   }
   const assertRunActive = (run: RunContext) => {
-    const pageChanged = Boolean(
-      run.pageSignature && currentPageSignature() !== run.pageSignature,
-    )
+    const pageChanged = Boolean(run.pageSignature && currentPageSignature() !== run.pageSignature)
     const configChanged = currentConfigFingerprint() !== run.configFingerprint
     if (
       run.signal.aborted ||
@@ -580,10 +587,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     )
     if (outcome !== 'completed') return null
     assertRunActive(run)
-    if (
-      beforeConfig !== currentConfigFingerprint() ||
-      beforeJob !== getJobSnapshot(data)
-    ) {
+    if (beforeConfig !== currentConfigFingerprint() || beforeJob !== getJobSnapshot(data)) {
       helper.jobResultMaps.set(data.jobData.key, {
         status: 'warn',
         msg: '准备结果失效',
@@ -617,11 +621,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
 
   const assertDeliveryLimit = () => {
     const limit = Number(helper.conf.formData.deliveryLimit.value)
-    if (
-      Number.isFinite(limit) &&
-      limit > 0 &&
-      helper.statistics.todayData.value.success >= limit
-    ) {
+    if (Number.isFinite(limit) && limit > 0 && helper.statistics.todayData.value.success >= limit) {
       throw new LimitError(`已达到设定投递上限 ${limit}`)
     }
   }
@@ -726,10 +726,11 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       }
 
       if (delivery?.friendAddAttempted) {
-        await delay(
+        const deliveryDelay = randomDelaySeconds(
           helper.conf.formData.delayDeliveryInterval,
-          () => status.value !== 'running' || run.signal.aborted,
+          helper.conf.formData.delayDeliveryIntervalMax,
         )
+        await delay(deliveryDelay, () => status.value !== 'running' || run.signal.aborted)
       }
       if (cancellation) throw cancellation
     }, run.signal)
@@ -816,26 +817,56 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           // 准备本身不产生站内副作用，但达到上限后也不再继续消耗详情和模型请求。
           assertDeliveryLimit()
           const batch = pageJobs.slice(offset, offset + PREPARE_BATCH_SIZE)
-          const prepared = await Promise.all(
-            batch.map(async (jobData, batchIndex) => {
-              const index = offset + batchIndex
-              const previousStatus = helper.jobResultMaps.get(jobData.key)?.status
-              if (previousStatus === 'success' || previousStatus === 'warn') return null
-              const rawData = rawDataMap.get(jobData.key)
-              if (!rawData) {
-                helper.jobResultMaps.set(jobData.key, {
-                  status: 'error',
-                  msg: '岗位原始数据不存在',
-                })
-                return null
-              }
-              const state = stateMaps.value.get(jobData.key) || {}
-              stateMaps.value.set(jobData.key, state)
-              const data = { jobData, rawData, state }
-              helper.jobMaps.set(jobData.key, data)
-              return prepareJob(data, index, run)
-            }),
-          )
+          const preparationErrors: unknown[] = []
+          const preparationPromises: Array<
+            Promise<{ item: PreparedItem | null; error?: unknown }>
+          > = []
+          let hasStartedPreparation = false
+
+          for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+            const jobData = batch[batchIndex]!
+            const index = offset + batchIndex
+            const previousStatus = helper.jobResultMaps.get(jobData.key)?.status
+            if (previousStatus === 'success' || previousStatus === 'warn') continue
+            const rawData = rawDataMap.get(jobData.key)
+            if (!rawData) {
+              helper.jobResultMaps.set(jobData.key, {
+                status: 'error',
+                msg: '岗位原始数据不存在',
+              })
+              continue
+            }
+
+            if (hasStartedPreparation) {
+              const readDelay = randomDelaySeconds(
+                helper.conf.formData.delayJobReadIntervalMin,
+                helper.conf.formData.delayJobReadIntervalMax,
+              )
+              await delay(readDelay, () => status.value !== 'running' || run.signal.aborted)
+              assertRunActive(run)
+              if (preparationErrors.length > 0) throw preparationErrors[0]
+            }
+            const state = stateMaps.value.get(jobData.key) || {}
+            stateMaps.value.set(jobData.key, state)
+            const data = { jobData, rawData, state }
+            helper.jobMaps.set(jobData.key, data)
+
+            // 每个岗位按随机间隔进入队列；入队后立即执行，AI 阶段可与后续岗位并发。
+            const promise = prepareJob(data, index, run).then(
+              (item) => ({ item }),
+              (error: unknown) => {
+                preparationErrors.push(error)
+                return { item: null, error }
+              },
+            )
+            preparationPromises.push(promise)
+            hasStartedPreparation = true
+          }
+
+          const preparationResults = await Promise.all(preparationPromises)
+          const failedPreparation = preparationResults.find((result) => result.error != null)
+          if (failedPreparation?.error != null) throw failedPreparation.error
+          const prepared = preparationResults.map((result) => result.item)
           if (run.signal.aborted) throw new WorkflowCancelledError('准备任务已取消')
           if (status.value !== 'running') break
           readyQueue.push(...prepared.filter((item): item is PreparedItem => item != null))

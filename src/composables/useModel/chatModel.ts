@@ -468,7 +468,13 @@ ${data.jobData.jobDescription}`,
           }
 
           case 'abort': {
-            logger.error('Chat abort', chunk.reason)
+            const reason = chunk.reason
+            state.status = 'error'
+            state.error =
+              reason instanceof Error
+                ? reason
+                : new Error(typeof reason === 'string' ? reason : 'AI 请求已中止')
+            logger.error('Chat abort', state.error)
             break
           }
         }
@@ -478,7 +484,9 @@ ${data.jobData.jobDescription}`,
         }
         // logger.debug('Received message chunk', chunk)
       }
-      state.status = 'ready'
+      if (!state.error) {
+        state.status = 'ready'
+      }
     } catch (e) {
       state.status = 'error'
       state.error = e as Error

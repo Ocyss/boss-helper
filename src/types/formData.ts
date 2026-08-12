@@ -51,7 +51,10 @@ export interface FormData {
   record: { model?: string[]; enable: boolean }
   // animation?: "frame" | "card" | "together";
   delayDeliveryStarts: number
+  delayJobReadIntervalMin: number
+  delayJobReadIntervalMax: number
   delayDeliveryInterval: number
+  delayDeliveryIntervalMax: number
   delayDeliveryPageNext: number
   delayMessageSending: number
   version: string

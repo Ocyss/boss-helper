@@ -2,6 +2,12 @@
 docs/*
 .output/*
 
+# Local AI assistant instructions and skills
+/AGENTS.md
+/CLAUDE.md
+/.agents/
+/.claude/
+
 
 # Logs
 logs
