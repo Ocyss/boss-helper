@@ -91,7 +91,7 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
   return res
 }
 
-const PREPARE_BATCH_SIZE = 10
+const PIPELINE_QUEUE_CAPACITY = 10
 const PREPARED_TTL_MS = 10 * 60_000
 
 function randomDelaySeconds(min: number, max: number): number {
@@ -205,13 +205,14 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
   const detailSemaphore = new Semaphore(1)
-  const aiSemaphore = new Semaphore(PREPARE_BATCH_SIZE)
+  const aiSemaphore = new Semaphore(PIPELINE_QUEUE_CAPACITY)
   const commitSemaphore = new Semaphore(1)
   let executeAllActive = false
   let executeActive = false
   let activeRunId = 0
   let activeController: AbortController | null = null
   let activePageSignature = ''
+  let hasReadJobInRun = false
 
   type RunContext = {
     runId: number
@@ -230,7 +231,13 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     jobSnapshot: string
   }
 
-  const readyQueue: PreparedItem[] = []
+  type PreparationSeed = {
+    data: WorkflowData<T, S>
+    index: number
+    beforeConfig: string
+    beforeJob: string
+  }
+
   const currentPageSignature = () => hashSnapshot(helper.jobList.value.map((job) => job.key))
   const currentConfigFingerprint = () =>
     hashSnapshot({
@@ -272,7 +279,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     activeController?.abort(reason)
     activeController = null
     activePageSignature = ''
-    readyQueue.length = 0
+    hasReadJobInRun = false
   }
   const startPageRun = (rebuildFingerprint?: string): RunContext => {
     const configFingerprint = currentConfigFingerprint()
@@ -499,7 +506,22 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
 
     if (task.concurrency === 'boss-detail') {
-      return detailSemaphore.run(() => withRetry(1), run.signal)
+      return detailSemaphore.run(async () => {
+        if (hasReadJobInRun) {
+          const readDelay = randomDelaySeconds(
+            helper.conf.formData.delayJobReadIntervalMin,
+            helper.conf.formData.delayJobReadIntervalMax,
+          )
+          helper.jobResultMaps.set(data.jobData.key, {
+            status: 'request',
+            msg: `${readDelay} 秒后读取 JD`,
+          })
+          await waitForRetry(readDelay * 1000, run.signal)
+          assertRunActive(run)
+        }
+        hasReadJobInRun = true
+        return withRetry(1)
+      }, run.signal)
     }
     if (task.concurrency === 'ai') {
       return aiSemaphore.run(() => withRetry(2), run.signal)
@@ -571,21 +593,18 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     return 'completed'
   }
 
-  const prepareJob = async (
-    data: WorkflowData<T, S>,
-    index: number,
-    run: RunContext,
-  ): Promise<PreparedItem | null> => {
+  const startPreparation = (data: WorkflowData<T, S>, index: number): PreparationSeed => {
     helper.statistics.todayData.value.total++
-    const beforeConfig = currentConfigFingerprint()
-    const beforeJob = getJobSnapshot(data)
-    const outcome = await executeTasks(
-      pipeline.value.filter((task) => task.phase === 'prepare'),
+    return {
       data,
       index,
-      run,
-    )
-    if (outcome !== 'completed') return null
+      beforeConfig: currentConfigFingerprint(),
+      beforeJob: getJobSnapshot(data),
+    }
+  }
+
+  const finishPreparation = (seed: PreparationSeed, run: RunContext): PreparedItem | null => {
+    const { data, index, beforeConfig, beforeJob } = seed
     assertRunActive(run)
     if (beforeConfig !== currentConfigFingerprint() || beforeJob !== getJobSnapshot(data)) {
       helper.jobResultMaps.set(data.jobData.key, {
@@ -606,7 +625,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
     helper.jobResultMaps.set(data.jobData.key, {
       status: 'wait',
-      msg: '准备完成，等待串行投递',
+      msg: '准备完成，已进入串行投递队列',
     })
     return {
       data,
@@ -617,6 +636,55 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       configFingerprint: beforeConfig,
       jobSnapshot: beforeJob,
     }
+  }
+
+  const prepareJob = async (
+    data: WorkflowData<T, S>,
+    index: number,
+    run: RunContext,
+  ): Promise<PreparedItem | null> => {
+    const seed = startPreparation(data, index)
+    const outcome = await executeTasks(
+      pipeline.value.filter((task) => task.phase === 'prepare'),
+      data,
+      index,
+      run,
+    )
+    return outcome === 'completed' ? finishPreparation(seed, run) : null
+  }
+
+  const readJobIntoProcessingQueue = async (
+    data: WorkflowData<T, S>,
+    index: number,
+    run: RunContext,
+  ): Promise<{ seed: PreparationSeed; tasks: Task<C, T, S>[] } | null> => {
+    const prepareTasks = pipeline.value.filter((task) => task.phase === 'prepare')
+    const detailTaskIndex = prepareTasks.findIndex((task) => task.concurrency === 'boss-detail')
+    if (detailTaskIndex < 0) {
+      throw new Error('工作流缺少串行岗位详情读取任务')
+    }
+
+    const seed = startPreparation(data, index)
+    const outcome = await executeTasks(prepareTasks.slice(0, detailTaskIndex + 1), data, index, run)
+    if (outcome !== 'completed') return null
+
+    helper.jobResultMaps.set(data.jobData.key, {
+      status: 'wait',
+      msg: 'JD 已读取，进入并发处理队列',
+    })
+    return {
+      seed,
+      tasks: prepareTasks.slice(detailTaskIndex + 1),
+    }
+  }
+
+  const processQueuedJob = async (
+    queued: { seed: PreparationSeed; tasks: Task<C, T, S>[] },
+    run: RunContext,
+  ): Promise<PreparedItem | null> => {
+    const { seed, tasks } = queued
+    const outcome = await executeTasks(tasks, seed.data, seed.index, run)
+    return outcome === 'completed' ? finishPreparation(seed, run) : null
   }
 
   const assertDeliveryLimit = () => {
@@ -658,20 +726,38 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     run: RunContext,
   ) => {
     return commitSemaphore.run(async () => {
-      try {
-        validatePrepared(item, rawDataMap, run)
-      } catch (e) {
-        if (e instanceof LimitError) throw e
-        if (e instanceof WorkflowCancelledError) throw e
-        helper.jobResultMaps.set(item.data.jobData.key, {
-          status: 'warn',
-          msg: '准备结果失效',
-          reason: e instanceof Error ? e.message : String(e),
-        })
-        return
+      const isPreparedValid = () => {
+        try {
+          validatePrepared(item, rawDataMap, run)
+          return true
+        } catch (e) {
+          if (e instanceof LimitError) throw e
+          if (e instanceof WorkflowCancelledError) throw e
+          helper.jobResultMaps.set(item.data.jobData.key, {
+            status: 'warn',
+            msg: '准备结果失效',
+            reason: e instanceof Error ? e.message : String(e),
+          })
+          return false
+        }
       }
+      if (!isPreparedValid()) return
 
-      current.value = item.index + 1
+      const deliveryDelay = randomDelaySeconds(
+        helper.conf.formData.delayDeliveryInterval,
+        helper.conf.formData.delayDeliveryIntervalMax,
+      )
+      helper.jobResultMaps.set(item.data.jobData.key, {
+        status: 'wait',
+        msg: `准备完成，${deliveryDelay} 秒后串行投递`,
+      })
+      await waitForRetry(deliveryDelay * 1000, run.signal)
+      assertRunActive(run)
+      // 等待期间岗位、配置或投递上限可能变化，发送前必须重新复验。
+      if (!isPreparedValid()) return
+
+      // 流式准备可能乱序完成，进度只允许向前推进。
+      current.value = Math.max(current.value, item.index + 1)
       helper.currentJob.value = item.data.jobData.key
       let outcome: ExecutionOutcome = 'failed'
       let cancellation: WorkflowCancelledError | null = null
@@ -725,13 +811,6 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         })
       }
 
-      if (delivery?.friendAddAttempted) {
-        const deliveryDelay = randomDelaySeconds(
-          helper.conf.formData.delayDeliveryInterval,
-          helper.conf.formData.delayDeliveryIntervalMax,
-        )
-        await delay(deliveryDelay, () => status.value !== 'running' || run.signal.aborted)
-      }
       if (cancellation) throw cancellation
     }, run.signal)
   }
@@ -808,24 +887,63 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         }
 
         const run = startPageRun(rebuildFingerprint)
+        current.value = 0
         const pageJobs = [...helper.jobList.value]
-        for (
-          let offset = 0;
-          offset < pageJobs.length && status.value === 'running';
-          offset += PREPARE_BATCH_SIZE
-        ) {
-          // 准备本身不产生站内副作用，但达到上限后也不再继续消耗详情和模型请求。
-          assertDeliveryLimit()
-          const batch = pageJobs.slice(offset, offset + PREPARE_BATCH_SIZE)
-          const preparationErrors: unknown[] = []
-          const preparationPromises: Array<
-            Promise<{ item: PreparedItem | null; error?: unknown }>
-          > = []
-          let hasStartedPreparation = false
+        const processingTasks = new Set<Promise<void>>()
+        const deliveryTasks = new Set<Promise<void>>()
+        let pageFailure: unknown
+        const recordPageFailure = (error: unknown) => {
+          if (pageFailure != null) return
+          pageFailure = error
+          if (!run.signal.aborted) {
+            activeController?.abort(error instanceof Error ? error.message : String(error))
+          }
+        }
+        const trackTask = (set: Set<Promise<void>>, promise: Promise<void>) => {
+          set.add(promise)
+          void promise.then(
+            () => set.delete(promise),
+            () => set.delete(promise),
+          )
+        }
+        const drainPageTasks = async () => {
+          while (processingTasks.size > 0) await Promise.all([...processingTasks])
+          // 处理任务结束后不会再产生新的投递任务，此时可以安全排空投递队列。
+          while (deliveryTasks.size > 0) await Promise.all([...deliveryTasks])
+        }
+        const startDelivery = (item: PreparedItem) => {
+          const promise = (async () => {
+            try {
+              await commitPrepared(item, rawDataMap, run)
+            } catch (error) {
+              recordPageFailure(error)
+            }
+          })()
+          trackTask(deliveryTasks, promise)
+        }
+        const startProcessing = (queued: { seed: PreparationSeed; tasks: Task<C, T, S>[] }) => {
+          const promise = (async () => {
+            try {
+              const item = await processQueuedJob(queued, run)
+              if (item) startDelivery(item)
+            } catch (error) {
+              recordPageFailure(error)
+            }
+          })()
+          trackTask(processingTasks, promise)
+        }
 
-          for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
-            const jobData = batch[batchIndex]!
-            const index = offset + batchIndex
+        try {
+          for (let index = 0; index < pageJobs.length && status.value === 'running'; index++) {
+            while (processingTasks.size >= PIPELINE_QUEUE_CAPACITY) {
+              await Promise.race(processingTasks)
+              if (pageFailure != null) throw pageFailure
+              assertRunActive(run)
+            }
+
+            // 达到上限后不再继续读取 JD 或消耗模型请求。
+            assertDeliveryLimit()
+            const jobData = pageJobs[index]!
             const previousStatus = helper.jobResultMaps.get(jobData.key)?.status
             if (previousStatus === 'success' || previousStatus === 'warn') continue
             const rawData = rawDataMap.get(jobData.key)
@@ -837,43 +955,24 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               continue
             }
 
-            if (hasStartedPreparation) {
-              const readDelay = randomDelaySeconds(
-                helper.conf.formData.delayJobReadIntervalMin,
-                helper.conf.formData.delayJobReadIntervalMax,
-              )
-              await delay(readDelay, () => status.value !== 'running' || run.signal.aborted)
-              assertRunActive(run)
-              if (preparationErrors.length > 0) throw preparationErrors[0]
-            }
             const state = stateMaps.value.get(jobData.key) || {}
             stateMaps.value.set(jobData.key, state)
             const data = { jobData, rawData, state }
             helper.jobMaps.set(jobData.key, data)
 
-            // 每个岗位按随机间隔进入队列；入队后立即执行，AI 阶段可与后续岗位并发。
-            const promise = prepareJob(data, index, run).then(
-              (item) => ({ item }),
-              (error: unknown) => {
-                preparationErrors.push(error)
-                return { item: null, error }
-              },
-            )
-            preparationPromises.push(promise)
-            hasStartedPreparation = true
+            // 生产者必须等当前 JD 读取完成，才会继续随机等待并读取下一个岗位。
+            const queued = await readJobIntoProcessingQueue(data, index, run)
+            if (queued) startProcessing(queued)
+            if (pageFailure != null) throw pageFailure
           }
 
-          const preparationResults = await Promise.all(preparationPromises)
-          const failedPreparation = preparationResults.find((result) => result.error != null)
-          if (failedPreparation?.error != null) throw failedPreparation.error
-          const prepared = preparationResults.map((result) => result.item)
-          if (run.signal.aborted) throw new WorkflowCancelledError('准备任务已取消')
-          if (status.value !== 'running') break
-          readyQueue.push(...prepared.filter((item): item is PreparedItem => item != null))
-          while (readyQueue.length > 0 && status.value === 'running') {
-            const item = readyQueue.shift()!
-            await commitPrepared(item, rawDataMap, run)
-          }
+          await drainPageTasks()
+          if (pageFailure != null) throw pageFailure
+          assertRunActive(run)
+        } catch (error) {
+          recordPageFailure(error)
+          await drainPageTasks()
+          throw pageFailure ?? error
         }
         if (isStop()) break
         invalidateActiveRun('当前页处理完成')

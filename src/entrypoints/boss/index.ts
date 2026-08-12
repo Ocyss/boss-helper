@@ -2117,7 +2117,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayJobReadIntervalMin',
                     fieldProps: {
                       label: 'JD读取最短间隔',
-                      'data-help': '批次内依次读取岗位详情时的最短随机间隔，默认3s',
+                      'data-help': '相邻两次实际读取岗位详情之间的最短随机间隔，默认3s',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -2129,7 +2129,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayJobReadIntervalMax',
                     fieldProps: {
                       label: 'JD读取最长间隔',
-                      'data-help': '批次内依次读取岗位详情时的最长随机间隔，默认10s',
+                      'data-help': '相邻两次实际读取岗位详情之间的最长随机间隔，默认10s',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -2141,7 +2141,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryInterval',
                     fieldProps: {
                       label: '投递最短间隔',
-                      'data-help': '每次投递后的最短随机间隔，默认5s',
+                      'data-help': '岗位准备完成进入队列后、实际投递前的最短随机等待，默认5s',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -2153,7 +2153,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryIntervalMax',
                     fieldProps: {
                       label: '投递最长间隔',
-                      'data-help': '每次投递后的最长随机间隔，默认10s',
+                      'data-help': '岗位准备完成进入队列后、实际投递前的最长随机等待，默认10s',
                     },
                     inputNumberProps: {
                       min: 1,
