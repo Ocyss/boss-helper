@@ -8,7 +8,6 @@
     <!-- Customize the manifest options -->
     <meta name="manifest.open_in_tab" content="true" />
     <meta name="manifest.browser_style" content="false" />
-
   </head>
   <body>
     <main class="page-shell">
@@ -16,7 +15,7 @@
         <p class="eyebrow">BossHelper</p>
         <h1>扩展安全配置</h1>
         <p class="description">
-          此页面运行在扩展自身域名下，用于保存不应在 BOSS 页面中输入的飞书应用密钥。
+          此页面运行在扩展自身域名下，用于保存飞书应用密钥并一次性绑定接收通知的账号。
         </p>
       </header>
 
@@ -25,13 +24,10 @@
           <div>
             <h2 id="feishu-title">飞书人工接管通知</h2>
             <p>
-              使用智能体应用的 App ID/App Secret，通过机器人向群聊或本人发送拒答通知。
+              使用智能体应用的 App ID/App Secret，通过 OAuth 自动绑定当前飞书账号，无需手填
+              open_id。
             </p>
           </div>
-          <label class="toggle-row">
-            <input id="enabled" type="checkbox" />
-            <span>启用</span>
-          </label>
         </div>
 
         <div class="form-grid">
@@ -48,21 +44,28 @@
               placeholder="留空则保留已保存密钥"
             />
           </label>
-          <label>
-            <span>接收目标类型</span>
-            <select id="receive-id-type">
-              <option value="chat_id">群聊 chat_id</option>
-              <option value="open_id">用户 open_id</option>
-            </select>
-          </label>
-          <label>
-            <span>接收目标 ID</span>
-            <input id="receive-id" type="text" autocomplete="off" placeholder="oc_xxx" />
+          <label class="wide-field">
+            <span>OAuth 回调地址</span>
+            <span class="field-with-action">
+              <input id="redirect-url" type="text" readonly />
+              <button id="copy-redirect" type="button" class="secondary">复制</button>
+            </span>
           </label>
         </div>
 
+        <ol class="binding-guide">
+          <li>
+            在飞书开放平台为应用添加上方回调地址，开通 <code>auth:user.id:read</code>
+            与机器人发消息权限，并发布应用使配置生效。
+          </li>
+          <li>保存 App ID/App Secret，点击“绑定当前飞书账号”完成一次授权。</li>
+        </ol>
+
+        <div id="bound-target" class="bound-target">正在读取绑定状态…</div>
+
         <p class="security-note">
-          App Secret 保存在浏览器扩展的 <code>storage.local</code> 中，不会进入 AI 提示词或普通配置导出；请勿在共享浏览器配置中保存个人密钥。
+          App Secret 保存在浏览器扩展的 <code>storage.local</code> 中，不会进入 AI
+          提示词；按你的迁移需求，全局配置导出会包含密钥与绑定信息，请勿分享导出文件。
         </p>
 
         <div id="status" class="status" role="status" aria-live="polite">正在读取配置…</div>
@@ -76,7 +79,8 @@
             查看飞书官方说明
           </a>
           <button id="save" type="button" class="secondary">保存</button>
-          <button id="test" type="button" class="primary">保存并发送测试消息</button>
+          <button id="bind" type="button" class="primary">绑定当前飞书账号</button>
+          <button id="test" type="button" class="secondary">发送测试消息</button>
         </div>
       </section>
     </main>

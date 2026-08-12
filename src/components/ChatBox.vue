@@ -151,6 +151,8 @@ const selectedJob = computed(() =>
   selectJob.value ? helper.jobMaps.get(selectJob.value)?.jobData : undefined,
 )
 const replyActionLoading = ref(false)
+const manualMessage = ref('')
+const manualMessageSending = ref(false)
 const toast = useToast()
 
 const messages = computed(() => {
@@ -164,6 +166,11 @@ const selectedContextLoading = computed(
   () =>
     selectedSession.value?.historyStatus === 'loading' ||
     selectedSession.value?.jobContextStatus === 'loading',
+)
+const selectedCanSendMessage = computed(
+  () =>
+    selectedSession.value?.kind === 'boss' &&
+    Boolean(selectedSession.value.friendId && selectedSession.value.encryptBossId),
 )
 
 const bossReplyIndicatorClass = computed(() => {
@@ -268,6 +275,26 @@ async function sendSelectedDraft(): Promise<void> {
   }
 }
 
+async function sendManualMessage(): Promise<void> {
+  const sessionKey = selectJob.value
+  const text = manualMessage.value.trim()
+  if (!sessionKey || !text || manualMessageSending.value) return
+
+  manualMessageSending.value = true
+  try {
+    await helper.sendBossChatMessage(sessionKey, text)
+    manualMessage.value = ''
+    toast.add({ title: '消息已发送，当前会话已转为人工接管', color: 'success' })
+  } catch (error) {
+    toast.add({
+      title: `发送失败：${error instanceof Error ? error.message : String(error)}`,
+      color: 'error',
+    })
+  } finally {
+    manualMessageSending.value = false
+  }
+}
+
 watch(
   () => helper.currentJob.value,
   (v) => {
@@ -289,6 +316,7 @@ watch(
 watch(
   selectJob,
   (sessionKey) => {
+    manualMessage.value = ''
     if (!isBossHelper.value || !sessionKey || selectedSession.value?.kind !== 'boss') return
     void helper.loadBossSessionContext(sessionKey).catch((error) => {
       toast.add({
@@ -856,17 +884,28 @@ onUnmounted(() => {
       </div>
     </template>
     <template #footer>
-      <div
-        v-if="selectedSession?.readOnly"
-        class="py-2 pl-64 pr-3 text-center text-xs text-muted max-md:pl-52"
-      >
-        HR 新消息按 AI 回复策略处理；手动处理已有会话或主动跟进只生成草稿
+      <div v-if="isBossHelper && selectJob" class="w-full pl-64 max-md:pl-52">
+        <div class="pb-2 text-center text-xs text-muted">
+          手动发送会暂停当前会话的 AI 回复，确认无误后可点击“恢复”
+        </div>
+        <UChatPrompt
+          v-model="manualMessage"
+          variant="soft"
+          :disabled="!selectedCanSendMessage || manualMessageSending"
+          :loading="manualMessageSending"
+          :placeholder="
+            selectedCanSendMessage ? '输入发给当前 HR 的消息' : '当前会话缺少发送所需的 HR 标识'
+          "
+          @submit="sendManualMessage"
+        >
+          <UChatPromptSubmit
+            status="ready"
+            :loading="manualMessageSending"
+            :disabled="!selectedCanSendMessage || !manualMessage.trim() || manualMessageSending"
+          />
+        </UChatPrompt>
       </div>
-      <UChatPrompt
-        v-else-if="selectJob || !isBossHelper"
-        variant="soft"
-        v-model="helper.pendingMessages.value"
-      >
+      <UChatPrompt v-else-if="!isBossHelper" variant="soft" v-model="helper.pendingMessages.value">
         <UChatPromptSubmit v-if="messages" :status="messages.statusRef.value" />
       </UChatPrompt>
       <div v-else class="py-2 text-center text-xs text-muted">等待 BOSS 会话载入</div>

@@ -118,15 +118,15 @@ const configItems = helper.getConfigItems()
           <UButton
             v-if="conf.configLevel.intermediate"
             color="primary"
-            data-help="互联网就是要分享"
+            data-help="导出的 JSON 可能包含飞书 App Secret 和账号绑定，请只保存在可信位置"
             @click="conf.confExport"
           >
-            导出配置
+            导出配置（可能含密钥）
           </UButton>
           <UButton
             v-if="conf.configLevel.intermediate"
             color="primary"
-            data-help="互联网就是要分享"
+            data-help="导入文件中的飞书应用密钥和账号绑定会同时写入扩展安全存储"
             @click="conf.confImport"
           >
             导入配置

@@ -74,8 +74,8 @@ const policyItems = [
   { key: 'reply' as const, label: 'AI 回复' },
 ]
 
-const feishuConfigEnabled = ref(false)
 const feishuConfigReady = ref(false)
+const feishuTargetName = ref('')
 const saving = ref(false)
 const feishuStatusLoading = ref(false)
 const markdownFileInput = ref<HTMLInputElement>()
@@ -318,8 +318,8 @@ function applyMarkdownImport(): void {
 async function save(): Promise<void> {
   saving.value = true
   try {
-    if (feishuNotification.value && (!feishuConfigReady.value || !feishuConfigEnabled.value)) {
-      throw new Error('请先在扩展安全配置页启用并完成飞书配置')
+    if (feishuNotification.value && !feishuConfigReady.value) {
+      throw new Error('请先在扩展安全配置页完成飞书账号绑定')
     }
     Object.assign(conf.formData.aiReply, {
       mode: normalizeReplyMode(mode.value),
@@ -350,8 +350,8 @@ async function refreshFeishuStatus(): Promise<void> {
   feishuStatusLoading.value = true
   try {
     const status = await counter.getFeishuNotificationStatus()
-    feishuConfigEnabled.value = status.enabled
     feishuConfigReady.value = status.configured
+    feishuTargetName.value = status.targetName
   } catch (error) {
     toast.add({
       title: `读取飞书配置状态失败：${error instanceof Error ? error.message : String(error)}`,
@@ -627,19 +627,18 @@ onMounted(() => void refreshFeishuStatus())
         <div>
           <h3 class="font-medium">飞书人工接管通知（可选）</h3>
           <p class="text-xs text-muted">
-            App ID/App Secret 必须在扩展自己的安全配置页填写，不能在 BOSS 页面中输入。
+            在扩展安全配置页填写 App ID/App Secret
+            并绑定当前飞书账号；全局配置导入导出会包含密钥与绑定信息。
           </p>
         </div>
         <UCheckbox v-model="feishuNotification" label="启用飞书人工接管通知" />
         <div class="rounded-lg border border-default bg-muted/40 p-3 text-sm">
           当前状态：
-          <span :class="feishuConfigReady && feishuConfigEnabled ? 'text-success' : 'text-warning'">
+          <span :class="feishuConfigReady ? 'text-success' : 'text-warning'">
             {{
-              feishuConfigReady && feishuConfigEnabled
-                ? '已配置并启用'
-                : feishuConfigReady
-                  ? '已配置但未启用'
-                  : '尚未完成配置'
+              feishuConfigReady
+                ? `已绑定${feishuTargetName ? `：${feishuTargetName}` : ''}`
+                : '尚未完成绑定'
             }}
           </span>
         </div>

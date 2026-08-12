@@ -1,8 +1,16 @@
 import type { StorageItemKey } from '#imports'
 import { storage } from '#imports'
+import type { FeishuNotificationExportConfig } from '@/types/aiReply'
+import { exportJson, importJson } from '@/utils/jsonImportExport'
 
 import type { BackgroundCounter } from './background'
 export { ProvideContentAdapter } from './contentScriptShare'
+
+interface AiConfigurationContainer {
+  aiReply?: {
+    feishuConfig?: FeishuNotificationExportConfig
+  }
+}
 
 function genKey(key: string): StorageItemKey {
   const prefixes = ['local:', 'session:', 'sync:', 'managed:'] as const
@@ -24,7 +32,7 @@ export class ContentCounter {
   async callRouterHooks(path: string) {
     for (const hook of this.routerHooks) {
       try {
-         hook(path)
+        hook(path)
       } catch (e) {
         console.error('调用路由hook失败', e)
       }
@@ -53,13 +61,32 @@ export class ContentCounter {
     return this.background.getFeishuNotificationStatus(...args)
   }
 
+  async exportAiConfiguration(data: object, name: string): Promise<boolean> {
+    const output = structuredClone(data) as AiConfigurationContainer
+    const feishuConfig = await this.background.exportFeishuNotificationConfig()
+    if (output.aiReply && (feishuConfig.appId || feishuConfig.appSecret || feishuConfig.targetId)) {
+      output.aiReply.feishuConfig = feishuConfig
+    }
+    exportJson(output, name)
+    return true
+  }
+
+  async importAiConfiguration<T extends object>(): Promise<T> {
+    const data = await importJson<T>()
+    if (!Array.isArray(data)) {
+      const container = data as AiConfigurationContainer
+      const feishuConfig = container.aiReply?.feishuConfig
+      if (container.aiReply) delete container.aiReply.feishuConfig
+      if (feishuConfig) await this.background.importFeishuNotificationConfig(feishuConfig)
+    }
+    return data
+  }
+
   async openOptionsPage(...args: Parameters<BackgroundCounter['openOptionsPage']>) {
     return this.background.openOptionsPage(...args)
   }
 
-  async notifyBossHumanHandoff(
-    ...args: Parameters<BackgroundCounter['notifyBossHumanHandoff']>
-  ) {
+  async notifyBossHumanHandoff(...args: Parameters<BackgroundCounter['notifyBossHumanHandoff']>) {
     return this.background.notifyBossHumanHandoff(...args)
   }
 

@@ -2,8 +2,14 @@
   color: #17212b;
   background: #f3f7f6;
   font-family:
-    Inter, "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    Inter,
+    'Microsoft YaHei',
+    'PingFang SC',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
 }
 
 * {
@@ -66,14 +72,6 @@ h1 {
   margin-bottom: 8px;
 }
 
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: max-content;
-  font-weight: 600;
-}
-
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -87,6 +85,19 @@ h1 {
   color: #344252;
   font-size: 14px;
   font-weight: 600;
+}
+
+.form-grid .wide-field {
+  grid-column: 1 / -1;
+}
+
+.field-with-action {
+  display: flex;
+  gap: 10px;
+}
+
+.field-with-action input {
+  min-width: 0;
 }
 
 input,
@@ -115,17 +126,38 @@ select:focus {
   font-size: 13px;
 }
 
+.binding-guide {
+  margin: 20px 0 0;
+  padding-left: 22px;
+  color: #465565;
+  line-height: 1.8;
+}
+
+.bound-target {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #dbe6e3;
+  border-radius: 10px;
+  color: #586574;
+}
+
+.bound-target[data-kind='success'] {
+  border-color: #99d5ca;
+  background: #effaf7;
+  color: #047857;
+}
+
 .status {
   margin-top: 16px;
   color: #586574;
   font-size: 14px;
 }
 
-.status[data-kind="success"] {
+.status[data-kind='success'] {
   color: #047857;
 }
 
-.status[data-kind="error"] {
+.status[data-kind='error'] {
   color: #be123c;
 }
 
@@ -185,6 +217,11 @@ button.primary {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .field-with-action {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .actions a {

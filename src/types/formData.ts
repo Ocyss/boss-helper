@@ -1,4 +1,9 @@
-import type { BossReplyMode, CandidateKnowledgeItem, CandidateProfileConfig } from './aiReply'
+import type {
+  BossReplyMode,
+  CandidateKnowledgeItem,
+  CandidateProfileConfig,
+  FeishuNotificationExportConfig,
+} from './aiReply'
 
 export interface Statistics {
   date: string
@@ -125,6 +130,8 @@ export interface FormDataAiReply extends FormDataAi {
   feishuNotification: boolean
   sendDelaySeconds: number
   maxReplyLength: number
+  /** 仅在配置导入导出时临时使用，运行时密钥仍保存在扩展安全存储。 */
+  feishuConfig?: FeishuNotificationExportConfig
 }
 
 export type CustomGreetingItemText = {

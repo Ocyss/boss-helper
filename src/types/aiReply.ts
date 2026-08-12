@@ -96,24 +96,35 @@ export interface BossReplySessionState {
 export type FeishuReceiveIdType = 'chat_id' | 'open_id'
 
 export interface FeishuNotificationConfigInput {
-  enabled: boolean
   appId: string
   appSecret?: string
-  receiveIdType: FeishuReceiveIdType
-  receiveId: string
 }
 
 export interface FeishuNotificationConfigPublic {
-  enabled: boolean
   appId: string
   appSecretConfigured: boolean
-  receiveIdType: FeishuReceiveIdType
-  receiveId: string
+  bound: boolean
+  targetName: string
+  targetType: FeishuReceiveIdType
+  boundAt: number
+}
+
+export interface FeishuNotificationExportConfig {
+  appId: string
+  appSecret: string
+  targetType: FeishuReceiveIdType
+  targetId: string
+  targetName: string
+  boundAt: number
+}
+
+export interface FeishuBindingInfo {
+  redirectUrl: string
 }
 
 export interface FeishuNotificationStatus {
-  enabled: boolean
   configured: boolean
+  targetName: string
 }
 
 export interface BossHumanHandoffNotification {

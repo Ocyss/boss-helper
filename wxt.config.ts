@@ -116,7 +116,7 @@ export default defineConfig({
     default_locale: 'zh_CN',
     name: '__MSG_extName__',
     description: '__MSG_extDescription__',
-    permissions: ['storage', 'notifications'],
+    permissions: ['storage', 'notifications', 'identity'],
     web_accessible_resources: [
       {
         resources: ['boss.js'],

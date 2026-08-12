@@ -170,4 +170,8 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   async sendBossAiDraft(_sessionKey: string): Promise<void> {
     throw new Error('当前平台不支持发送 AI 回复草稿')
   }
+
+  async sendBossChatMessage(_sessionKey: string, _text: string): Promise<void> {
+    throw new Error('当前平台不支持手动发送 BOSS 聊天消息')
+  }
 }

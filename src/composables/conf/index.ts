@@ -6,7 +6,6 @@ import { ExtStorage } from '@/message'
 import type { ConfigLevel, FormData } from '@/types/formData'
 import { normalizeCandidateProfile } from '@/utils/candidateProfile'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
-import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
 
 import { defaultFormData } from './info'
@@ -200,7 +199,10 @@ export const useConf = () => {
       from.candidateProfile,
       Array.isArray(from.aiReply?.knowledge) ? from.aiReply.knowledge : [],
     )
-    if (from.aiReply) delete from.aiReply.knowledge
+    if (from.aiReply) {
+      delete from.aiReply.knowledge
+      delete from.aiReply.feishuConfig
+    }
     return from
   }
 
@@ -234,7 +236,9 @@ export const useConf = () => {
 
   async function confSaving() {
     try {
-      await counter.storageSet(formDataKey(), jsonClone(formData))
+      const data = jsonClone(formData)
+      delete data.aiReply.feishuConfig
+      await counter.storageSet(formDataKey(), data)
       await counter.storageSet(formDataPresetKey, jsonClone(formDataPreset.value))
       await counter.storageSet(formDataPresetsKey, jsonClone(formDataPresets.value))
 
@@ -270,15 +274,15 @@ export const useConf = () => {
     const stored = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
     const migrated = (await formDataHandler(stored)) ?? stored
     const data = deepmerge<FormData>(defaultFormData, migrated)
-    exportJson(data, '打招呼配置')
+    await counter.exportAiConfiguration(data, '打招呼配置')
   }
 
   async function confImport() {
-    let jsonData = await importJson<Partial<FormData>>()
+    let jsonData = await counter.importAiConfiguration<Partial<FormData>>()
     jsonData = (await formDataHandler(jsonData)) ?? jsonData
     deepmerge(formData, jsonData, { clone: false })
     toast.add({
-      title: '导入成功, 切记要手动保存哦',
+      title: '导入成功；如文件含飞书绑定则已写入，其他配置仍需手动保存',
       color: 'success',
     })
   }

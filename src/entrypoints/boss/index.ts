@@ -23,6 +23,7 @@ import {
   BOSS_REPLY_PARTIAL_REVIEW_PROTOCOL,
   buildBossReplyTopicRewriteProtocol,
 } from '@/utils/bossReplyProtocol'
+import { isExplicitBossResumeRequest } from '@/utils/bossResumeRequest'
 import { getCurrentShanghaiDate, selectCandidateKnowledge } from '@/utils/candidateProfile'
 import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
@@ -688,7 +689,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     this.replyDraftVersions.delete(sessionKey)
     await this.loadPausedReplySessions()
 
-    if (!this.conf.formData.aiReply.enable) {
+    const resumeRequested = isExplicitBossResumeRequest(message.text)
+
+    if (!this.conf.formData.aiReply.enable && !resumeRequested) {
       this.chatModel.setBossReplySession(sessionKey, 'disabled', 'AI 自动回复未启用')
       return
     }
@@ -697,11 +700,19 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     this.chatModel.setBossReplySession(
       sessionKey,
       paused ? 'paused' : 'queued',
-      paused ? '当前会话已暂停；新消息将只通知人工' : '已收到 HR 新消息，等待 2.5 秒合并',
+      resumeRequested
+        ? '检测到 HR 索要简历，等待合并后通知人工'
+        : paused
+          ? '当前会话已暂停；新消息将只通知人工'
+          : '已收到 HR 新消息，等待 2.5 秒合并',
     )
     this.chatModel.setBossReply(
       paused ? 'paused' : 'queued',
-      paused ? '暂停会话收到 HR 新消息' : '已收到 HR 新消息，等待合并',
+      resumeRequested
+        ? '检测到 HR 索要简历，准备通知人工'
+        : paused
+          ? '暂停会话收到 HR 新消息'
+          : '已收到 HR 新消息，等待合并',
     )
     this.replyBatcher.enqueue(message)
   }
@@ -1435,6 +1446,21 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     const config = this.conf.formData.aiReply
     // 用户主动处理和主动跟进只生成草稿；仅 HR 实时入站消息允许按配置自动发送。
     const executionMode = trigger === 'incoming' ? getBossReplyMode(config.mode) : 'draft'
+
+    const resumeRequest =
+      trigger === 'incoming'
+        ? [...messages].reverse().find((message) => isExplicitBossResumeRequest(message.text))
+        : undefined
+    if (resumeRequest) {
+      await this.handoffBossReply(
+        sessionKey,
+        trigger,
+        'HR 明确索要简历，请人工通过 BOSS 发送附件简历',
+        resumeRequest.text,
+      )
+      return
+    }
+
     await this.loadBossSessionContext(sessionKey)
     const context = this.buildBossReplyContext(sessionKey, messages, trigger)
 
@@ -2325,6 +2351,20 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       '#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main',
       'clickJobCardAction',
     )()
+  }
+
+  override async sendBossChatMessage(sessionKey: string, text: string): Promise<void> {
+    const message = text.trim()
+    if (!message) throw new Error('请输入要发送的消息')
+    if (message.length > 2000) throw new Error('消息不能超过 2000 个字符')
+    if (!this.chatModel.sessions.has(sessionKey)) throw new Error('未找到当前 BOSS 会话')
+
+    // 人工发送代表接管当前会话；先暂停并等待在途 AI 任务退出，避免两条回复竞态发送。
+    await this.pauseBossAiReply(sessionKey)
+    await this.replyTasks.get(sessionKey)?.catch(() => undefined)
+    await this.sendBossReplyText(sessionKey, message)
+    this.chatModel.setBossReplySession(sessionKey, 'paused', '人工消息已发送，当前会话保持暂停')
+    this.chatModel.setBossReply('paused', '人工消息已发送；需要时可恢复当前会话的 AI 回复')
   }
 }
 
