@@ -103,7 +103,7 @@ function amapHandler<C extends HelperContext<C, T, S>, T, S>(
   amap?: { ok: boolean; distance: number; duration: number },
 ): TaskResult | void {
   if (!amap || amap.ok === false) {
-    return taskResult.skip('高德地图未初始化')
+    return taskResult.transientSkip('高德地图未初始化')
   }
   if (distance > 0 && amap.distance > distance * 1000) {
     return taskResult.skip(
@@ -119,6 +119,12 @@ function amapHandler<C extends HelperContext<C, T, S>, T, S>(
 
 export const taskResult = {
   skip: (reason: string, status: JobStatus = 'warn'): TaskResult => ({
+    isSkip: true,
+    reason,
+    status,
+    isCache: status !== 'error',
+  }),
+  transientSkip: (reason: string, status: JobStatus = 'warn'): TaskResult => ({
     isSkip: true,
     reason,
     status,
@@ -232,7 +238,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     }
     return async (_ctx, { jobData: data }) => {
       const text = data.jobName.toLowerCase()
-      if (!text) return taskResult.skip('岗位名为空')
+      if (!text) return taskResult.transientSkip('岗位名为空')
       for (const x of ctx.helper.conf.formData.jobTitle.value) {
         if (text.includes(x.toLowerCase())) {
           if (ctx.helper.conf.formData.jobTitle.include) {
@@ -262,7 +268,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     if (!ctx.helper.conf.formData.company.enable) return
     return async (_ctx, { jobData: data }) => {
       const text = data.brand.name
-      if (!text) return taskResult.skip('公司名为空')
+      if (!text) return taskResult.transientSkip('公司名为空')
 
       for (const x of ctx.helper.conf.formData.company.value) {
         if (!x) {
@@ -311,6 +317,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     }
     return async (ctx, { jobData: data }) => {
       const text = data.brand.scale
+      if (!text) return taskResult.transientSkip('公司规模为空')
       if (!rangeMatch(text, ctx.helper.conf.formData.companySizeRange.value)) {
         return taskResult.skip(
           `不匹配的公司规模 ${text}, 预期: ${rangeMatchFormat(ctx.helper.conf.formData.companySizeRange.value, '人')}`,
@@ -324,6 +331,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     }
     return async (ctx, { jobData }) => {
       const content = jobData.jobDescription.toLowerCase()
+      if (!content) return taskResult.transientSkip('工作内容为空')
       for (const x of ctx.helper.conf.formData.jobContent.value) {
         if (!x) {
           continue
@@ -348,6 +356,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     }
     return async (_, { jobData }) => {
       const content = jobData.boss.title
+      if (!content) return taskResult.transientSkip('Hr职位为空')
       for (const x of ctx.helper.conf.formData.hrPosition.value) {
         if (!x) {
           continue
@@ -470,7 +479,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
 
       if (!activeText && !activeTime) {
         ctx.helper.statistics.todayData.value.activityFilter++
-        return taskResult.skip(`无活跃内容,如果全失败请反馈`)
+        return taskResult.transientSkip(`无活跃内容,如果全失败请反馈`)
       } else if (!activeText && activeTime) {
         if (ctx.now.getTime() - activeTime >= 7 * 24 * 60 * 60 * 1000) {
           ctx.helper.statistics.todayData.value.activityFilter++
@@ -478,7 +487,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         }
       } else if (!activeText) {
         ctx.helper.statistics.todayData.value.activityFilter++
-        return taskResult.skip(`无活跃信息,如果全失败请反馈`)
+        return taskResult.transientSkip(`无活跃信息,如果全失败请反馈`)
       } else if (activeText.includes('月') || activeText.includes('年')) {
         ctx.helper.statistics.todayData.value.activityFilter++
         return taskResult.skip(`不活跃, [${activeText}]`)
@@ -562,16 +571,16 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       state.amap ??= {}
 
       if (!jobData.address) {
-        return taskResult.skip('地址信息为空')
+        return taskResult.transientSkip('地址信息为空')
       }
       state.amap.geocode = await amapGeocode(jobData.address) // TODO: 直接使用经纬度
       if (!state.amap.geocode?.location) {
-        return taskResult.skip('未获取到地址经纬度')
+        return taskResult.transientSkip('未获取到地址经纬度')
       }
       state.amap.distance = await amapDistance(state.amap.geocode.location)
 
       if (state.amap == null || state.amap.distance == null) {
-        return taskResult.skip('api数据异常')
+        return taskResult.transientSkip('api数据异常')
       }
       return [
         amapHandler(

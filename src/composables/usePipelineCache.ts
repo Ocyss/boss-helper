@@ -5,6 +5,7 @@ import type {
   PipelineCache,
   PipelineCacheConfig,
   PipelineCacheItem,
+  PipelineCacheMetadata,
   ProcessorType,
 } from '@/types/pipelineCache'
 import { jsonClone } from '@/utils/deepmerge'
@@ -31,6 +32,8 @@ export class PipelineCacheManager {
   })
 
   private config: Required<PipelineCacheConfig>
+  private readonly initialized: Promise<void>
+  private saveQueue: Promise<void> = Promise.resolve()
 
   constructor(config: PipelineCacheConfig = {}) {
     this.config = {
@@ -41,7 +44,7 @@ export class PipelineCacheManager {
       processorConfigs: config.processorConfigs ?? DEFAULT_PROCESSOR_CONFIGS,
     }
 
-    void this.initCache()
+    this.initialized = this.initCache()
   }
 
   /**
@@ -80,7 +83,7 @@ export class PipelineCacheManager {
   /**
    * 检查缓存是否有效
    */
-  isValidCache(encryptJobId: string): boolean {
+  private isValidCache(encryptJobId: string): boolean {
     const item = this.cache.value.data[encryptJobId]
     if (!item) return false
 
@@ -96,13 +99,23 @@ export class PipelineCacheManager {
   /**
    * 获取缓存结果
    */
-  getCachedResult(encryptJobId: string): PipelineCacheItem | null {
-    const item = this.cache.value.data[encryptJobId]
-    if (!item || Date.now() > item.expireAt) {
-      if (item) {
+  async getCachedResult(
+    encryptJobId: string,
+    filterFingerprint: string,
+  ): Promise<PipelineCacheItem | null> {
+    await this.initialized
+    if (!this.isValidCache(encryptJobId)) {
+      if (this.cache.value.data[encryptJobId]) {
         delete this.cache.value.data[encryptJobId]
-        void this.saveCache()
+        await this.saveCache()
       }
+      return null
+    }
+    const item = this.cache.value.data[encryptJobId]
+    if (!item) return null
+
+    // 过滤结论依赖当时的筛选规则；配置变化后允许岗位重新进入管线。
+    if (item.status === 'warn' && item.filterFingerprint !== filterFingerprint) {
       return null
     }
 
@@ -128,15 +141,16 @@ export class PipelineCacheManager {
     brandName: string,
     status: JobStatus,
     message: string,
-    processorType?: ProcessorType,
+    metadata: PipelineCacheMetadata = {},
   ): Promise<void> {
     if (status === 'error') {
       // 不缓存错误
       return
     }
     try {
+      await this.initialized
       const now = Date.now()
-      const inferredProcessorType = processorType || this.inferProcessorType(message)
+      const inferredProcessorType = metadata.processorType || this.inferProcessorType(message)
       const processorConfig = this.config.processorConfigs[inferredProcessorType]
       const expireAt = now + processorConfig.expireTime
 
@@ -151,6 +165,8 @@ export class PipelineCacheManager {
         lastAccessed: now,
         hitCount: 0,
         processorType: inferredProcessorType,
+        filterFingerprint: metadata.filterFingerprint,
+        taskId: metadata.taskId,
       }
 
       this.cache.value.data[encryptJobId] = jsonClone(cacheItem)
@@ -172,12 +188,14 @@ export class PipelineCacheManager {
    * 保存缓存到存储
    */
   private async saveCache(): Promise<void> {
-    try {
-      const cacheData = jsonClone(this.cache.value)
+    const cacheData = jsonClone(this.cache.value)
+    const save = this.saveQueue.then(async () => {
       await counter.storageSet(this.config.storageKey, cacheData)
-    } catch (error) {
+    })
+    this.saveQueue = save.catch((error) => {
       logger.error('保存缓存到存储失败', error)
-    }
+    })
+    await this.saveQueue
   }
 
   /**
@@ -217,7 +235,8 @@ export class PipelineCacheManager {
     const items = Object.values(data).sort((a, b) => a.lastAccessed - b.lastAccessed)
 
     for (let i = 0; i < evictCount; i++) {
-      delete data[items[i].encryptJobId]
+      const item = items[i]
+      if (item) delete data[item.encryptJobId]
     }
 
     logger.info('LRU淘汰完成', { evicted: evictCount })
@@ -239,6 +258,7 @@ export class PipelineCacheManager {
    * 清空所有缓存
    */
   async clearCache(): Promise<void> {
+    await this.initialized
     this.cache.value.data = {}
     await this.saveCache()
     toast.add({

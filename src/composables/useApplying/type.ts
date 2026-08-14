@@ -85,6 +85,7 @@ export type TaskResult = {
   reason?: string
   status?: JobStatus
   msg?: string
+  /** 是否允许将本次稳定过滤结果写入持久化缓存 */
   isCache?: boolean
   id?: string
 }

@@ -2,7 +2,7 @@ import type { ContextLogger } from 'devlog-ui'
 import { shallowRef, ref } from 'vue'
 
 import { PipelineCacheManager } from '@/composables/usePipelineCache'
-import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
+import type { PipelineCacheItem, PipelineCacheMetadata, ProcessorType } from '@/types/pipelineCache'
 
 import type { HelperContext } from '../useHelper'
 import { LimitError, RateLimitError } from './deliverError'
@@ -41,23 +41,20 @@ export async function cachePipelineResult(
   brandName: string,
   status: JobStatus,
   message: string,
-  processorType?: ProcessorType,
+  metadata?: PipelineCacheMetadata,
 ): Promise<void> {
   const cacheManager = getCacheManager()
-  await cacheManager.setCacheResult(key, jobName, brandName, status, message, processorType)
+  await cacheManager.setCacheResult(key, jobName, brandName, status, message, metadata)
 }
 
 /**
  * 检查职位是否有有效缓存
  */
-export function checkJobCache(key: string): PipelineCacheItem | null {
-  const cacheManager = getCacheManager()
-
-  if (cacheManager.isValidCache(key)) {
-    const cached = cacheManager.getCachedResult(key)
-    return cached
-  }
-  return null
+export async function checkJobCache(
+  key: string,
+  filterFingerprint: string,
+): Promise<PipelineCacheItem | null> {
+  return getCacheManager().getCachedResult(key, filterFingerprint)
 }
 
 export type DeliveryWorkflow<C extends HelperContext<C, T, S>, T, S> = Awaited<
@@ -101,6 +98,12 @@ function randomDelaySeconds(min: number, max: number): number {
     Math.floor(Number.isFinite(max) ? max : normalizedMin),
   )
   return normalizedMin + Math.floor(Math.random() * (normalizedMax - normalizedMin + 1))
+}
+
+function getTaskProcessorType(taskId: string): ProcessorType {
+  if (taskId === 'AI筛选') return 'aiFiltering'
+  if (taskId === '高德地图') return 'amap'
+  return 'basic'
 }
 
 class WorkflowCancelledError extends Error {}
@@ -218,6 +221,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     signal: AbortSignal
     pageSignature: string
     configFingerprint: string
+    filterFingerprint: string
   }
 
   type PreparedItem = {
@@ -241,6 +245,28 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   const currentConfigFingerprint = () =>
     hashSnapshot({
       formData: helper.conf.formData,
+      models: helper.models.modelData.value,
+    })
+  const currentFilterFingerprint = () =>
+    hashSnapshot({
+      filters: {
+        activityFilter: helper.conf.formData.activityFilter,
+        aiFiltering: helper.conf.formData.aiFiltering,
+        amap: helper.conf.formData.amap,
+        bossGoldMedalHr: helper.conf.formData.bossGoldMedalHr,
+        company: helper.conf.formData.company,
+        companySizeRange: helper.conf.formData.companySizeRange,
+        friendStatus: helper.conf.formData.friendStatus,
+        goldHunterFilter: helper.conf.formData.goldHunterFilter,
+        hrPosition: helper.conf.formData.hrPosition,
+        jobAddress: helper.conf.formData.jobAddress,
+        jobContent: helper.conf.formData.jobContent,
+        jobTitle: helper.conf.formData.jobTitle,
+        salaryRange: helper.conf.formData.salaryRange,
+        sameCompanyFilter: helper.conf.formData.sameCompanyFilter,
+        sameHrFilter: helper.conf.formData.sameHrFilter,
+      },
+      candidateProfile: helper.conf.formData.candidateProfile,
       models: helper.models.modelData.value,
     })
   const withAccountDeliveryLock = async (
@@ -292,6 +318,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       signal: activeController.signal,
       pageSignature: activePageSignature,
       configFingerprint,
+      filterFingerprint: currentFilterFingerprint(),
     }
   }
   const assertRunActive = (run: RunContext) => {
@@ -535,6 +562,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         })
         result = await executeTask(task, data, index, log, run)
         if (result != null) {
+          result.id ??= task.id
           result.msg ??= task.label ?? task.id
           result.status ??= result.isSkip ? 'warn' : undefined
         }
@@ -568,6 +596,25 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         if (result.isSkip) {
           if (result.status !== 'error') {
             log.warn(`投递过滤: ${data.jobData.jobName}`, result.msg, result.reason)
+          }
+          if (
+            task.phase === 'prepare' &&
+            result.isCache &&
+            result.status !== 'error' &&
+            helper.conf.formData.useCache.value
+          ) {
+            await cachePipelineResult(
+              data.jobData.key,
+              data.jobData.jobName,
+              data.jobData.brand?.name ?? '',
+              result.status ?? 'warn',
+              result.reason ?? result.msg ?? task.label ?? task.id,
+              {
+                processorType: getTaskProcessorType(task.id),
+                filterFingerprint: run.filterFingerprint,
+                taskId: task.id,
+              },
+            )
           }
           return result.status === 'error' ? 'failed' : 'skipped'
         }
@@ -734,6 +781,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       if (outcome === 'completed' && !cancellation) {
         if (delivery) delivery.status = 'completed'
         helper.jobResultMaps.set(item.data.jobData.key, {
+          id: '岗位投递',
           status: 'success',
           msg: '投递成功',
         })
@@ -745,6 +793,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               item.data.jobData.brand?.name ?? '',
               'success',
               '投递成功',
+              { taskId: '岗位投递' },
             )
           } catch (e) {
             logger.warn('写入投递成功缓存失败', e)
@@ -895,6 +944,20 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             const jobData = pageJobs[index]!
             const previousStatus = helper.jobResultMaps.get(jobData.key)?.status
             if (previousStatus === 'success' || previousStatus === 'warn') continue
+            if (helper.conf.formData.useCache.value) {
+              const cached = await checkJobCache(jobData.key, run.filterFingerprint)
+              if (cached) {
+                helper.jobResultMaps.set(jobData.key, {
+                  id: cached.taskId ?? (cached.status === 'success' ? '岗位投递' : '缓存过滤'),
+                  isCache: true,
+                  isSkip: true,
+                  status: cached.status,
+                  msg: `${cached.message}（缓存）`,
+                  reason: cached.message,
+                })
+                continue
+              }
+            }
             const rawData = rawDataMap.get(jobData.key)
             if (!rawData) {
               helper.jobResultMaps.set(jobData.key, {

@@ -5,6 +5,15 @@ import type { JobStatus } from '@/composables/useApplying/type'
  */
 export type ProcessorType = 'aiFiltering' | 'amap' | 'basic'
 
+export interface PipelineCacheMetadata {
+  /** 产生缓存结果的处理器分组 */
+  processorType?: ProcessorType
+  /** 过滤配置指纹，仅过滤结果需要 */
+  filterFingerprint?: string
+  /** 产生结果的任务 ID */
+  taskId?: string
+}
+
 /**
  * Pipeline缓存项接口
  */
@@ -29,6 +38,10 @@ export interface PipelineCacheItem {
   hitCount: number
   /** 缓存分组 */
   processorType: ProcessorType
+  /** 过滤配置指纹；投递成功缓存不依赖该字段 */
+  filterFingerprint?: string
+  /** 产生结果的任务 ID */
+  taskId?: string
 }
 
 /**

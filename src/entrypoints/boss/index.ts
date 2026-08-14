@@ -2274,16 +2274,6 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       this._jobList,
       (v) => {
         this.jobList.value = v.map((item) => {
-          // const jobData = convertBossZpJobItemToJobData(item)
-          // if (this.conf.formData.useCache.value) {
-          //   const cacheCheck = checkJobCache(jobData.key)
-          //   if (cacheCheck) {
-          //     jobData.status = {
-          //       status: cacheCheck.status,
-          //       msg: `${cacheCheck.message} (缓存)`,
-          //     }
-          //   }
-          // }
           const job = convertBossZpJobItemToJobData(item)
 
           let jobData = this._jobDataMap.get(job.key)
