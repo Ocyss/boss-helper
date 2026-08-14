@@ -91,7 +91,7 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
   return res
 }
 
-const PIPELINE_QUEUE_CAPACITY = 10
+const PIPELINE_QUEUE_CAPACITY = 30
 const PREPARED_TTL_MS = 10 * 60_000
 
 function randomDelaySeconds(min: number, max: number): number {
@@ -204,7 +204,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   >([])
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
-  const detailSemaphore = new Semaphore(1)
+  const detailSemaphore = new Semaphore(PIPELINE_QUEUE_CAPACITY)
   const aiSemaphore = new Semaphore(PIPELINE_QUEUE_CAPACITY)
   const commitSemaphore = new Semaphore(1)
   let executeAllActive = false
@@ -212,7 +212,6 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   let activeRunId = 0
   let activeController: AbortController | null = null
   let activePageSignature = ''
-  let hasReadJobInRun = false
 
   type RunContext = {
     runId: number
@@ -279,7 +278,6 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     activeController?.abort(reason)
     activeController = null
     activePageSignature = ''
-    hasReadJobInRun = false
   }
   const startPageRun = (rebuildFingerprint?: string): RunContext => {
     const configFingerprint = currentConfigFingerprint()
@@ -506,22 +504,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
 
     if (task.concurrency === 'boss-detail') {
-      return detailSemaphore.run(async () => {
-        if (hasReadJobInRun) {
-          const readDelay = randomDelaySeconds(
-            helper.conf.formData.delayJobReadIntervalMin,
-            helper.conf.formData.delayJobReadIntervalMax,
-          )
-          helper.jobResultMaps.set(data.jobData.key, {
-            status: 'request',
-            msg: `${readDelay} 秒后读取 JD`,
-          })
-          await waitForRetry(readDelay * 1000, run.signal)
-          assertRunActive(run)
-        }
-        hasReadJobInRun = true
-        return withRetry(1)
-      }, run.signal)
+      return detailSemaphore.run(() => withRetry(1), run.signal)
     }
     if (task.concurrency === 'ai') {
       return aiSemaphore.run(() => withRetry(2), run.signal)
@@ -650,40 +633,6 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       index,
       run,
     )
-    return outcome === 'completed' ? finishPreparation(seed, run) : null
-  }
-
-  const readJobIntoProcessingQueue = async (
-    data: WorkflowData<T, S>,
-    index: number,
-    run: RunContext,
-  ): Promise<{ seed: PreparationSeed; tasks: Task<C, T, S>[] } | null> => {
-    const prepareTasks = pipeline.value.filter((task) => task.phase === 'prepare')
-    const detailTaskIndex = prepareTasks.findIndex((task) => task.concurrency === 'boss-detail')
-    if (detailTaskIndex < 0) {
-      throw new Error('工作流缺少串行岗位详情读取任务')
-    }
-
-    const seed = startPreparation(data, index)
-    const outcome = await executeTasks(prepareTasks.slice(0, detailTaskIndex + 1), data, index, run)
-    if (outcome !== 'completed') return null
-
-    helper.jobResultMaps.set(data.jobData.key, {
-      status: 'wait',
-      msg: 'JD 已读取，进入并发处理队列',
-    })
-    return {
-      seed,
-      tasks: prepareTasks.slice(detailTaskIndex + 1),
-    }
-  }
-
-  const processQueuedJob = async (
-    queued: { seed: PreparationSeed; tasks: Task<C, T, S>[] },
-    run: RunContext,
-  ): Promise<PreparedItem | null> => {
-    const { seed, tasks } = queued
-    const outcome = await executeTasks(tasks, seed.data, seed.index, run)
     return outcome === 'completed' ? finishPreparation(seed, run) : null
   }
 
@@ -889,7 +838,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         const run = startPageRun(rebuildFingerprint)
         current.value = 0
         const pageJobs = [...helper.jobList.value]
-        const processingTasks = new Set<Promise<void>>()
+        const preparationTasks = new Set<Promise<void>>()
         const deliveryTasks = new Set<Promise<void>>()
         let pageFailure: unknown
         const recordPageFailure = (error: unknown) => {
@@ -907,8 +856,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           )
         }
         const drainPageTasks = async () => {
-          while (processingTasks.size > 0) await Promise.all([...processingTasks])
-          // 处理任务结束后不会再产生新的投递任务，此时可以安全排空投递队列。
+          while (preparationTasks.size > 0) await Promise.all([...preparationTasks])
+          // 准备任务结束后不会再产生新的投递任务，此时可以安全排空投递队列。
           while (deliveryTasks.size > 0) await Promise.all([...deliveryTasks])
         }
         const startDelivery = (item: PreparedItem) => {
@@ -921,22 +870,22 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           })()
           trackTask(deliveryTasks, promise)
         }
-        const startProcessing = (queued: { seed: PreparationSeed; tasks: Task<C, T, S>[] }) => {
+        const startPreparationTask = (data: WorkflowData<T, S>, index: number) => {
           const promise = (async () => {
             try {
-              const item = await processQueuedJob(queued, run)
+              const item = await prepareJob(data, index, run)
               if (item) startDelivery(item)
             } catch (error) {
               recordPageFailure(error)
             }
           })()
-          trackTask(processingTasks, promise)
+          trackTask(preparationTasks, promise)
         }
 
         try {
           for (let index = 0; index < pageJobs.length && status.value === 'running'; index++) {
-            while (processingTasks.size >= PIPELINE_QUEUE_CAPACITY) {
-              await Promise.race(processingTasks)
+            while (preparationTasks.size >= PIPELINE_QUEUE_CAPACITY) {
+              await Promise.race(preparationTasks)
               if (pageFailure != null) throw pageFailure
               assertRunActive(run)
             }
@@ -960,9 +909,21 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             const data = { jobData, rawData, state }
             helper.jobMaps.set(jobData.key, data)
 
-            // 生产者必须等当前 JD 读取完成，才会继续随机等待并读取下一个岗位。
-            const queued = await readJobIntoProcessingQueue(data, index, run)
-            if (queued) startProcessing(queued)
+            const readDelay = randomDelaySeconds(
+              helper.conf.formData.delayJobReadIntervalMin,
+              helper.conf.formData.delayJobReadIntervalMax,
+            )
+            helper.jobResultMaps.set(jobData.key, {
+              status: 'wait',
+              msg: `${readDelay} 秒后读取 JD 并进入处理队列`,
+            })
+            await waitForRetry(readDelay * 1000, run.signal)
+            assertRunActive(run)
+            // 等待期间可能已有其他岗位投递成功，入队前再次检查每日上限。
+            assertDeliveryLimit()
+
+            // 一页岗位可进入容量为 30 的流式队列；处理完成后立即进入串行投递队列。
+            startPreparationTask(data, index)
             if (pageFailure != null) throw pageFailure
           }
 

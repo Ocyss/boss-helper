@@ -172,6 +172,24 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
       return from
     },
   ],
+  [
+    '20260814',
+    (from) => {
+      from.candidateProfile = normalizeCandidateProfile(
+        from.candidateProfile,
+        Array.isArray(from.aiReply?.knowledge) ? from.aiReply.knowledge : [],
+      )
+      if (from.aiReply) delete from.aiReply.knowledge
+      // 旧字段用于严格串行读取；清除旧值后按新的入队节奏使用 2–5 秒默认值。
+      delete from.delayJobReadIntervalMin
+      delete from.delayJobReadIntervalMax
+      if (from.delayDeliveryInterval === 5 && from.delayDeliveryIntervalMax === 10) {
+        from.delayDeliveryInterval = 3
+        from.delayDeliveryIntervalMax = 8
+      }
+      return from
+    },
+  ],
 ]
 
 export const useConf = () => {
