@@ -105,7 +105,7 @@ async function test() {
       prompt: testIn.value,
     })
     testOut.value = ''
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       span.info('TestResStream', part)
       if (part.type === 'reasoning-start') {
         testOut.value += '<思考过程>'
@@ -113,13 +113,18 @@ async function test() {
         testOut.value += '</思考过程>\n\n'
       } else if (part.type === 'text-delta' || part.type === 'reasoning-delta') {
         testOut.value += part.text
+      } else if (part.type === 'error') {
+        testOut.value += `\n\nerror: ${part.error}`
       }
     }
-  } catch (err: any) {
+  } catch (err) {
+    const errMsg = errorHandle(err)
+    logger.error('TestAIModelError', err)
     toast.add({
-      title: `${err}`,
+      title: errMsg,
       color: 'error',
     })
+    testOut.value += `\n\nerror: ${errMsg}`
   }
 
   span.end()

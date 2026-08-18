@@ -132,11 +132,46 @@ export function getCurTime(currentDate = new Date()) {
   return `${hours}:${minutes}:${seconds}`
 }
 
-export function errorHandle(e: any): string {
+export function errorHandle(e: unknown): string {
   if (e instanceof Error) {
-    return e.message
+    const message = e.message.trim()
+
+    if (
+      /cors|cross[- ]origin|access-control-allow-origin|failed to fetch|networkerror|network request failed|load failed/i.test(
+        message,
+      )
+    ) {
+      const host = message.match(/https?:\/\/([^/\s"'<>]+)/i)?.[1]
+
+      return host
+        ? `跨域或网络请求失败，${host} 可能不支持跨域请求，请尝试更换 API 地址`
+        : '跨域或网络请求失败，请检查 API 是否支持跨域请求，或尝试更换 API 地址'
+    }
+
+    return message || e.name || '未知错误'
   }
-  return `${e}`
+
+  if (typeof e === 'string') {
+    return e.trim() || '未知错误'
+  }
+
+  if (e == null) {
+    return '未知错误'
+  }
+
+  try {
+    if (typeof e === 'object' && 'message' in e) {
+      const message = e.message
+      if (typeof message === 'string' && message.trim()) {
+        return message
+      }
+    }
+
+    return JSON.stringify(e)
+  } catch {
+    // oxlint-disable-next-line typescript/no-base-to-string
+    return String(e)
+  }
 }
 
 export function getUuid(e: number, t: number) {

@@ -8,7 +8,8 @@ import { h, reactive, ref } from 'vue'
 import JobCard from '@/components/JobCard.vue'
 import { formInfoData, defaultFormData, useConf } from '@/composables/conf'
 import { parseFiltering } from '@/composables/useApplying/utils'
-import { JobData, useHelper } from '@/composables/useHelper'
+import { useHelper } from '@/composables/useHelper'
+import type { JobData } from '@/composables/useHelper'
 import { useModel } from '@/composables/useModel'
 import type { Prompt } from '@/types/formData'
 import { logger } from '@/utils/logger'
@@ -211,20 +212,21 @@ async function testJob() {
               disableMessages: true,
             },
           )
-          .then((r) => Promise.all([r.text, r.reasoningText]))
+          .then((r) => Promise.all([r.text, r.finalStep.then((x) => x.reasoningText)]))
         if (props.data === 'aiFiltering' && content[0]) {
           const { message } = parseFiltering(content[0])
           content[0] = message ?? content[0]
         }
-        testDataContent[item.key].push({
+        testDataContent[item.key]?.push({
           time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
           reasoning_content: content[1],
           content: content[0],
         })
-      } catch (err: any) {
+      } catch (err) {
+        const errMsg = errorHandle(err)
         logger.error('TestJobError', err)
         toast.add({
-          title: err.message,
+          title: errMsg,
           color: 'error',
         })
       } finally {
