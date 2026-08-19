@@ -3,16 +3,23 @@ import { InputMenuItem } from '@nuxt/ui'
 import { reactive } from 'vue'
 
 import LLMFormItem from '@/components/AI/LLMFormItem.vue'
-import { ModelConfData } from '@/composables/useModel'
-import { openai } from '@/composables/useModel/openai'
-import type { LLMInfo } from '@/composables/useModel/type'
+import type { ModelConfData } from '@/composables/useModel'
+import {
+  getOpenaiFormInfo,
+  isOpenCodeGoBaseUrl,
+  normalizeOpenAiBaseUrl,
+} from '@/composables/useModel/openai'
 
 const formData = defineModel<ModelConfData>({ required: true })
 
 const enabledFields = reactive<Record<string, boolean>>({})
+const formInfo = computed(() => getOpenaiFormInfo(formData.value))
+const isOpenCodeGo = computed(() =>
+  isOpenCodeGoBaseUrl(normalizeOpenAiBaseUrl(formData.value.base_url ?? '')),
+)
 
 const initializeEnabledFields = () => {
-  const info = openai.info as unknown as LLMInfo<ModelConfData>
+  const info = formInfo.value
   for (const [key, item] of Object.entries(info)) {
     if (key === 'mode') continue
     const itemAny = item as any
@@ -67,7 +74,15 @@ onMounted(() => {
 
 <template>
   <div class="openai-form space-y-6" ref="LLMFormRef">
-    <div v-for="(item, key) in openai.info" :key="key">
+    <UAlert
+      v-if="isOpenCodeGo"
+      class="mb-4"
+      color="info"
+      variant="subtle"
+      title="已识别 OpenCode Go 订阅"
+      description="请填写 OpenCode Zen 控制台中的 API Key，并选择 Go 模型。不同模型会自动走 Responses、Chat Completions 或 Anthropic Messages。请求经扩展后台发出，避免 BOSS 页面跨域限制。"
+    />
+    <div v-for="(item, key) in formInfo" :key="key">
       <div v-if="'mode' in item" class="mb-2">
         <!-- <h3 class="text-lg font-semibold">
           {{ item.label || 'Configuration' }}

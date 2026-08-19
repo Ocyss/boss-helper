@@ -5,6 +5,8 @@ import type { Browser } from '#imports'
 import { browser } from '#imports'
 import type { ResponseType } from '@/utils/request'
 
+import type { LlmFetchRequest, LlmFetchResponse } from './llmFetch'
+
 export const userKey = 'local:conf-user'
 
 const DB_NAME = 'ExtensionGlobalDB'
@@ -69,6 +71,26 @@ export class BackgroundCounter {
 
   async fetch(...args: Parameters<typeof fetch>) {
     return await fetch(...args)
+  }
+
+  async llmFetch(args: LlmFetchRequest): Promise<LlmFetchResponse> {
+    const signal = AbortSignal.timeout(args.timeoutMs ?? 600_000)
+    const response = await fetch(args.url, {
+      method: args.method,
+      headers: args.headers,
+      body: args.body,
+      signal,
+    })
+    const headers: Record<string, string> = {}
+    response.headers.forEach((value, key) => {
+      headers[key] = value
+    })
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+      body: await response.text(),
+    }
   }
   async getImage(key: string): Promise<
     | { success: false }

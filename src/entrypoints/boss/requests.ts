@@ -9,6 +9,7 @@ import {
 } from '@/composables/useApplying/deliverError'
 import { calculateFileMD5 } from '@/utils/file'
 import { logger } from '@/utils/logger'
+import { persistLog } from '@/utils/persistentLogs'
 
 import type { BossZpBossData, BossZpDetailData } from './types'
 
@@ -71,7 +72,19 @@ export async function sendPublishReq(
       headers: { Zp_token: token },
     }).then((r) => r.json())
 
-    res.code !== 0 && logger.error(`投递失败`, res)
+    if (res.code !== 0) {
+      logger.error(`投递失败`, res)
+      await persistLog({
+        level: 'error',
+        title: '投递接口返回失败响应',
+        message: res.message,
+        job: {
+          key: `boss::${data.encryptJobId}`,
+          name: data.encryptJobId,
+        },
+        data: { request: data, response: res, retriesRemaining: retries },
+      })
+    }
 
     if (res.code === 1) {
       const content = String(
@@ -108,6 +121,16 @@ export async function sendPublishReq(
     if (e instanceof BossHelperError) {
       throw e
     }
+    await persistLog({
+      level: 'warn',
+      title: '投递请求异常，准备重试',
+      message: e?.message ?? String(e),
+      job: {
+        key: `boss::${data.encryptJobId}`,
+        name: data.encryptJobId,
+      },
+      data: { request: data, error: e, retriesRemaining: retries },
+    })
     return sendPublishReq(data, e?.message as string, retries - 1)
   }
 }

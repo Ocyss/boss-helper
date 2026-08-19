@@ -29,6 +29,8 @@ export interface PipelineCacheItem {
   hitCount: number
   /** 缓存分组 */
   processorType: ProcessorType
+  /** 筛选配置指纹；warn 命中时必须一致 */
+  filterFingerprint?: string
 }
 
 /**

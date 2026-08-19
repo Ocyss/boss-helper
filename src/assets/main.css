@@ -135,15 +135,21 @@ html.dark {
     border-top-left-radius: 0;
     background-color: var(--state-color);
     color: #fff;
-    padding: 7px 17px;
-    text-wrap: nowrap;
+    padding: 6px 12px;
+    max-width: min(11rem, calc(100% + 6px));
+    overflow: hidden;
     font-size: 12px;
     font-weight: bold;
-    letter-spacing: 5px;
+    letter-spacing: 0.04em;
     left: -6px;
     bottom: -14px;
     transition: all 0.25s ease;
     box-shadow: 1px -7px 12px -2px rgb(167 167 167 / 40%);
+    .card-status-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
   &::after {
     position: absolute;

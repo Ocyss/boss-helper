@@ -2,6 +2,8 @@ import { ref } from 'vue'
 
 import { defineUnlistedScript } from '#imports'
 import { appearanceConf, useConf } from '@/composables/conf'
+import { applyCachedJobResult } from '@/composables/useApplying'
+import { buildFilterFingerprint } from '@/composables/useApplying/fingerprint'
 import type { WorkflowData } from '@/composables/useApplying/type'
 import { createLazyObject, isInitialized } from '@/composables/useApplying/type'
 import type { JobData } from '@/composables/useHelper'
@@ -50,6 +52,24 @@ const initSearch = useHookVueFn('#wrap .page-job-wrapper,.job-recommend-main,.pa
   'onSearch',
 ])
 
+function waitJobListRefresh(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  if (predicate()) {
+    return Promise.resolve(true)
+  }
+  const start = Date.now()
+  return new Promise((resolve) => {
+    const timer = setInterval(() => {
+      if (predicate()) {
+        clearInterval(timer)
+        resolve(true)
+      } else if (Date.now() - start >= timeoutMs) {
+        clearInterval(timer)
+        resolve(false)
+      }
+    }, 200)
+  })
+}
+
 function formatActiveTime(timestamp: number): string {
   const now = Date.now()
   const diff = now - timestamp
@@ -68,6 +88,9 @@ function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
   return {
     key,
     link: `https://www.zhipin.com/job_detail/${item.encryptJobId}.html`,
+    encryptJobId: item.encryptJobId,
+    encryptBossId: item.encryptBossId,
+    encryptBrandId: item.encryptBrandId,
     jobName: item.jobName,
     positionName: item.jobName,
     jobDescription: '',
@@ -138,6 +161,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   _pageChange = (_v: number) => {
     throw new Error('pageChange is undefined')
   }
+  _searchJob?: (page?: number) => void
   _clickJobCardAction = (_: BossZpJobItemData) => {}
   _jobList: Ref<BossZpJobItemData[]>
   _jobDataMap: Map<string, BoosJobData>
@@ -208,6 +232,34 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       return false
     }
     return true
+  }
+
+  async refreshJobSearch(delay: Promise<any>): Promise<boolean> {
+    try {
+      const oldLen = this._jobList.value.length
+      const oldFirstJobId = this._jobList.value[0]?.encryptJobId ?? ''
+      const oldPage = this._page.value.page
+      const search = this._searchJob ?? this._pageChange
+      search(1)
+      await delay
+      const refreshed = await waitJobListRefresh(() => {
+        const pageReset = oldPage !== 1 && this._page.value.page === 1
+        const listChanged =
+          (this._jobList.value[0]?.encryptJobId ?? '') !== oldFirstJobId ||
+          this._jobList.value.length !== oldLen
+        return pageReset || listChanged
+      }, 10000)
+      if (!refreshed) {
+        logger.error('重搜: 列表未刷新')
+        return false
+      }
+      logger.info('重搜: 已回到第1页以获取新岗位')
+      this.logs.info('重新搜索', '已回到第1页以获取新岗位')
+      return true
+    } catch (err) {
+      logger.error('重搜: 失败', err)
+      return false
+    }
   }
 
   async start() {
@@ -472,7 +524,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryStarts',
                     fieldProps: {
                       label: '投递开始',
-                      'data-help': '点击投递按钮会等待一段时间,默认值10s',
+                      'data-help': '点击投递按钮会等待一段时间,默认值3s',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -484,7 +536,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryInterval',
                     fieldProps: {
                       label: '投递间隔',
-                      'data-help': '每个投递的间隔,太快易风控,默认值2s',
+                      'data-help':
+                        '每次实际投递（friend/add）后的间隔,太快易风控,默认值5s。过滤跳过不等待此间隔。',
                     },
                     inputNumberProps: {
                       min: 1,
@@ -496,11 +549,24 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
                     key: 'delayDeliveryPageNext',
                     fieldProps: {
                       label: '投递翻页',
-                      'data-help': '投递完下一页之后等待的间隔,太快易风控,默认值60s',
+                      'data-help': '距上一次实际投递的最小翻页间隔,太快易风控,默认值60s',
                     },
                     inputNumberProps: {
                       min: 1,
                       max: 99999,
+                    },
+                  },
+                  {
+                    type: 'inputNumber',
+                    key: 'refreshSearchEveryPages',
+                    fieldProps: {
+                      label: '重搜间隔',
+                      'data-help':
+                        '每处理完这么多页后重新搜索，回到第1页以捞到新岗位；已投过的会跳过。0 为关闭。默认5页。过小可能触发风控。',
+                    },
+                    inputNumberProps: {
+                      min: 0,
+                      max: 99,
                     },
                   },
                   {
@@ -579,16 +645,6 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       this._jobList,
       (v) => {
         this.jobList.value = v.map((item) => {
-          // const jobData = convertBossZpJobItemToJobData(item)
-          // if (this.conf.formData.useCache.value) {
-          //   const cacheCheck = checkJobCache(jobData.key)
-          //   if (cacheCheck) {
-          //     jobData.status = {
-          //       status: cacheCheck.status,
-          //       msg: `${cacheCheck.message} (缓存)`,
-          //     }
-          //   }
-          // }
           const job = convertBossZpJobItemToJobData(item)
 
           let jobData = this._jobDataMap.get(job.key)
@@ -608,11 +664,13 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 
           return job
         })
+        const fingerprint = buildFilterFingerprint(this.conf.formData)
         this.jobList.value.forEach((job) => {
+          applyCachedJobResult(this, job, fingerprint)
           this.jobMaps.set(job.key, {
             jobData: job,
             rawData: this._jobDataMap.get(job.key)!,
-            state: {},
+            state: this.jobMaps.get(job.key)?.state ?? {},
           })
         })
       },
@@ -641,14 +699,14 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   }
 
   async _initPageChange() {
-    let pc =
+    const isRecommend =
       location.href.includes('/web/geek/job-recommend') || location.href.includes('/web/geek/jobs')
-        ? await initSearch()
-        : await initChange()
+    const pc = isRecommend ? await initSearch() : await initChange()
     if (!pc) {
       throw new Error('pageChange is undefined')
     }
     this._pageChange = pc
+    this._searchJob = (await initSearch()) ?? pc
   }
 
   async _initClickJobCardAction() {

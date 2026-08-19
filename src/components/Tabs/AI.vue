@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import LLMModelManage from '@/components/AI/LLMModelManage.vue'
 import LLMPromptEdit from '@/components/AI/LLMPromptEdit.vue'
+import TokenUsage from '@/components/AI/TokenUsage.vue'
 import FormSwitch from '@/components/Tabs/ConfigItem/Form/FormSwitch.vue'
 import { formInfoData, useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
@@ -72,7 +73,7 @@ function change(v: Partial<FormDataAi>) {
       @change="change"
     /> -->
     </div>
-    <div>
+    <div class="flex flex-wrap gap-2">
       <LLMModelManage>
         <UButton
           color="primary"
@@ -86,6 +87,11 @@ function change(v: Partial<FormDataAi>) {
           模型配置
         </UButton>
       </LLMModelManage>
+      <TokenUsage>
+        <UButton color="neutral" variant="outline" data-help="查看 AI 过滤与打招呼的 Token 消耗">
+          Token 消耗
+        </UButton>
+      </TokenUsage>
     </div>
 
     <LLMPromptEdit

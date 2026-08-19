@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
 
-import Alert from '@/components/Alert.vue'
 import type { ModelConf } from '@/composables/useModel'
 import { useModel } from '@/composables/useModel'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'

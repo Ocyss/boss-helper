@@ -50,6 +50,7 @@ export interface FormData {
   delayDeliveryStarts: number
   delayDeliveryInterval: number
   delayDeliveryPageNext: number
+  refreshSearchEveryPages: number
   delayMessageSending: number
   version: string
 
@@ -108,6 +109,11 @@ export interface FormDataAi {
   model?: string
   prompt: Prompt
   enable: boolean
+  prefilterPhrases?: string[]
+  llmTriggerWords?: string[]
+  compactJd?: {
+    noiseWords?: string[]
+  }
 }
 
 export type CustomGreetingItemText = {

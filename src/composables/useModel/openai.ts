@@ -1,8 +1,18 @@
+import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAI } from '@ai-sdk/openai'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 import { desc, other } from './common'
+import { extensionFetch } from './extensionFetch'
+import {
+  getOpenCodeGoApi,
+  isOpenCodeGoBaseUrl,
+  OPENCODE_GO_BASE_URL,
+  OPENCODE_GO_MODEL_IDS,
+} from './opencodeGo'
 import type { LLMConf, LLMInfo } from './type'
+
+export { isOpenCodeGoBaseUrl, OPENCODE_GO_BASE_URL } from './opencodeGo'
 
 export type OpenaiLLMConf = LLMConf<
   'openai',
@@ -31,6 +41,23 @@ export type OpenaiLLMConf = LLMConf<
   }
 >
 
+export function normalizeOpenAiBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/u, '')
+  const withoutChatCompletions = trimmed.replace(/\/chat\/completions$/u, '')
+
+  try {
+    const url = new URL(withoutChatCompletions)
+    const pathname = url.pathname.replace(/\/+$/u, '')
+    if (url.hostname === 'opencode.ai' && (pathname === '/zen/go' || pathname === '/zen/go/v1')) {
+      return OPENCODE_GO_BASE_URL
+    }
+  } catch {
+    return withoutChatCompletions
+  }
+
+  return withoutChatCompletions
+}
+
 const info: LLMInfo<OpenaiLLMConf> = {
   mode: {
     mode: 'openai',
@@ -42,13 +69,14 @@ const info: LLMInfo<OpenaiLLMConf> = {
     required: true,
   },
   base_url: {
-    desc: '可使用中转/代理API, 前提是符合openai的规范, 需要填写base api地址',
+    desc: '可使用中转/代理API, 前提是符合openai的规范, 需要填写base api地址。OpenCode Go 订阅请填 https://opencode.ai/zen/go/v1',
     type: 'input',
     // format: 'menu', // TODO: 修复用户体验, 当前创建有问题, 要多次回车/点击
     config: {
       placeholder: 'https://api.openai.com/v1',
       items: [
         'https://api.openai.com/v1',
+        OPENCODE_GO_BASE_URL,
         'https://openrouter.ai/api/v1',
         'https://api.deepseek.com',
         'https://api.moonshot.cn/v1',
@@ -176,17 +204,81 @@ const info: LLMInfo<OpenaiLLMConf> = {
   },
 }
 
-const createModel: (conf: OpenaiLLMConf) => LanguageModelV3 = (conf: OpenaiLLMConf) => {
-  const openai = createOpenAI({
-    baseURL: conf.base_url,
+export function getOpenaiFormInfo(conf: Partial<OpenaiLLMConf>): LLMInfo<OpenaiLLMConf> {
+  if (!isOpenCodeGoBaseUrl(normalizeOpenAiBaseUrl(conf.base_url ?? ''))) return info
+
+  return {
+    ...info,
+    base_url: {
+      ...info.base_url,
+      desc: 'OpenCode Go 订阅网关地址，一般保持 https://opencode.ai/zen/go/v1 即可',
+    },
+    api_key: {
+      ...info.api_key,
+      desc: '在 OpenCode Zen 控制台订阅 Go 后复制 API Key',
+    },
+    model: {
+      type: 'input',
+      format: 'menu',
+      required: true,
+      value: 'deepseek-v4-flash',
+      desc: 'Go 会按模型自动选择 Responses / Chat Completions / Anthropic Messages，无需手动切换协议',
+      config: {
+        placeholder: 'deepseek-v4-flash',
+        items: [...OPENCODE_GO_MODEL_IDS],
+        createItem: 'always',
+      },
+    },
+    responses: {
+      ...info.responses,
+      desc: 'OpenCode Go 会按模型自动选择协议，此项会被忽略',
+    },
+  }
+}
+
+const createModel = (conf: OpenaiLLMConf) => {
+  const baseURL = normalizeOpenAiBaseUrl(conf.base_url)
+  const headers = conf.advanced.extra_headers
+
+  if (isOpenCodeGoBaseUrl(baseURL)) {
+    const api = getOpenCodeGoApi(conf.model)
+    // MAIN world 在 zhipin.com 下会触发 CORS，Go 请求改走扩展后台。
+    // 只创建无状态 LanguageModel，不持有 conversation / previous_response_id。
+    if (api === 'responses') {
+      return createOpenAI({
+        baseURL,
+        apiKey: conf.api_key,
+        headers,
+        fetch: extensionFetch,
+      }).responses(conf.model)
+    }
+    if (api === 'messages') {
+      return createAnthropic({
+        name: 'opencode-go',
+        baseURL,
+        apiKey: conf.api_key,
+        headers,
+        fetch: extensionFetch,
+      }).languageModel(conf.model)
+    }
+    return createOpenAICompatible({
+      name: 'opencode-go',
+      baseURL,
+      apiKey: conf.api_key,
+      headers,
+      fetch: extensionFetch,
+    }).chatModel(conf.model)
+  }
+
+  const openaiProvider = createOpenAI({
+    baseURL,
     apiKey: conf.api_key,
-    headers: conf.advanced.extra_headers,
-    // fetch: counter.fetch,
+    headers,
   })
   if (conf.responses) {
-    return openai.responses(conf.model)
+    return openaiProvider.responses(conf.model)
   }
-  return openai.chat(conf.model)
+  return openaiProvider.chat(conf.model)
 }
 
 export const openai = {

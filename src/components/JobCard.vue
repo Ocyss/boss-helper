@@ -15,24 +15,37 @@ const jobResult = computed(() => {
   return helper.jobResultMaps.get(props.job.key)
 })
 
-const stateMaps: Record<JobStatus, string> = {
-  pending: '#CECECE',
-  wait: '#CECECE',
-  error: '#e74c3c',
-  warn: '#f39c12',
-  success: '#2ecc71',
-  running: '#98F5F9',
-  request: '#3498db',
-  ai: '#9b59b6',
+const stateMaps: Record<JobStatus, { color: string; icon: string; label: string }> = {
+  pending: { color: '#CECECE', icon: '', label: '' },
+  wait: { color: '#CECECE', icon: 'i-lucide-clock', label: '等待' },
+  error: { color: '#e74c3c', icon: 'i-lucide-x', label: '失败' },
+  warn: { color: '#f39c12', icon: 'i-lucide-triangle-alert', label: '已过滤' },
+  success: { color: '#2ecc71', icon: 'i-lucide-check', label: '成功' },
+  running: { color: '#98F5F9', icon: 'i-line-md-loading-twotone-loop', label: '运行中' },
+  request: { color: '#3498db', icon: 'i-svg-spinners-wifi-fade', label: '请求中' },
+  ai: { color: '#9b59b6', icon: 'i-line-md-hazard-lights-loop', label: 'AI' },
+}
+
+function isCompactHint(text?: string) {
+  if (!text) return false
+  const t = text.replace(/（缓存）/g, '').trim()
+  return t.length > 0 && t.length <= 8 && !/[,，\n]/.test(t)
 }
 
 const jobStatus = computed(() => {
-  const status = jobResult.value?.status ?? 'pending'
-  const data = stateMaps[status]
+  const result = jobResult.value
+  const status = result?.status ?? 'pending'
+  const meta = stateMaps[status]
+  const compact = [result?.id, result?.msg].find(isCompactHint)
+  const label = compact ?? meta.label
+  const suffix = result?.isCache && !label.includes('缓存') ? '·缓存' : ''
   return {
     status,
-    color: data,
-    show: jobResult.value?.status !== 'pending' ? 'flex' : 'none',
+    color: meta.color,
+    icon: meta.icon,
+    label: `${label}${suffix}`,
+    title: result?.reason || result?.msg || label,
+    show: status !== 'pending' ? 'flex' : 'none',
   }
 })
 
@@ -144,14 +157,12 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
       </div>
     </div>
     <div
-      class="card-status flex-row gap-2 justify-center items-center"
-      v-if="jobResult"
-      :title="jobResult?.reason || jobResult?.msg"
+      class="card-status flex-row gap-1.5 justify-center items-center"
+      v-if="jobResult && jobStatus.status !== 'pending'"
+      :title="jobStatus.title"
     >
-      <UIcon v-if="jobStatus.status === 'running'" name="i-line-md-loading-twotone-loop" />
-      <UIcon v-else-if="jobStatus.status === 'request'" name="i-svg-spinners-wifi-fade" />
-      <UIcon v-else-if="jobStatus.status === 'ai'" name="i-line-md-hazard-lights-loop" />
-      {{ jobResult?.msg || jobResult?.reason || '无内容' }}
+      <UIcon v-if="jobStatus.icon" :name="jobStatus.icon" class="size-3.5 shrink-0" />
+      <span class="card-status-label">{{ jobStatus.label }}</span>
     </div>
   </div>
 </template>

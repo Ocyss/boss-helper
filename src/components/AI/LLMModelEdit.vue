@@ -3,7 +3,7 @@ import { streamText } from 'ai'
 import { reactive, ref } from 'vue'
 
 import type { ModelConf } from '@/composables/useModel'
-import { openai } from '@/composables/useModel/openai'
+import { normalizeOpenAiBaseUrl, openai } from '@/composables/useModel/openai'
 import type { OpenaiLLMConf } from '@/composables/useModel/openai'
 import { jsonClone } from '@/utils/deepmerge'
 import { logger } from '@/utils/logger'
@@ -91,7 +91,12 @@ interface UserInfo {
   ],
 }
 
+function normalizeFormData() {
+  llmFormData.base_url = normalizeOpenAiBaseUrl(llmFormData.base_url ?? '')
+}
+
 async function test() {
+  normalizeFormData()
   const data: ModelConf = jsonClone(props.model || { name: '', key: '' })
   data.name = createName.value
   data.data = jsonClone(llmFormData) as ModelConf['data'] & {}
@@ -131,6 +136,7 @@ async function test() {
 }
 
 function create() {
+  normalizeFormData()
   const data: ModelConf = props.model || { name: '', key: '' }
   data.name = createName.value
   data.data = jsonClone(llmFormData) as ModelConf['data'] & {}

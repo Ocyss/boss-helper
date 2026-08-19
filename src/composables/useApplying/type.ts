@@ -1,6 +1,8 @@
 import type { ContextLogger } from 'devlog-ui'
 
 import type { HelperContext, JobData } from '@/composables/useHelper'
+import type { FormDataInput } from '@/types/formData'
+import type { amapDistance, amapGeocode } from '@/utils/amap'
 
 import type { DeliveryWorkflow } from '.'
 import { useDeliveryWorkflow } from '.'
@@ -48,6 +50,7 @@ export interface WorkflowState {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>
   }
+  pendingGreeting?: FormDataInput['value']
 }
 
 export interface WorkflowData<T, S> {

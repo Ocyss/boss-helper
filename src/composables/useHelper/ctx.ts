@@ -10,6 +10,7 @@ import type { BossHelperError } from '@/composables/useApplying/deliverError'
 import type { TaskResult, WorkflowData } from '@/composables/useApplying/type'
 import { useModel } from '@/composables/useModel'
 import { ChatModel } from '@/composables/useModel'
+import { useTokenUsage } from '@/composables/useTokenUsage'
 import type { FormDataInput } from '@/types/formData'
 
 import type { NetConf } from './netConf'
@@ -22,6 +23,7 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   conf: ReturnType<typeof useConf>
   models: ReturnType<typeof useModel>
   statistics: ReturnType<typeof useStatistics>
+  tokenUsage: ReturnType<typeof useTokenUsage>
 
   chatModel: ChatModel
   workflow: DeliveryWorkflow<C, T, S> | null = null
@@ -45,6 +47,7 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
     this.conf = useConf()
     this.models = useModel()
     this.statistics = useStatistics()
+    this.tokenUsage = useTokenUsage(() => this.uid)
     this.currentJob = ref(null)
     this._logs = ref([])
     this.logs = extendRef(this._logs, {
@@ -81,6 +84,7 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   }
 
   abstract loadMoreJob(delay: Promise<any>): Promise<boolean>
+  abstract refreshJobSearch(delay: Promise<any>): Promise<boolean>
   abstract onMount(): Promise<void>
   abstract getConfigItems(): ComputedRef<[AlertItem[], (ConfigAccordionItem | false)[]]>
 

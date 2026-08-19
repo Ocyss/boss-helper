@@ -47,6 +47,10 @@ export class ContentCounter implements BackgroundCounter {
     return this.background.fetch(...args)
   }
 
+  async llmFetch(...args: Parameters<BackgroundCounter['llmFetch']>) {
+    return this.background.llmFetch(...args)
+  }
+
   async getImage(...args: Parameters<BackgroundCounter['getImage']>) {
     return this.background.getImage(...args)
   }

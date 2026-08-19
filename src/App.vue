@@ -115,6 +115,7 @@ onMounted(() => {
   root = (container.value?.getRootNode() as ShadowRoot) ?? document
   void conf.confInit()
   void model.initModel()
+  void helper.tokenUsage.load()
   chatOpen.value = appearanceConf.value.defaultShowChatBox
 })
 

@@ -62,7 +62,7 @@ const configItems = helper.getConfigItems()
           </span>
           <span
             v-if="conf.configLevel.expert || conf.formData.useCache.value"
-            data-help="开启后会缓存投递记录，避免重复投递，提高效率。但是缓存功能并不积极维护。可能会有bug，或者意外情况，如遇到可尝试清空缓存或者禁用"
+            data-help="开启后会缓存过滤跳过与投递成功的岗位，刷新后直接跳过，避免重复点卡片和打 AI。改筛选条件后过滤缓存会失效；出错结果不缓存。如异常可清空缓存或关闭。"
           >
             <UCheckbox label="启用缓存" v-model="conf.formData.useCache.value" />
           </span>

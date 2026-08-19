@@ -130,6 +130,13 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
       return from
     },
   ],
+  [
+    '20260816',
+    (from) => {
+      from.useCache = { value: true }
+      return from
+    },
+  ],
 ]
 
 export const useConf = () => {

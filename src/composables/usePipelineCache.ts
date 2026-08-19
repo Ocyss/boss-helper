@@ -129,6 +129,7 @@ export class PipelineCacheManager {
     status: JobStatus,
     message: string,
     processorType?: ProcessorType,
+    filterFingerprint?: string,
   ): Promise<void> {
     if (status === 'error') {
       // 不缓存错误
@@ -151,6 +152,7 @@ export class PipelineCacheManager {
         lastAccessed: now,
         hitCount: 0,
         processorType: inferredProcessorType,
+        filterFingerprint,
       }
 
       this.cache.value.data[encryptJobId] = jsonClone(cacheItem)

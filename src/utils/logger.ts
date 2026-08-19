@@ -2,12 +2,12 @@ import type { LogLevel } from 'devlog-ui'
 import { logger, LogPersistence } from 'devlog-ui'
 
 LogPersistence.enable({
-  storage: 'session', // 'session' (sessionStorage) or 'local' (localStorage)
-  maxPersisted: 500, // Max logs to persist
-  debounceMs: 100, // Debounce writes for performance
+  storage: 'local', // 刷新、关闭再打开页面后仍可恢复常规运行日志
+  maxPersisted: 5000,
+  debounceMs: 0, // 避免页面刚刷新时最后一批日志尚未写入
 })
 
-let level: string = 'warn'
+let level: string = 'debug'
 
 if (
   'localStorage' in window &&
@@ -18,7 +18,7 @@ if (
 }
 
 logger.configure({
-  maxLogs: 1000, // Max logs in memory (FIFO rotation)
+  maxLogs: 5000, // Max logs in memory (FIFO rotation)
   minLevel: level as LogLevel, // Minimum level: 'debug' | 'info' | 'warn' | 'error'
   enabled: true, // Enable/disable logging
   shortcutAction: 'toggle', // Ctrl+Shift+L: 'toggle' | 'popout'
