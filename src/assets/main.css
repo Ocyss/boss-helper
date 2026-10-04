@@ -250,6 +250,60 @@ html.dark {
   }
 }
 
+.job-card-blocked {
+  opacity: 0.62;
+  filter: grayscale(0.35);
+}
+
+.card-rule-flag {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  color: #92400e;
+  background: #fef3c7;
+  font-weight: 600;
+}
+
+.job-context-menu {
+  position: fixed;
+  z-index: 100000;
+  display: flex;
+  width: 13rem;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  border: 1px solid rgb(212 212 216 / 80%);
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(10px);
+}
+
+.context-menu-title {
+  overflow: hidden;
+  padding: 0.35rem 0.5rem;
+  color: #52525b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu-action {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+html.dark .job-context-menu {
+  border-color: rgb(63 63 70 / 90%);
+  background: rgb(24 24 27 / 96%);
+}
+
+html.dark .context-menu-title {
+  color: #d4d4d8;
+}
+
 html.dark {
   .job-card {
     background: linear-gradient(85deg, #434343, #262626);

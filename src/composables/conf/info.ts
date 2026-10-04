@@ -64,6 +64,10 @@ export const formInfoData: Record<string, any> = {
     'data-help':
       'Boss中有一些猎头发布的工作，但是一般而言这种工作不太行，点击可以过滤猎头发布的职位',
   },
+  blockedRules: {
+    label: '屏蔽规则',
+    'data-help': '可在职位卡片上右键屏蔽公司或 HR，屏蔽规则会保存到当前配置。',
+  },
   friendStatus: {
     label: '好友过滤(已聊)',
     'data-help': '判断和hr是否建立过聊天，理论上能过滤的同hr，但是不同岗位的工作',
@@ -170,10 +174,10 @@ export const defaultFormData: FormData = {
   salaryRange: {
     value: [8, 13, false],
     advancedValue: {
-      // 默认全部关闭，避免用户未配置而投递错误岗位
-      H: [0, 1, false],
-      D: [0, 1, false],
-      M: [0, 1, false],
+      // 未配置具体单位时放行全部范围，避免误伤实习岗位。
+      H: [0, 999999, false],
+      D: [0, 999999, false],
+      M: [0, 999999, false],
     },
     enable: false,
   },
@@ -211,6 +215,8 @@ export const defaultFormData: FormData = {
   goldHunterFilter: {
     value: false,
   },
+  blockedCompanies: [],
+  blockedHrs: [],
   notification: {
     value: true,
   },
@@ -315,5 +321,5 @@ export const defaultFormData: FormData = {
   delayDeliveryInterval: 5,
   delayDeliveryPageNext: 60,
   delayMessageSending: 2,
-  version: '20260718',
+  version: '20261004',
 }

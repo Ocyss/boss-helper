@@ -36,6 +36,11 @@ const statisticCycleData = [
   },
 ]
 
+function percentage(value: number, total: number) {
+  if (total <= 0) return 0
+  return Number(((value / total) * 100).toFixed(1))
+}
+
 const cycle = computed(() => {
   const date = statisticCycleData[statisticCycle.value]?.date
   let ans = 0
@@ -74,21 +79,21 @@ onMounted(() => {
       <div data-help="统计当天岗位过滤的比例,被过滤/总数">
         <div class="text-sm text-gray-500">过滤比例：</div>
         <div class="text-2xl font-semibold">
-          {{ (((todayData.total - todayData.success) / todayData.total) * 100).toFixed(0) }}
+          {{ percentage(todayData.total - todayData.success, todayData.total) }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
       <div data-help="统计当天刷到了多少处理过的岗位,重复/总数">
         <div class="text-sm text-gray-500">重复比例：</div>
         <div class="text-2xl font-semibold">
-          {{ ((todayData.repeat / todayData.total) * 100).toFixed(0) }}
+          {{ percentage(todayData.repeat, todayData.total) }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
       <div data-help="统计当天岗位中的活跃情况,不活跃/总数">
         <div class="text-sm text-gray-500">活跃比例：</div>
         <div class="text-2xl font-semibold">
-          {{ ((todayData.activityFilter / todayData.total) * 100).toFixed(0) }}
+          {{ percentage(todayData.activityFilter, todayData.total) }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
@@ -147,7 +152,7 @@ onMounted(() => {
       <UProgress
         data-help="我会统计当天脚本投递的数量,该记录并不准确"
         class="flex-1"
-        :model-value="(todayData.success / conf.formData.deliveryLimit.value) * 100"
+        :model-value="percentage(todayData.success, conf.formData.deliveryLimit.value)"
       />
     </div>
   </div>

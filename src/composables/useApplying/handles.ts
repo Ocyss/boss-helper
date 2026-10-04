@@ -1,4 +1,5 @@
 import { renderTemplate } from '@/utils/ai'
+import { matchSalaryRange } from '@/utils/salary'
 import type { HelperContext } from '~/composables/useHelper'
 
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
@@ -67,6 +68,19 @@ export const taskResult = {
 }
 
 export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
+  blockedRule = defineTaskHandler<C, T, S>('屏蔽规则', (ctx) => {
+    const normalize = (value: string) => value.trim().toLocaleLowerCase()
+    const companies = ctx.helper.conf.formData.blockedCompanies.map(normalize).filter(Boolean)
+    const hrs = ctx.helper.conf.formData.blockedHrs.map(normalize).filter(Boolean)
+    if (!companies.length && !hrs.length) return
+    return async (_ctx, { jobData: data }) => {
+      const company = normalize(data.brand.name)
+      const hr = normalize(data.boss.name)
+      if (company && companies.includes(company)) return taskResult.skip('公司已屏蔽')
+      if (hr && hrs.includes(hr)) return taskResult.skip('HR已屏蔽')
+    }
+  })
+
   SameCompanyFilter = defineTaskHandler<C, T, S>(
     '重复沟通-相同公司',
     async (ctx) => {
@@ -77,7 +91,6 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return {
         fn: async (_, { jobData: data }) => {
           if (someSet.has(data.key)) {
-            ctx.helper.statistics.todayData.value.repeat++
             return taskResult.skip('相同公司已投递')
           }
         },
@@ -117,7 +130,6 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return {
         fn: async (_, { jobData: data }) => {
           if (data.key != null && someSet.has(data.key)) {
-            ctx.helper.statistics.todayData.value.repeat++
             return taskResult.skip('相同hr已投递')
           }
         },
@@ -206,22 +218,10 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     if (!ctx.helper.conf.formData.salaryRange.enable) {
       return
     }
-    const arr = [
-      ['元/时', ctx.helper.conf.formData.salaryRange.advancedValue.H],
-      ['元/天', ctx.helper.conf.formData.salaryRange.advancedValue.D],
-      ['元/月', ctx.helper.conf.formData.salaryRange.advancedValue.M],
-      ['K', ctx.helper.conf.formData.salaryRange.value],
-    ] as const
     return async (_ctx, { jobData: data }) => {
-      const text = data.salary
-      for (const key of arr) {
-        if (text.includes(key[0])) {
-          if (!rangeMatch(text, key[1])) {
-            return taskResult.skip(
-              `不匹配的薪资范围 ${text}, 预期: ${rangeMatchFormat(key[1], key[0])}`,
-            )
-          }
-        }
+      const result = matchSalaryRange(data.salary, ctx.helper.conf.formData.salaryRange)
+      if (!result.matched) {
+        return taskResult.skip(`不匹配的薪资范围 ${data.salary}, 预期: ${result.expected}`)
       }
     }
   })

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
+import { useConf } from '@/composables/conf'
 import { JobStatus } from '@/composables/useApplying/type'
 import { JobData, useHelper } from '@/composables/useHelper'
 
 const helper = useHelper()
+const conf = useConf()
 
 const props = defineProps<{
   job: JobData
@@ -13,6 +15,15 @@ const props = defineProps<{
 
 const jobResult = computed(() => {
   return helper.jobResultMaps.get(props.job.key)
+})
+
+const isBlocked = computed(() => {
+  const company = props.job.brand.name.trim().toLocaleLowerCase()
+  const hr = props.job.boss.name.trim().toLocaleLowerCase()
+  return (
+    conf.formData.blockedCompanies.some((item) => item.trim().toLocaleLowerCase() === company) ||
+    conf.formData.blockedHrs.some((item) => item.trim().toLocaleLowerCase() === hr)
+  )
 })
 
 const stateMaps: Record<JobStatus, string> = {
@@ -70,14 +81,17 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
 <template>
   <div
     class="job-card"
-    :class="{ 'job-card-hover': hover }"
+    :class="{ 'job-card-hover': hover, 'job-card-blocked': isBlocked }"
     :style="{
       '--state-color': jobStatus.color,
       '--state-show': jobStatus.show,
     }"
     v-if="job"
   >
-    <div class="card-tag">{{ job.brand.industry }},{{ job.degreeName }},{{ job.brand.scale }}</div>
+    <div class="card-tag">
+      <span v-if="isBlocked" class="card-rule-flag">已屏蔽</span>
+      {{ job.brand.industry }},{{ job.degreeName }},{{ job.brand.scale }}
+    </div>
     <!-- `https://www.zhipin.com/job_detail/${job.encryptJobId}.html`" -->
     <a :href="job.link" target="_blank" class="card-title">
       {{ job.jobName }}

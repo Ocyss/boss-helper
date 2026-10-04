@@ -30,6 +30,8 @@ export interface FormData {
   sameCompanyFilter: FormDataCheckbox & { expire?: number }
   sameHrFilter: FormDataCheckbox & { expire?: number }
   goldHunterFilter: FormDataCheckbox
+  blockedCompanies: string[]
+  blockedHrs: string[]
   notification: FormDataCheckbox
   useCache: FormDataCheckbox
   aiGreeting: FormDataAi

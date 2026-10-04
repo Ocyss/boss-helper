@@ -27,6 +27,7 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
       desc: '已沟通过滤',
     },
   ), // 已沟通过滤
+  tasks.blockedRule(), // 卡片屏蔽规则
   tasks.SameCompanyFilter(), // 相同公司过滤
   tasks.SameHrFilter(), // 相同hr过滤
   tasks.jobTitle(), // 岗位名筛选

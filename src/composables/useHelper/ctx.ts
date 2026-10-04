@@ -44,7 +44,8 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
     this.pendingMessages = ref()
     this.conf = useConf()
     this.models = useModel()
-    this.statistics = useStatistics()
+    // 统计数据按 Boss 账号隔离，避免切换账号后共用今日投递数。
+    this.statistics = useStatistics(() => this.uid)
     this.currentJob = ref(null)
     this._logs = ref([])
     this.logs = extendRef(this._logs, {

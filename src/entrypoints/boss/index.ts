@@ -189,18 +189,25 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   async loadMoreJob(delay: Promise<any>): Promise<boolean> {
     try {
       const oldLen = this._jobList.value.length
-      const oldFirstJobId = this._jobList.value[0]?.encryptJobId ?? ''
+      const oldSignature = this._jobList.value.map((job) => job.encryptJobId).join(',')
 
       this._pageChange(this._page.value.page + 1)
       await delay
-      const currentFirstJobId = this._jobList.value[0]?.encryptJobId ?? ''
+      // BOSS 页面更新列表是异步的，首次等待结束时可能还没有完成替换。
+      if (
+        oldLen === this._jobList.value.length &&
+        oldSignature === this._jobList.value.map((job) => job.encryptJobId).join(',')
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 800))
+      }
+      const currentSignature = this._jobList.value.map((job) => job.encryptJobId).join(',')
       if (
         (location.href.includes('/web/geek/job-recommend') ||
           location.href.includes('/web/geek/jobs')) &&
         oldLen === this._jobList.value.length &&
-        oldFirstJobId === currentFirstJobId
+        oldSignature === currentSignature
       ) {
-        logger.error('翻页: 内容无变化')
+        logger.warn('翻页: 等待后内容仍无变化')
         return false
       }
     } catch (err) {

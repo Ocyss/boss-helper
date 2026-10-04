@@ -269,7 +269,6 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
 
   const execute = async (data: WorkflowData<T, S>, index = 0) => {
     const isStop = () => status.value === 'stop'
-    helper.statistics.todayData.value.total++
     const log = logger.withContext({
       id: 'workflow-execute',
       job_key: data.jobData.key,
@@ -313,11 +312,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               ...(helper.jobResultMaps.get(data.jobData.key) ?? {}),
               ...res,
             })
-            if (res.status) {
-              helper.statistics.todayData.value.tasks[t.id] ??= {}
-              helper.statistics.todayData.value.tasks[t.id]![res.status] ??= 0
-              helper.statistics.todayData.value.tasks[t.id]![res.status]! += 1
-            }
+            helper.statistics.recordTaskResult(t.id, res)
           }
         }
       }
@@ -326,7 +321,6 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           status: 'success',
           msg: '投递成功',
         })
-        helper.statistics.todayData.value.success++
       } else if (!errorLog) {
         const r = helper.jobResultMaps.get(data.jobData.key)
         log.warn(`投递过滤: ${data.jobData.jobName}`, r?.msg, r?.reason)
@@ -334,6 +328,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     } catch (e) {
       status.value = 'error'
       throw e
+    } finally {
+      helper.statistics.recordProcessed()
     }
   }
 

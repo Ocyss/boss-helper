@@ -130,6 +130,21 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
       return from
     },
   ],
+  [
+    '20261004',
+    (from) => {
+      const advancedValue = from.salaryRange?.advancedValue
+      if (!advancedValue) return from
+      for (const key of ['H', 'D', 'M'] as const) {
+        const value = advancedValue[key]
+        // 0-1 是旧版本默认值，不是用户的有效限制，迁移为全范围放行。
+        if (value?.[0] === 0 && value?.[1] === 1 && value?.[2] === false) {
+          advancedValue[key] = [0, 999999, false]
+        }
+      }
+      return from
+    },
+  ],
 ]
 
 export const useConf = () => {
