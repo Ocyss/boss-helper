@@ -20,7 +20,13 @@ async function initDB() {
   })
 }
 
+const fetchControllers = new Map<string, AbortController>()
+
 export class BackgroundCounter {
+  async openOptionsPage() {
+    await browser.runtime.openOptionsPage()
+    return true
+  }
   async request(args: {
     url: string
     data: RequestInit
@@ -70,6 +76,41 @@ export class BackgroundCounter {
   async fetch(...args: Parameters<typeof fetch>) {
     return await fetch(...args)
   }
+
+  async fetchStream(args: {
+    requestId: string
+    url: string
+    init: {
+      method?: string
+      headers?: Record<string, string>
+      body?: string
+      credentials?: RequestCredentials
+      mode?: RequestMode
+    }
+  }) {
+    const controller = new AbortController()
+    fetchControllers.set(args.requestId, controller)
+    try {
+      const res = await fetch(args.url, {
+        ...args.init,
+        signal: controller.signal,
+      })
+      const body = await res.arrayBuffer()
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        headers: Object.fromEntries(res.headers.entries()),
+        body: Array.from(new Uint8Array(body)),
+      }
+    } finally {
+      fetchControllers.delete(args.requestId)
+    }
+  }
+
+  async fetchStreamAbort(requestId: string) {
+    fetchControllers.get(requestId)?.abort()
+    return true
+  }
   async getImage(key: string): Promise<
     | { success: false }
     | {
@@ -98,7 +139,9 @@ export class BackgroundCounter {
     buffer: number[]
   }): Promise<{ success: boolean; key: string }> {
     const db = await initDB()
-    const file = new File([new Uint8Array(opt.buffer).buffer], opt.name, { type: opt.type })
+    const file = new File([new Uint8Array(opt.buffer).buffer], opt.name, {
+      type: opt.type,
+    })
     const key = `img-${await calculateFileMD5(file)}`
     await db.put(STORE_NAME, file, key)
     return { success: true, key }

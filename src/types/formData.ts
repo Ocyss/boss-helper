@@ -32,7 +32,11 @@ export interface FormData {
   goldHunterFilter: FormDataCheckbox
   notification: FormDataCheckbox
   useCache: FormDataCheckbox
-  aiGreeting: FormDataAi
+  aiGreeting: FormDataAi & {
+    json?: boolean
+    beforeImages?: string[]
+    afterImages?: string[]
+  }
   aiFiltering: FormDataAi & { score: number }
   aiReply: FormDataAi
   amap: {

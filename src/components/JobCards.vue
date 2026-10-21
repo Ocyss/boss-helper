@@ -1,7 +1,14 @@
 <script lang="ts" setup>
-import { DropdownMenuItem } from '@nuxt/ui'
+import type { DropdownMenuItem } from '@nuxt/ui'
+import { createReusableTemplate } from '@vueuse/core'
 import type { ComponentPublicInstance } from 'vue'
 import { ref } from 'vue'
+
+import JobTable from '@/components/JobTable.vue'
+import { appearanceConf } from '@/composables/conf'
+
+const [DefineFollowing, FollowingControl] = createReusableTemplate()
+const [DefineFilter, FilterControl] = createReusableTemplate()
 
 import JobCard from '@/components/JobCard.vue'
 import { useHelper } from '@/composables/useHelper'
@@ -17,7 +24,19 @@ const filterItemsChecked = ref<Record<string, boolean>>({})
 const filterItems = computed<(DropdownMenuItem & { value: string })[]>(() =>
   (
     [
-      { type: 'checkbox', value: 'success', label: '投递成功', color: 'success' },
+      {
+        type: 'checkbox',
+        value: 'success',
+        label: '投递成功',
+        color: 'success',
+      },
+      { type: 'checkbox', value: 'ready', label: '待投递', color: 'info' },
+      {
+        type: 'checkbox',
+        value: 'manualFilter',
+        label: '手动过滤',
+        color: 'warning',
+      },
       ...(helper.workflow?.pipeline.value.map(
         (item) =>
           ({
@@ -44,6 +63,12 @@ const filterItems = computed<(DropdownMenuItem & { value: string })[]>(() =>
 const jobList = computed(() => {
   return helper.jobList.value.filter((job) => {
     const res = helper.jobResultMaps.get(job.key)
+    if (res?.status === 'ready') {
+      return filterItemsChecked.value.ready ?? true
+    }
+    if (res?.id === 'manualFilter') {
+      return filterItemsChecked.value.manualFilter ?? true
+    }
     if (!res || !res.id) {
       return filterItemsChecked.value.not_started ?? true
     }
@@ -116,7 +141,15 @@ watch(
 
 <template>
   <div style="order: -1" class="boss-helper-card relative">
-    <div ref="cards" class="card-grid" @wheel.stop="onWheel">
+    <JobTable
+      v-if="appearanceConf.jobView === 'table'"
+      :jobs="jobList"
+      v-model:following="following"
+    >
+      <template #following><FollowingControl /></template>
+      <template #filter><FilterControl /></template>
+    </JobTable>
+    <div v-else ref="cards" class="card-grid" @wheel.stop="onWheel">
       <JobCard
         v-for="job in jobList"
         :ref="
@@ -129,7 +162,7 @@ watch(
         hover
       />
     </div>
-    <div class="flex gap-2 absolute bottom-6 left-2">
+    <DefineFollowing>
       <UButton
         size="md"
         :color="following ? 'primary' : 'neutral'"
@@ -138,6 +171,8 @@ watch(
         icon="i-lucide-accessibility"
         title="自动跟随"
       />
+    </DefineFollowing>
+    <DefineFilter>
       <UDropdownMenu :items="filterItems" :content="{ side: 'top' }" :ui="{ content: 'w-48' }">
         <UButton
           size="md"
@@ -153,8 +188,12 @@ watch(
           </div>
         </template>
       </UDropdownMenu>
+    </DefineFilter>
+    <div v-if="appearanceConf.jobView !== 'table'" class="flex gap-2 absolute bottom-6 left-2">
+      <FollowingControl />
+      <FilterControl />
     </div>
 
-    <div class="card-grid-overlay" />
+    <div v-show="appearanceConf.jobView !== 'table'" class="card-grid-overlay" />
   </div>
 </template>

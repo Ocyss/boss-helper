@@ -72,33 +72,57 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.amap({ deps: ['岗位详情获取'] }), // 高德地图
   tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
 
-  defineTaskHandler('岗位投递', () => async (_, { rawData }) => {
-    await sendPublishReq({
-      securityId: rawData.jobitem.securityId,
-      encryptJobId: rawData.jobitem.encryptJobId,
-    })
-    return {
-      status: 'success',
-      msg: '投递成功',
-    }
-  }), // 投递
+  tasks.aiGreetingGenerate({ phase: 'delivery', deps: ['岗位详情获取'] }), // 投递前生成并校验AI招呼语
 
-  defineTaskHandler('Boss信息获取', () => async (ctx, { rawData }) => {
-    // await sendPublishReq({
-    //   securityId: rawData.jobitem.securityId,
-    //   encryptJobId: rawData.jobitem.encryptJobId,
-    // })
-    ctx.log.info('获取Boss信息', {
-      securityId: rawData.jobitem.securityId,
-      encryptJobId: rawData.jobitem.encryptJobId,
-    })
-    const bossData = await getBossData({
-      securityId: rawData.jobitem.securityId,
-      encryptUserId: ctx.helper.uid,
-    })
-    rawData.boss = bossData
-  }), // Boss信息获取
+  defineTaskHandler(
+    '岗位投递',
+    () =>
+      async (ctx, { rawData, state }) => {
+        if (ctx.helper.conf.formData.aiGreeting.enable) {
+          const result = state.aiGreeting
+          if (!result) throw new Error('AI招呼语尚未生成')
+          if (result.error?.trim()) throw new Error(`AI招呼语生成失败: ${result.error}`)
+          if (!result.greeting.trim()) throw new Error('AI招呼语为空')
+        }
+        await sendPublishReq({
+          securityId: rawData.jobitem.securityId,
+          encryptJobId: rawData.jobitem.encryptJobId,
+        })
+        return {
+          status: 'success',
+          msg: '投递成功',
+        }
+      },
+    { phase: 'delivery', deps: ['岗位详情获取', 'AI招呼语生成'] },
+  ), // 投递
 
-  tasks.customGreeting({ deps: ['岗位详情获取', '岗位投递', 'Boss信息获取'] }), // 自定义招呼语
-  tasks.aiGreeting({ deps: ['岗位详情获取', '岗位投递', 'Boss信息获取'] }), // AI招呼语
+  defineTaskHandler(
+    'Boss信息获取',
+    () =>
+      async (ctx, { rawData }) => {
+        // await sendPublishReq({
+        //   securityId: rawData.jobitem.securityId,
+        //   encryptJobId: rawData.jobitem.encryptJobId,
+        // })
+        ctx.log.info('获取Boss信息', {
+          securityId: rawData.jobitem.securityId,
+          encryptJobId: rawData.jobitem.encryptJobId,
+        })
+        const bossData = await getBossData({
+          securityId: rawData.jobitem.securityId,
+          encryptUserId: ctx.helper.uid,
+        })
+        rawData.boss = bossData
+      },
+    { phase: 'delivery', deps: ['岗位投递'] },
+  ), // Boss信息获取
+
+  tasks.customGreeting({
+    phase: 'delivery',
+    deps: ['岗位详情获取', '岗位投递', 'Boss信息获取'],
+  }), // 自定义招呼语
+  tasks.aiGreeting({
+    phase: 'delivery',
+    deps: ['AI招呼语生成', '岗位投递', 'Boss信息获取'],
+  }), // AI招呼语
 )

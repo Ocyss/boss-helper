@@ -1,11 +1,12 @@
 <script lang="ts" setup>
 import { isPartStreaming, isToolStreaming } from '@nuxt/ui/utils/ai'
-import { getToolName, isReasoningUIPart, isTextUIPart, isToolUIPart, UIMessage } from 'ai'
+import { getToolName, isReasoningUIPart, isTextUIPart, isToolUIPart } from 'ai'
+import type { UIMessage } from 'ai'
 
 import { appearanceConf } from '@/composables/conf'
 import { parseFiltering } from '@/composables/useApplying/utils'
 import { useHelper } from '@/composables/useHelper'
-import { VueChatState, Message } from '@/composables/useModel'
+import type { VueChatState, Message } from '@/composables/useModel'
 
 const open = defineModel('open', { default: false })
 const following = ref(true)
@@ -150,7 +151,10 @@ onUnmounted(() => {
     inset
     :dismissible="false"
     :modal="false"
-    :ui="{ body: 'flex flex-col overscroll-contain p-2', content: 'top-14 z-190' }"
+    :ui="{
+      body: 'flex flex-col overscroll-contain p-2',
+      content: 'top-14 z-190',
+    }"
     :style="{
       width: `${appearanceConf.chatBoxWidth}px`,
     }"
@@ -209,7 +213,11 @@ onUnmounted(() => {
         ref="chatMessages"
         :messages="messages.messagesRef.value"
         :user="{ variant: 'subtle', ui: { container: 'max-w-[85%] gap-1.5' } }"
-        :assistant="{ variant: 'subtle', ui: { container: 'gap-1.5' } }"
+        :assistant="{
+          variant: 'subtle',
+          avatar: { icon: 'i-lucide-bot' },
+          ui: { container: 'gap-1.5' },
+        }"
         should-auto-scroll
         should-scroll-to-bottom
         :status="messages.statusRef.value"

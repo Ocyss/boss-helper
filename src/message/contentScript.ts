@@ -31,6 +31,10 @@ export class ContentCounter implements BackgroundCounter {
     }
   }
 
+  async openOptionsPage() {
+    return this.background.openOptionsPage()
+  }
+
   async request(...args: Parameters<BackgroundCounter['request']>) {
     return this.background.request(...args)
   }
@@ -45,6 +49,14 @@ export class ContentCounter implements BackgroundCounter {
 
   async fetch(...args: Parameters<typeof fetch>) {
     return this.background.fetch(...args)
+  }
+
+  async fetchStream(...args: Parameters<BackgroundCounter['fetchStream']>) {
+    return this.background.fetchStream(...args)
+  }
+
+  async fetchStreamAbort(...args: Parameters<BackgroundCounter['fetchStreamAbort']>) {
+    return this.background.fetchStreamAbort(...args)
   }
 
   async getImage(...args: Parameters<BackgroundCounter['getImage']>) {

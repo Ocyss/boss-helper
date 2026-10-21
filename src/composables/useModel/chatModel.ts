@@ -1,5 +1,3 @@
-import type { OpenAIProvider } from '@ai-sdk/openai'
-import { createOpenAI } from '@ai-sdk/openai'
 import type { ChatMessageProps } from '@nuxt/ui'
 import type { ChatState, ChatStatus, ModelMessage, UIMessage } from 'ai'
 import {
@@ -15,9 +13,10 @@ import type { ShallowReactive } from 'vue'
 import type { FormDataAi } from '@/types/formData'
 import { renderTemplate } from '@/utils/ai'
 
-import type { ModelConf } from '.'
 import type { WorkflowData } from '../useApplying/type'
 import type { HelperContext } from '../useHelper'
+import { createModel } from './providers'
+import type { ModelConf } from './type'
 
 const role = ['system', 'user', 'assistant', 'boss', 'jd', 'filtering', 'greetings'] as const
 type MessageRole = (typeof role)[number]
@@ -84,7 +83,6 @@ export class ChatModel {
 
   jobs = ref<string[]>([])
 
-  providers: Map<string, OpenAIProvider> = new Map()
   agents: Map<MessageRole, [ToolLoopAgent, ModelConf, FormDataAi]> = new Map()
   generateId: { [key in MessageRole]: () => string }
 
@@ -109,20 +107,11 @@ export class ChatModel {
     },
   ): boolean {
     const conf = this.ctx.models.modelData.value.find((m) => m.key === model.model)
-    if (!conf || !model.model) {
+    if (!conf?.data || !model.model) {
       return false
     }
-    let provider = this.providers.get(model.model)
-    if (!provider) {
-      provider = createOpenAI({
-        baseURL: conf.data?.base_url,
-        apiKey: conf.data?.api_key,
-      })
-    }
-    this.providers.set(model.model, provider)
-
     const agent = new ToolLoopAgent({
-      model: provider.chat(conf.data?.model || 'gpt-4o'),
+      model: createModel(conf.data),
       output: opt?.json ? Output.json() : Output.text(),
       allowSystemInMessages: true,
     })
@@ -169,7 +158,11 @@ export class ChatModel {
         parts: [
           {
             type: 'text',
-            text: `## ${data.jobData.jobName ?? data.jobData.positionName} (${data.jobData.activeTime ? new Date(data.jobData.activeTime).toLocaleDateString() : data.jobData.activeTimeStr})
+            text: `## ${data.jobData.jobName ?? data.jobData.positionName} (${
+              data.jobData.activeTime
+                ? new Date(data.jobData.activeTime).toLocaleDateString()
+                : data.jobData.activeTimeStr
+            })
 ### 薪资: ${data.jobData.salary ?? '面议'}
 ### 公司: ${data.jobData.brand.name}
 ### 地址: ${data.jobData.address ?? data.jobData.city}
@@ -222,10 +215,6 @@ ${data.jobData.jobDescription}`,
       uiRole: agentName,
       parts: [],
       side: 'right',
-      avatar: {
-        src: modelConf.data?.avatar,
-        alt: modelConf.data?.model,
-      },
     }
     let index = -1
     const stream = await agent.stream({
@@ -259,63 +248,65 @@ ${data.jobData.jobDescription}`,
     index = state.messages.findIndex((m) => m.id === msg.id)
 
     try {
-      for await (const chunk of stream.toUIMessageStream({
-        originalMessages: state.messages,
-        sendReasoning: true,
-        onError: (err) => {
-          if (err instanceof Error) {
-            if (APICallError.isInstance(err)) {
-              return `请求错误 ${err.statusCode}: ${err.message}`
+      if (!disableMessages) {
+        for await (const chunk of stream.toUIMessageStream({
+          originalMessages: state.messages,
+          sendReasoning: true,
+          onError: (err) => {
+            if (err instanceof Error) {
+              if (APICallError.isInstance(err)) {
+                return `请求错误 ${err.statusCode}: ${err.message}`
+              }
+              return err.message
             }
-            return err.message
-          }
-          logger.error('Unknown error during chat streaming', err)
-          return `Unknown error: ${err instanceof Error ? err.message : String(err)}`
-        },
-      })) {
-        let part: (typeof msg.parts)[number] | null = null
-        const lastPart = msg.parts[msg.parts.length - 1]
-        switch (chunk.type) {
-          case 'reasoning-delta':
-            part = {
-              type: 'reasoning',
-              text: chunk.delta,
-              state: 'streaming',
+            logger.error('Unknown error during chat streaming', err)
+            return `Unknown error: ${err instanceof Error ? err.message : String(err)}`
+          },
+        })) {
+          let part: (typeof msg.parts)[number] | null = null
+          const lastPart = msg.parts[msg.parts.length - 1]
+          switch (chunk.type) {
+            case 'reasoning-delta':
+              part = {
+                type: 'reasoning',
+                text: chunk.delta,
+                state: 'streaming',
+              }
+              break
+            case 'reasoning-end':
+              if (lastPart && isReasoningUIPart(lastPart)) {
+                lastPart.state = 'done'
+              }
+              break
+            case 'text-delta':
+              part = {
+                type: 'text',
+                text: chunk.delta,
+                state: 'streaming',
+              }
+              break
+            case 'text-end':
+              if (lastPart && isTextUIPart(lastPart)) {
+                lastPart.state = 'done'
+              }
+              break
+            case 'error': {
+              state.status = 'error'
+              state.error = new Error(chunk.errorText)
+              break
             }
-            break
-          case 'reasoning-end':
-            if (lastPart && isReasoningUIPart(lastPart)) {
-              lastPart.state = 'done'
-            }
-            break
-          case 'text-delta':
-            part = {
-              type: 'text',
-              text: chunk.delta,
-              state: 'streaming',
-            }
-            break
-          case 'text-end':
-            if (lastPart && isTextUIPart(lastPart)) {
-              lastPart.state = 'done'
-            }
-            break
-          case 'error': {
-            state.status = 'error'
-            state.error = new Error(chunk.errorText)
-            break
-          }
 
-          case 'abort': {
-            logger.error('Chat abort', chunk.reason)
-            break
+            case 'abort': {
+              logger.error('Chat abort', chunk.reason)
+              break
+            }
           }
+          if (part) {
+            msg.parts.push(part)
+            state.replaceMessage(index, msg)
+          }
+          // logger.debug('Received message chunk', chunk)
         }
-        if (part) {
-          msg.parts.push(part)
-          state.replaceMessage(index, msg)
-        }
-        // logger.debug('Received message chunk', chunk)
       }
       state.status = 'ready'
     } catch (e) {

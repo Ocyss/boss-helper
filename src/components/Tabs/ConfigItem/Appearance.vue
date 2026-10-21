@@ -108,6 +108,36 @@ watch(
       <UCheckbox v-model="appearanceConf.leftChat" label="左侧聊天" />
       <UCheckbox v-model="appearanceConf.defaultShowChatBox" label="默认显示聊天框" />
     </div>
+    <UFormField label="岗位展示">
+      <USelect
+        v-model="appearanceConf.jobView"
+        :items="[
+          { label: '横向卡片', value: 'cards' },
+          { label: '虚拟化表格', value: 'table' },
+        ]"
+        class="w-full"
+      />
+    </UFormField>
+    <UFormField v-if="appearanceConf.jobView === 'table'" label="表格高度（×10px）">
+      <UInputNumber
+        v-model="appearanceConf.tableHeight"
+        :step="1"
+        :min="30"
+        :max="500"
+        size="sm"
+        class="w-full"
+      />
+    </UFormField>
+    <UFormField label="内容宽度（px）">
+      <UInputNumber
+        v-model="appearanceConf.contentWidth"
+        :step="10"
+        :min="600"
+        :max="5000"
+        size="sm"
+        class="w-full"
+      />
+    </UFormField>
     <UFormField label="内容偏移">
       <UInputNumber
         v-model="appearanceConf.contentOffset"
@@ -115,7 +145,7 @@ watch(
         :min="0"
         :max="30"
         size="sm"
-        class="w-3/5"
+        class="w-full"
       />
     </UFormField>
     <UFormField label="聊天框宽度">
@@ -125,7 +155,7 @@ watch(
         :min="200"
         :max="1500"
         size="sm"
-        class="w-3/5"
+        class="w-full"
       />
     </UFormField>
   </div>

@@ -4,8 +4,10 @@ import { computed, onMounted, ref } from 'vue'
 import Alert from '@/components/Alert.vue'
 import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
+import { useJobActions } from '@/composables/useJobActions'
 
 const helper = useHelper()
+const actions = useJobActions()
 
 const { todayData, statisticsData } = helper.statistics
 
@@ -123,9 +125,17 @@ onMounted(() => {
           color="primary"
           data-help="点击开始就会开始投递"
           :loading="helper.workflow?.status.value === 'running'"
-          @click="helper.start()"
+          @click="actions.run('开始投递', () => helper.start())"
         >
           {{ helper.workflow?.status.value === 'stop' ? '继续' : '开始' }}
+        </UButton>
+        <UButton
+          color="neutral"
+          :disabled="helper.workflow?.status.value === 'running'"
+          data-help="仅筛选岗位，不自动投递"
+          @click="actions.run('开始仅筛选', () => helper.start('filter'))"
+        >
+          开始仅筛选
         </UButton>
         <UButton
           v-if="helper.workflow?.status.value === 'stop'"

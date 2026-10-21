@@ -1,12 +1,12 @@
 import { ref } from 'vue'
 
 import { defineUnlistedScript } from '#imports'
-import { appearanceConf, useConf } from '@/composables/conf'
+import { appearanceConf } from '@/composables/conf'
+import { useConfigSections } from '@/composables/conf/sections'
 import type { WorkflowData } from '@/composables/useApplying/type'
 import { createLazyObject, isInitialized } from '@/composables/useApplying/type'
 import type { JobData } from '@/composables/useHelper'
 import { HelperContext } from '@/composables/useHelper'
-import type { AlertItem, ConfigAccordionItem } from '@/composables/useHelper/type'
 import { getRootVue, useHookVueData, useHookVueFn } from '@/composables/useVue'
 import { run } from '@/index'
 import { counter, initCounter } from '@/message'
@@ -210,11 +210,12 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     return true
   }
 
-  async start() {
+  async start(mode: 'auto' | 'filter' = 'auto') {
+    if (this.jobActionBusy.value) return
     if (!this.workflow) {
       this.workflow = await bossWorkflow(this)
     }
-    await this.workflow.executeAll(this._jobDataMap)
+    await this.workflow.executeAll(this._jobDataMap, mode)
   }
 
   async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
@@ -240,7 +241,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           throw new Error('图片未上传或已过期')
         }
         const u8Array = new Uint8Array(response.buffer)
-        const file = new File([u8Array.buffer], response.name, { type: response.type })
+        const file = new File([u8Array.buffer], response.name, {
+          type: response.type,
+        })
         const img = await uploadImage(data.rawData.boss.data.securityId, file)
 
         m = this.geek.msgBuilder.createImageMessage(stanza, {
@@ -319,211 +322,14 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     await this.geek.connect()
   }
   getConfigItems() {
-    const conf = useConf()
-    return computed<[AlertItem[], (ConfigAccordionItem | false)[]]>(() => {
-      return [
-        [
-          {
-            type: 'alert',
-            id: 'config-alert-1',
-            showIcon: true,
-            title: '首次配置前请先进入帮助模式查看说明',
-            color: 'success',
-            description:
-              '所有配置项均提供说明，获取岗位滚动至约 150 条会自动停止，刷新页面或修改求职期望后可重新获取；如遇 Bug 或帮助内容不清晰，欢迎反馈并提出改进建议。',
-          },
-        ],
-        [
-          {
-            label: '筛选配置',
-            value: 'filter',
-            items: [
-              {
-                type: 'alert',
-                id: 'filter-config-alert-enable',
-                title: '复选框打钩才会启用，别忘记打钩启用哦。保存也别忘了',
-                description: '排除和包含可点击切换，混合模式适用性过低难以配置不会考虑开发',
-                color: 'success',
-                showIcon: true,
-              },
-              {
-                type: 'div',
-                class: 'grid grid-cols-2 gap-2 mt-2 w-full',
-
-                items: [
-                  {
-                    type: 'select',
-                    key: 'company',
-                  },
-                  {
-                    type: 'select',
-                    key: 'jobTitle',
-                  },
-                  {
-                    type: 'select',
-                    key: 'jobContent',
-                  },
-                  {
-                    type: 'select',
-                    key: 'hrPosition',
-                  },
-                  conf.configLevel.intermediate && {
-                    type: 'select',
-                    key: 'jobAddress',
-                  },
-                  {
-                    type: 'div',
-                  },
-                ],
-              },
-              {
-                type: 'div',
-                class: 'flex gap-2 mt-3',
-                items: [
-                  conf.configLevel.intermediate && {
-                    type: 'salaryRange',
-                    key: 'salaryRange',
-                  },
-                  conf.configLevel.intermediate && {
-                    type: 'companySizeRange',
-                    key: 'companySizeRange',
-                  },
-                ],
-              },
-              {
-                type: 'div',
-                class: 'col-span-full flex flex-wrap gap-2 mt-3',
-                items: [
-                  conf.configLevel.intermediate && {
-                    type: 'checkbox',
-                    key: 'activityFilter',
-                  },
-                  {
-                    type: 'checkbox',
-                    key: 'goldHunterFilter',
-                  },
-                  {
-                    type: 'checkbox',
-                    key: 'friendStatus',
-                  },
-                  {
-                    type: 'checkbox',
-                    key: 'bossGoldMedalHr',
-                  },
-                  conf.configLevel.intermediate && {
-                    type: 'checkbox-expire',
-                    key: 'sameCompanyFilter',
-                  },
-                  conf.configLevel.intermediate && {
-                    type: 'checkbox-expire',
-                    key: 'sameHrFilter',
-                  },
-                ],
-              },
-            ],
-          },
-          conf.configLevel.intermediate && {
-            label: '招呼语配置',
-            value: 'greetings',
-            items: [
-              {
-                type: 'alert',
-                id: 'config-alert-2',
-                showIcon: true,
-                color: 'success',
-                description: '使用自定义招呼语前 推荐禁用boss直聘自带招呼语',
-                actions: [
-                  {
-                    label: '前往',
-                    color: 'neutral',
-                    variant: 'subtle',
-                    onClick: () => {
-                      window.open(
-                        'https://www.zhipin.com/web/geek/notify-set?type=greetSet',
-                        '_blank',
-                      )
-                    },
-                  },
-                ],
-              },
-              { type: 'customGreeting', key: 'customGreeting' },
-            ],
-          },
-          {
-            label: '外观配置',
-            value: 'appearance',
-            items: [{ type: 'appearance', key: 'appearance' }],
-          },
-          conf.configLevel.advanced && {
-            label: '地址配置',
-            value: 'address',
-            items: [{ type: 'address', key: 'address' }],
-          },
-          conf.configLevel.intermediate && {
-            label: '延迟配置',
-            value: 'delay',
-            items: [
-              {
-                type: 'div',
-                class: 'grid grid-cols-2 gap-3',
-                items: [
-                  {
-                    type: 'inputNumber',
-                    key: 'delayDeliveryStarts',
-                    fieldProps: {
-                      label: '投递开始',
-                      'data-help': '点击投递按钮会等待一段时间,默认值10s',
-                    },
-                    inputNumberProps: {
-                      min: 1,
-                      max: 99999,
-                    },
-                  },
-                  {
-                    type: 'inputNumber',
-                    key: 'delayDeliveryInterval',
-                    fieldProps: {
-                      label: '投递间隔',
-                      'data-help': '每个投递的间隔,太快易风控,默认值2s',
-                    },
-                    inputNumberProps: {
-                      min: 1,
-                      max: 99999,
-                    },
-                  },
-                  {
-                    type: 'inputNumber',
-                    key: 'delayDeliveryPageNext',
-                    fieldProps: {
-                      label: '投递翻页',
-                      'data-help': '投递完下一页之后等待的间隔,太快易风控,默认值60s',
-                    },
-                    inputNumberProps: {
-                      min: 1,
-                      max: 99999,
-                    },
-                  },
-                  {
-                    type: 'inputNumber',
-                    key: 'delayMessageSending',
-                    fieldProps: {
-                      label: '消息发送',
-                      'data-help': '在发送消息前允许等待一定的时间让用户来修改或手动发送,默认值2s',
-                    },
-                    inputNumberProps: {
-                      min: 1,
-                      max: 99999,
-                      disable: true,
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      ]
-    })
+    return useConfigSections()
   }
+
+  hasJobDetails(key: string) {
+    const data = this.jobMaps.get(key)
+    return !!data && isInitialized(data.rawData.detail)
+  }
+
   override async onJobCardClick(key: string) {
     // const detail = await requestDetail({
     //   securityId: job.rawData.jobitem.securityId,
@@ -538,12 +344,14 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
     this._clickJobCardAction(job.rawData.jobitem)
     const detail = await new Promise<BossZpDetailData>((resolve, reject) => {
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
+        clearInterval(interval)
         reject(new Error('bossZpDetailData获取超时'))
       }, 1000 * 60)
       const interval = setInterval(() => {
         if (this._jobDetail.value && this._jobDetail.value.lid === job.rawData.jobitem.lid) {
           resolve(this._jobDetail.value)
+          clearTimeout(timeout)
           clearInterval(interval)
         }
       }, 100)
@@ -589,7 +397,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           //     }
           //   }
           // }
-          const job = convertBossZpJobItemToJobData(item)
+          const key = `boss::${item.encryptJobId}`
+          const job = this.jobMaps.get(key)?.jobData ?? convertBossZpJobItemToJobData(item)
 
           let jobData = this._jobDataMap.get(job.key)
           if (jobData) {
@@ -612,7 +421,8 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           this.jobMaps.set(job.key, {
             jobData: job,
             rawData: this._jobDataMap.get(job.key)!,
-            state: {},
+            state:
+              this.workflow?.stateMaps.value.get(job.key) ?? this.jobMaps.get(job.key)?.state ?? {},
           })
         })
       },

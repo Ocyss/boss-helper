@@ -1,0 +1,20 @@
+
+
+[tasks.dev]
+alias = "default"
+run = "bun run dev"
+
+
+[tasks."init.git"]
+run = "git submodule update --init --recursive"
+
+[tasks.init]
+depends = ["init.git"]
+run = "bun install"
+
+[tasks.pre-commit]
+run = "bun run lint-staged"
+
+[tools]
+bun = "1.2"
+node = "latest"

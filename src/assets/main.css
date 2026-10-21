@@ -6,23 +6,6 @@ body {
   background-color: unset;
 }
 
-@theme {
-  --color-help-brand: #3eaf7c;
-  --color-help-bg: rgba(62, 175, 124, 0.2);
-}
-
-@layer components {
-  .overlay-box {
-    @apply fixed top-0 left-0 pointer-events-none z-999 rounded-sm;
-    @apply border border-help-brand bg-help-bg;
-
-    will-change: transform, width, height;
-    transition-property: transform, width, height;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  }
-}
-
 * {
   scrollbar-width: thin;
 }
@@ -71,10 +54,7 @@ body {
   display: none;
   position: absolute;
   inset: 0;
-  will-change:
-    mask-image,
-    -webkit-mask-image,
-    backdrop-filter;
+  will-change: mask-image, -webkit-mask-image, backdrop-filter;
   transform: translateZ(0);
   -webkit-backdrop-filter: blur(15px);
   backdrop-filter: blur(15px);

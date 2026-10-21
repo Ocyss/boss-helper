@@ -1,7 +1,10 @@
 import type { StorageLikeAsync } from '@vueuse/core'
 import { defineProxy } from 'comctx'
 
+import { InjectBackgroundAdapter } from './background'
+import type { BackgroundCounter } from './background'
 import type { ContentCounter } from './contentScript'
+import { ContentCounter as ExtensionCounter } from './contentScript'
 import { ProvideContentScriptAdapter } from './contentScriptShare'
 
 export const InjectAdapter = ProvideContentScriptAdapter
@@ -15,6 +18,13 @@ export function initCounter(
     namespace: '__boss-helper-content__',
   })
   _counter = injectCounter(new InjectAdapter(script))
+}
+
+export function initExtensionCounter() {
+  const [, injectBackground] = defineProxy(() => ({}) as BackgroundCounter, {
+    namespace: '__boss-helper-background__',
+  })
+  _counter = new ExtensionCounter(injectBackground(new InjectBackgroundAdapter('popup')))
 }
 
 export const counter = new Proxy({} as ContentCounter, {

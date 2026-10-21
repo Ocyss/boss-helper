@@ -17,8 +17,8 @@ export function rangeMatch(rangeStr: string, form: FormDataRange): boolean {
   const m = String(rangeStr).match(re)
   if (!m) return false
 
-  let inputStart = Number.parseFloat(m[1])
-  let inputEnd = Number.parseFloat(m[2] != null ? m[2] : m[1])
+  let inputStart = Number.parseFloat(m[1] ?? '')
+  let inputEnd = Number.parseFloat(m[2] ? m[2] : (m[1] ?? ''))
   if (!Number.isFinite(inputStart) || !Number.isFinite(inputEnd)) return false
 
   if (inputStart > inputEnd) {
@@ -33,6 +33,57 @@ export function rangeMatch(rangeStr: string, form: FormDataRange): boolean {
   } else {
     // 宽松：任意重叠（闭区间）
     return Math.max(inputStart, start) <= Math.min(inputEnd, end)
+  }
+}
+
+export interface GreetingResult {
+  greeting: string
+  reason?: string
+  abilities?: string[]
+  error?: string
+}
+
+export function parseGreeting(content: string, json = true): GreetingResult {
+  if (!json) {
+    if (!content.trim()) throw new Error('AI招呼语为空')
+    return { greeting: content }
+  }
+
+  const text = content.trim()
+  const fenced = text.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/)
+  let result: unknown
+  try {
+    result = JSON.parse(fenced && fenced[1] ? fenced[1] : text)
+  } catch {
+    throw new Error('AI招呼语不是有效的JSON')
+  }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    throw new Error('AI招呼语JSON必须为对象')
+  }
+  const data = result as Record<string, unknown>
+  for (const key of ['greeting', 'reason', 'error'] as const) {
+    if (key in data && typeof data[key] !== 'string') {
+      throw new Error(`AI招呼语字段 ${key} 必须为字符串`)
+    }
+  }
+  if (
+    'abilities' in data &&
+    (!Array.isArray(data.abilities) ||
+      !data.abilities.every((ability) => typeof ability === 'string'))
+  ) {
+    throw new Error('AI招呼语字段 abilities 必须为字符串数组')
+  }
+  if (typeof data.error === 'string' && data.error.trim()) {
+    throw new Error(`AI招呼语生成失败: ${data.error}`)
+  }
+  if (typeof data.greeting !== 'string' || !data.greeting.trim()) {
+    throw new Error('AI招呼语字段 greeting 必须为非空字符串')
+  }
+  return {
+    greeting: data.greeting,
+    ...(typeof data.reason === 'string' ? { reason: data.reason } : {}),
+    ...(Array.isArray(data.abilities) ? { abilities: data.abilities as string[] } : {}),
+    ...(typeof data.error === 'string' ? { error: data.error } : {}),
   }
 }
 

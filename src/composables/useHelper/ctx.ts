@@ -84,7 +84,49 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   abstract onMount(): Promise<void>
   abstract getConfigItems(): ComputedRef<[AlertItem[], (ConfigAccordionItem | false)[]]>
 
-  abstract start(): Promise<void>
+  abstract start(mode?: 'auto' | 'filter'): Promise<void>
+  abstract hasJobDetails(key: string): boolean
+  private detailRequests = new Map<string, Promise<void>>()
+  jobActionBusy = ref(false)
+
+  async fetchJobDetails(key: string): Promise<void> {
+    const pending = this.detailRequests.get(key)
+    if (pending) return pending
+    if (this.workflowRunning.value || this.jobActionBusy.value) {
+      throw new Error('工作流或岗位操作正在运行，请稍后再试')
+    }
+    this.jobActionBusy.value = true
+    const request = this.onJobCardClick(key).finally(() => {
+      this.detailRequests.delete(key)
+      this.jobActionBusy.value = false
+    })
+    this.detailRequests.set(key, request)
+    return request
+  }
+
+  filterJob(key: string) {
+    if (!this.workflow) throw new Error('工作流尚未初始化')
+    this.workflow.markFiltered(key)
+  }
+
+  async deliverJob(key: string): Promise<void> {
+    if (!this.workflow || this.workflowRunning.value || this.jobActionBusy.value) {
+      throw new Error('工作流不可用或正在运行，请稍后再试')
+    }
+    const data = this.jobMaps.get(key)
+    if (!data) throw new Error('未找到岗位数据，请刷新页面')
+    this.jobActionBusy.value = true
+    try {
+      this.workflow.manuallyFiltered.delete(key)
+      const accepted = await this.workflow.executeOne(data, 'delivery')
+      const result = this.jobResultMaps.get(key)
+      if (!accepted || result?.status === 'error') {
+        throw new Error(result?.reason ?? this.workflow.errorMessage.value ?? '投递未执行')
+      }
+    } finally {
+      this.jobActionBusy.value = false
+    }
+  }
   abstract sendMessage(data: WorkflowData<T, S>, msg: FormDataInput['value']): Promise<void>
   abstract get uid(): string
   abstract get userInfo(): {

@@ -1,5 +1,5 @@
-import { reactiveComputed, useStorageAsync, watchThrottled } from '@vueuse/core'
-import { reactive, ref, toRaw } from 'vue'
+import { reactiveComputed, useSessionStorage, useStorageAsync, watchThrottled } from '@vueuse/core'
+import { computed, reactive, ref, toRaw } from 'vue'
 
 import { counter } from '@/message'
 import { ExtStorage } from '@/message'
@@ -8,22 +8,23 @@ import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
 
+import { useAccounts } from '../useAccounts'
 import { defaultFormData } from './info'
 
 export * from './info'
 
-const formDataPresetKey = 'local:FormDataPrese'
-const formDataPresetsKey = 'local:FormDataPreses'
-
 export const appearanceConf = useStorageAsync(
   'appearance-conf',
   {
+    jobView: 'cards' as 'cards' | 'table',
+    tableHeight: 42, // 单位：10px
     hideHeader: false,
     changeIcon: false,
     dynamicTitle: false,
     changeBackground: false,
     blurCard: false,
     listSink: false,
+    contentWidth: 1136,
     contentOffset: 25, // 0-25, 25则为关闭
     leftChat: false,
     chatBoxWidth: 600,
@@ -32,15 +33,20 @@ export const appearanceConf = useStorageAsync(
   ExtStorage,
   { mergeDefaults: true },
 )
+
 const isLoading = ref(true)
 const formData: FormData = reactive(defaultFormData)
-const formDataPreset = ref('default')
-const formDataPresets = ref([
-  {
-    label: '默认配置',
-    value: 'default',
+const selectedPresets = useSessionStorage<Record<string, string>>('HelperPresets', {})
+const accountState = useAccounts()
+const formDataPreset = computed({
+  get: () =>
+    selectedPresets.value[accountState.activeAccount.value] ??
+    accountState.currentAccount.value?.preset ??
+    'default',
+  set: (value: string) => {
+    selectedPresets.value[accountState.activeAccount.value] = value
   },
-])
+})
 
 const formDataKey = () => {
   if (formDataPreset.value !== 'default') {
@@ -158,16 +164,7 @@ export const useConf = () => {
   async function init() {
     isLoading.value = true
     try {
-      const rawFormDataPreset = await counter.storageGet(formDataPresetKey, 'default')
-      const rawFormDataPresets = await counter.storageGet(formDataPresetsKey, [
-        {
-          label: '默认配置',
-          value: 'default',
-        },
-      ])
-      formDataPreset.value = rawFormDataPreset
-      formDataPresets.value = rawFormDataPresets
-
+      await accountState.init()
       let from = await counter.storageGet<Partial<FormData>>(formDataKey(), {})
       from = (await formDataHandler(from)) ?? from
       const data = deepmerge<FormData>(defaultFormData, from)
@@ -183,16 +180,13 @@ export const useConf = () => {
     }
   }
 
-  async function confSaving() {
+  async function confSaving(options?: { silent?: boolean } | Event) {
     try {
       await counter.storageSet(formDataKey(), jsonClone(formData))
-      await counter.storageSet(formDataPresetKey, jsonClone(formDataPreset.value))
-      await counter.storageSet(formDataPresetsKey, jsonClone(formDataPresets.value))
 
-      toast.add({
-        title: '保存成功',
-        color: 'success',
-      })
+      if (!options || !('silent' in options) || !options.silent) {
+        toast.add({ title: '保存成功', color: 'success' })
+      }
       logger.debug('formData保存')
     } catch (error: any) {
       toast.add({
@@ -283,40 +277,10 @@ export const useConf = () => {
     }
   })
 
-  async function createPreset(label: string) {
-    isLoading.value = true
-    try {
-      const value = Date.now().toString()
-      formDataPresets.value.push({
-        label,
-        value,
-      })
-      formDataPreset.value = value
-
-      await counter.storageSet(formDataPresetKey, formDataPreset.value)
-      await counter.storageSet(formDataPresetsKey, formDataPresets.value)
-      await counter.storageSet(formDataKey(), jsonClone(formData))
-
-      toast.add({
-        title: '预设创建成功',
-        color: 'success',
-      })
-    } catch (e) {
-      toast.add({
-        title: `预设创建失败: ${String(e)}`,
-        color: 'error',
-      })
-      logger.error('预设创建失败', e)
-    } finally {
-      isLoading.value = false
-    }
-  }
-
   async function switchPreset(value: string) {
     isLoading.value = true
     try {
       formDataPreset.value = value
-      await counter.storageSet(formDataPresetKey, value)
       await init()
     } catch (e) {
       toast.add({
@@ -342,8 +306,6 @@ export const useConf = () => {
     formData,
     configLevel,
     formDataPreset,
-    formDataPresets,
-    createPreset,
     switchPreset,
     isLoading,
   }

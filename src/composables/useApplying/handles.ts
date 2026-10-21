@@ -4,7 +4,14 @@ import type { HelperContext } from '~/composables/useHelper'
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
 import type { JobStatus, TaskContext, TaskResult } from './type'
 import { defineTaskHandler } from './type'
-import { loadSet, parseFiltering, rangeMatch, rangeMatchFormat, saveSet } from './utils'
+import {
+  loadSet,
+  parseFiltering,
+  parseGreeting,
+  rangeMatch,
+  rangeMatchFormat,
+  saveSet,
+} from './utils'
 
 export class DependencyMissingError extends Error {
   constructor(public taskId: string) {
@@ -43,7 +50,9 @@ function amapHandler<C extends HelperContext<C, T, S>, T, S>(
   }
   if (distance > 0 && amap.distance > distance * 1000) {
     return taskResult.skip(
-      `${id}距离超标: ${amap.distance / 1000} 设定: ${ctx.helper.conf.formData.amap.straightDistance}`,
+      `${id}距离超标: ${amap.distance / 1000} 设定: ${
+        ctx.helper.conf.formData.amap.straightDistance
+      }`,
     )
   }
   if (duration > 0 && amap.duration > duration * 60) {
@@ -234,7 +243,10 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       const text = data.brand.scale
       if (!rangeMatch(text, ctx.helper.conf.formData.companySizeRange.value)) {
         return taskResult.skip(
-          `不匹配的公司规模 ${text}, 预期: ${rangeMatchFormat(ctx.helper.conf.formData.companySizeRange.value, '人')}`,
+          `不匹配的公司规模 ${text}, 预期: ${rangeMatchFormat(
+            ctx.helper.conf.formData.companySizeRange.value,
+            '人',
+          )}`,
         )
       }
     }
@@ -421,21 +433,59 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     { label: '自定义招呼语' },
   )
 
-  aiGreeting = defineTaskHandler<C, T, S>(
-    '打招呼',
+  aiGreetingGenerate = defineTaskHandler<C, T, S>(
+    'AI招呼语生成',
     (ctx) => {
       if (!ctx.helper.conf.formData.aiGreeting.enable) {
         return
       }
-      if (!ctx.helper.chatModel.createAgent(ctx.helper.conf.formData.aiGreeting, 'greetings')) {
+      if (
+        !ctx.helper.chatModel.createAgent(ctx.helper.conf.formData.aiGreeting, 'greetings', {
+          json: ctx.helper.conf.formData.aiGreeting.json === true,
+        })
+      ) {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
       return async (ctx, data) => {
-        const msg = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
-        await ctx.helper.sendMessage?.(data, msg)
+        delete data.state.aiGreeting
+        const content = await ctx.helper.chatModel.chat('greetings', data).then((r) => r.text)
+        data.state.aiGreeting = parseGreeting(
+          content,
+          ctx.helper.conf.formData.aiGreeting.json === true,
+        )
       }
     },
-    { label: 'AI招呼语', state: 'ai', stateMsg: '生成招呼语中' },
+    { label: 'AI招呼语生成', state: 'ai', stateMsg: '生成招呼语中' },
+  )
+
+  aiGreeting = defineTaskHandler<C, T, S>(
+    '打招呼',
+    (ctx) => {
+      if (!ctx.helper.conf.formData.aiGreeting.enable) return
+      return async (ctx, data) => {
+        const result = data.state.aiGreeting
+        if (!result) throw new Error('AI招呼语尚未生成')
+        if (result.error?.trim()) throw new Error(`AI招呼语生成失败: ${result.error}`)
+        if (!result.greeting.trim()) throw new Error('AI招呼语为空')
+        const config = ctx.helper.conf.formData.aiGreeting
+        if (config.json) {
+          await ctx.helper.sendMessage?.(data, [
+            ...(config.beforeImages ?? []).map((image) => ({
+              type: 'image' as const,
+              image,
+            })),
+            { type: 'text', content: result.greeting },
+            ...(config.afterImages ?? []).map((image) => ({
+              type: 'image' as const,
+              image,
+            })),
+          ])
+        } else {
+          await ctx.helper.sendMessage?.(data, result.greeting)
+        }
+      }
+    },
+    { label: 'AI招呼语', deps: ['AI招呼语生成'] },
   )
 
   amap = defineTaskHandler<C, T, S>('高德地图', (ctx) => {

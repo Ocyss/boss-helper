@@ -3,7 +3,7 @@
   .c-expect-select .part-time-expect,
   .c-expect-select .synthesis,
   .expect-select-filter .current-text {
-    color: #000 !important;
+    color: #414a60 !important;
   }
 
   .c-expect-select .expect-list .expect-item:hover,
@@ -22,6 +22,7 @@
   .c-expect-select,
   .c-search-input {
     width: 100% !important;
+    margin-bottom: 10px !important;
   }
 
   .c-filter-condition {
@@ -109,5 +110,36 @@
   100% {
     transform: rotate(45deg) translateX(-45px);
     opacity: 0.7;
+  }
+}
+
+html[data-darkreader-scheme='dark'],
+html[dark] {
+  #header.header-v2,
+  .job-detail-box .job-detail-header {
+    background: #1a1c21 !important;
+  }
+  .page-jobs#wrap {
+    background-color: #202224 !important;
+  }
+  #boss-helper-external-wrapper {
+    .c-expect-select .expect-list .expect-item,
+    .c-expect-select .part-time-expect,
+    .c-expect-select .synthesis,
+    .expect-select-filter .current-text {
+      color: #696f7d !important;
+    }
+
+    .c-expect-select .expect-list .expect-item:hover,
+    .c-expect-select .part-time-expect:hover,
+    .c-expect-select .synthesis:hover {
+      color: #2fb4b8 !important;
+    }
+
+    .c-expect-select .expect-list .expect-item.active,
+    .c-expect-select .part-time-expect.active,
+    .c-expect-select .synthesis.active {
+      color: #2fb4b8 !important;
+    }
   }
 }

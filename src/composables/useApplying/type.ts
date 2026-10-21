@@ -5,9 +5,14 @@ import type { HelperContext, JobData } from '@/composables/useHelper'
 import type { DeliveryWorkflow } from '.'
 import { useDeliveryWorkflow } from '.'
 import { DependencyMissingError } from './handles'
+import type { GreetingResult } from './utils'
+
+export type TaskPhase = 'filter' | 'delivery'
+export type WorkflowMode = 'auto' | 'filter'
 
 export type Task<C extends HelperContext<C, T, S>, T, S> = {
   id: string
+  phase?: TaskPhase
   task: TaskHandler<C, T, S>
   deps: string[]
   before: Handler<C, T, S>[]
@@ -36,6 +41,7 @@ export const jobStatusList = [
   'request',
   'ai',
   // result状态区分成功、失败和警告
+  'ready',
   'success',
   'warn',
   'error',
@@ -44,6 +50,7 @@ export const jobStatusList = [
 export type JobStatus = (typeof jobStatusList)[number]
 
 export interface WorkflowState {
+  aiGreeting?: GreetingResult
   amap?: {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>
@@ -92,6 +99,7 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
   opt?: {
     before?: Handler<C, T, S>[]
     after?: Handler<C, T, S>[]
+    phase?: TaskPhase
     deps?: string[]
     label?: string
     desc?: string
@@ -101,6 +109,7 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
   },
 ): (options?: {
   task?: TaskHandler<C, T, S>
+  phase?: TaskPhase
   deps?: string[]
   before?: Handler<C, T, S>[]
   after?: Handler<C, T, S>[]
@@ -113,6 +122,7 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
   return (options) => {
     const {
       task: t = task,
+      phase = opt?.phase ?? 'filter',
       deps: d = opt?.deps ?? [],
       before: b,
       after: a,
@@ -124,6 +134,7 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
     } = options || {}
     return {
       id,
+      phase,
       task: t,
       deps: d,
       before: [...(b ?? []), ...(opt?.before ?? [])],

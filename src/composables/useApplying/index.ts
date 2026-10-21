@@ -1,5 +1,4 @@
-import type { ContextLogger } from 'devlog-ui'
-import { shallowRef, ref } from 'vue'
+import { shallowRef, ref, reactive } from 'vue'
 
 import { PipelineCacheManager } from '@/composables/usePipelineCache'
 import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
@@ -123,7 +122,11 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     const errors = new Map<string, any>()
 
     const rawTasks = items.flatMap((i) =>
-      typeof i === 'function' ? { ...i() } : Array.isArray(i) ? i : { ...i },
+      (typeof i === 'function' ? [i()] : Array.isArray(i) ? i : [i]).map((task) => ({
+        ...task,
+        before: [...task.before],
+        after: [...task.after],
+      })),
     )
     const requiredIds = new Set<string>()
     for (const task of rawTasks) {
@@ -139,10 +142,18 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           _resolvedHandlers.set(task.id, result)
         } else {
           _resolvedHandlers.set(task.id, result.fn)
-          if (result.before) task.before.push(...result.before)
-          if (result.after) task.after.push(...result.after)
+          if (result.before) task.before = [...task.before, ...result.before]
+          if (result.after) task.after = [...task.after, ...result.after]
+          if (result.onEnd) {
+            const onEnd = task.onEnd
+            task.onEnd = async (ctx) => {
+              await onEnd?.(ctx)
+              await result.onEnd?.(ctx)
+            }
+          }
         }
       } catch (e) {
+        requiredIds.add(task.id)
         errors.set(`${task.id}::${task.label}`, e)
         _resolvedHandlers.set(task.id, async () => {
           throw e
@@ -157,7 +168,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       if (stack.has(id)) throw new Error(`Cycle: ${id}`)
       if (visited.has(id)) return
       const t = taskMap.get(id)
-      if (!t || !requiredIds.has(id)) return
+      if (!t) throw new Error(`Missing dependency: ${id}`)
+      requiredIds.add(id)
       stack.add(id)
       t.deps.forEach(sort)
       stack.delete(id)
@@ -191,7 +203,9 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     const errMsg = nodes.value
       .map((i) => {
         if (i.error) {
-          return `${i.label}: ${i.error instanceof Error ? i.error.message : JSON.stringify(i.error)}`
+          return `${i.label}: ${
+            i.error instanceof Error ? i.error.message : JSON.stringify(i.error)
+          }`
         }
       })
       .filter(Boolean)
@@ -205,220 +219,154 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
   }
 
-  const executeTask = async (
-    task: Task<C, T, S>,
+  const manuallyFiltered = reactive(new Set<string>())
+  let busy = false
+  const usedTasks = new Set<string>()
+  const markFiltered = (key: string) => {
+    manuallyFiltered.add(key)
+    helper.jobResultMaps.set(key, {
+      status: 'warn',
+      msg: '手动过滤',
+      id: 'manualFilter',
+      isSkip: true,
+    })
+  }
+  const isBlocked = (key: string) => status.value === 'stop' || manuallyFiltered.has(key)
+
+  const runJob = async (
     data: WorkflowData<T, S>,
-    index: number,
-    log: ContextLogger,
+    mode: 'auto' | 'filter' | 'delivery',
+    index = 0,
   ) => {
-    let res: TaskResult | void = undefined
-    const isStop = () => status.value === 'stop'
-    const handler = resolvedHandlers.get(task.id)
-    if (!handler || isStop()) return
-
-    const fns = [...task.before, handler, ...task.after]
-    log = log.withContext({ task_id: task.id })
-
-    for (const fn of fns) {
-      try {
-        res = meginResults(
-          await fn(
-            {
-              helper,
-              now: new Date(),
-              index,
-              log,
-            },
-            data,
-          ),
-        )
-        if (res?.isSkip || isStop()) break
-      } catch (e) {
-        if (e instanceof DependencyMissingError) {
-          const dep = resolvedHandlers.get(e.taskId)
-          if (dep) {
-            await dep(
-              {
-                helper,
-                now: new Date(),
-                index,
-                log,
-              },
-              data,
+    const key = data.jobData.key
+    if (isBlocked(key)) return
+    const wasReady = helper.jobResultMaps.get(key)?.status === 'ready'
+    data.state = stateMaps.value.get(key) ?? data.state ?? {}
+    stateMaps.value.set(key, data.state)
+    helper.jobMaps.set(key, data)
+    helper.currentJob.value = key
+    helper.statistics.todayData.value.total++
+    const log = logger.withContext({ id: 'workflow-execute', job_key: key })
+    const completed = new Set<string>()
+    const visiting = new Set<string>()
+    let delivered = false
+    const runTask = async (t: Task<C, T, S>): Promise<void> => {
+      if (completed.has(t.id) || isBlocked(key)) return
+      if (visiting.has(t.id)) throw new Error(`Cycle: ${t.id}`)
+      visiting.add(t.id)
+      for (const id of t.deps) {
+        const dep = pipeline.value.find((task) => task.id === id)
+        if (!dep) throw new Error(`Missing dependency: ${id}`)
+        if (mode === 'filter' && dep.phase === 'delivery')
+          throw new Error(`Filter depends on delivery: ${id}`)
+        await runTask(dep)
+        if (isBlocked(key)) return
+      }
+      const handler = resolvedHandlers.get(t.id)
+      if (handler) {
+        usedTasks.add(t.id)
+        helper.jobResultMaps.set(key, {
+          status: t.state ?? 'running',
+          msg: t.stateMsg ?? '运行中',
+        })
+        for (const fn of [...t.before, handler, ...t.after]) {
+          if (isBlocked(key)) return
+          const ctx = {
+            helper,
+            now: new Date(),
+            index,
+            log: log.withContext({ task_id: t.id }),
+          }
+          let res: TaskResult | void
+          try {
+            res = meginResults(await fn(ctx, data))
+          } catch (e) {
+            if (!(e instanceof DependencyMissingError)) throw e
+            const dep = pipeline.value.find((task) => task.id === e.taskId)
+            if (!dep || (mode === 'filter' && dep.phase === 'delivery')) throw e
+            await runTask(dep)
+            if (isBlocked(key)) return
+            res = meginResults(await fn(ctx, data))
+          }
+          if (isBlocked(key)) return
+          if (res) {
+            res.status ??= res.isSkip ? 'warn' : undefined
+            res.msg ??= t.label ?? t.id
+            helper.jobResultMaps.set(
+              key,
+              res.status === 'success' && !res.isSkip
+                ? { ...res, status: 'running', msg: '投递处理中' }
+                : res,
             )
-            res = meginResults(
-              await fn(
-                {
-                  helper,
-                  now: new Date(),
-                  index,
-                  log,
-                },
-                data,
-              ),
-            )
-            if (res?.isSkip || isStop()) break
-            continue
+            if (res.status) {
+              const stats = helper.statistics.todayData.value.tasks
+              stats[t.id] ??= {}
+              stats[t.id]![res.status] = (stats[t.id]![res.status] ?? 0) + 1
+            }
+            if (res.isSkip || res.status === 'error') throw { workflowResult: res }
           }
         }
-        throw e
+        if (t.phase === 'delivery') delivered = true
       }
+      visiting.delete(t.id)
+      completed.add(t.id)
     }
-    return res
+    try {
+      if (mode !== 'delivery' && !wasReady) {
+        for (const t of pipeline.value.filter((t) => t.phase !== 'delivery')) await runTask(t)
+      }
+      if (isBlocked(key)) return
+      if (mode === 'filter') {
+        helper.jobResultMaps.set(key, { status: 'ready', msg: '待投递' })
+        return
+      }
+      for (const t of pipeline.value.filter((t) => t.phase === 'delivery')) await runTask(t)
+      if (!isBlocked(key) && !delivered) {
+        helper.jobResultMaps.set(key, { status: 'ready', msg: '待投递' })
+      }
+      if (!isBlocked(key) && delivered) {
+        helper.jobResultMaps.set(key, { status: 'success', msg: '投递成功' })
+        helper.statistics.todayData.value.success++
+      }
+    } catch (e) {
+      if (isBlocked(key)) return
+      if (e && typeof e === 'object' && 'workflowResult' in e) return
+      log.error('工作流任务执行失败', e)
+      helper.jobResultMaps.set(key, {
+        status: 'error',
+        msg: '执行失败',
+        reason: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      if (manuallyFiltered.has(key)) markFiltered(key)
+      else if (status.value === 'stop')
+        helper.jobResultMaps.set(key, { status: 'wait', msg: '已停止' })
+    }
   }
 
-  const execute = async (data: WorkflowData<T, S>, index = 0) => {
-    const isStop = () => status.value === 'stop'
-    helper.statistics.todayData.value.total++
-    const log = logger.withContext({
-      id: 'workflow-execute',
-      job_key: data.jobData.key,
-      job_name: data.jobData.jobName,
-    })
+  const withRun = async (fn: () => Promise<void>) => {
+    if (busy) return false
+    busy = true
+    status.value = 'running'
+    errorMessage.value = null
+    usedTasks.clear()
     try {
-      let skipPipeline = false
-      let errorLog = false
-      for (const t of pipeline.value) {
-        let res: void | TaskResult = undefined
-        try {
-          if (isStop()) break
-          helper.jobResultMaps.set(data.jobData.key, {
-            status: t.state || 'running',
-            msg: t.stateMsg || '运行中',
-          })
-          res = await executeTask(t, data, index, log)
-          if (res != null) {
-            res.msg ??= t.label ?? t.id
-            res.status ??= res.isSkip ? 'warn' : undefined
-            if (res.isSkip) {
-              skipPipeline = true
-              break
-            }
-          }
-          if (isStop()) break
-        } catch (e) {
-          res = {
-            isSkip: true,
-            status: 'error',
-            reason: `任务${t.label ?? t.id}执行失败: ${e instanceof Error ? e.message : JSON.stringify(e)}`,
-            msg: `报错/${t.label ?? t.id}`,
-          }
-          log.error(`任务${t.label ?? t.id}执行失败`, e)
-          skipPipeline = true
-          errorLog = true
-          break
-        } finally {
-          if (res != null) {
-            helper.jobResultMaps.set(data.jobData.key, {
-              ...(helper.jobResultMaps.get(data.jobData.key) ?? {}),
-              ...res,
-            })
-            if (res.status) {
-              helper.statistics.todayData.value.tasks[t.id] ??= {}
-              helper.statistics.todayData.value.tasks[t.id]![res.status] ??= 0
-              helper.statistics.todayData.value.tasks[t.id]![res.status]! += 1
-            }
-          }
-        }
-      }
-      if (!skipPipeline) {
-        helper.jobResultMaps.set(data.jobData.key, {
-          status: 'success',
-          msg: '投递成功',
-        })
-        helper.statistics.todayData.value.success++
-      } else if (!errorLog) {
-        const r = helper.jobResultMaps.get(data.jobData.key)
-        log.warn(`投递过滤: ${data.jobData.jobName}`, r?.msg, r?.reason)
-      }
+      await rebuild()
+      if (errorMessage.value) throw new Error(errorMessage.value)
+      await fn()
+      return true
     } catch (e) {
       status.value = 'error'
-      throw e
-    }
-  }
-
-  const executeAll = async (rawDataMap: Map<string, T>) => {
-    await rebuild()
-
-    let stepMsg = ''
-    errorMessage.value = null
-    status.value = 'running'
-    const isStop = () => status.value === 'stop'
-
-    try {
-      while (status.value === 'running') {
-        if (helper.jobList.value.length === 0) {
-          stepMsg = '没有职位可投递'
-          break
-        }
-        helper.jobList.value.forEach((job) => {
-          const v = helper.jobResultMaps.get(job.key)
-          if (!v) {
-            helper.jobResultMaps.set(job.key, { status: 'wait', msg: '等待中' })
-            return
-          } else if (v.status === 'success' || v.status === 'warn') {
-            return
-          }
-          v.status = 'wait'
-          v.msg = '等待中'
-          helper.jobResultMaps.set(job.key, v)
-        })
-
-        await delay(helper.conf.formData.delayDeliveryStarts, isStop)
-
-        for (const [index, jobData] of helper.jobList.value.entries()) {
-          current.value = index + 1
-          if (isStop()) break
-          const jobStatus = helper.jobResultMaps.get(jobData.key)?.status
-          if (jobStatus === 'success' || jobStatus === 'warn') {
-            continue
-          }
-          const data = {
-            jobData,
-            rawData: rawDataMap.get(jobData.key)!,
-            state: stateMaps.value.get(jobData.key) || {},
-          }
-          helper.jobMaps.set(jobData.key, data)
-          helper.currentJob.value = jobData.key
-          await execute(data, index)
-          if (
-            helper.statistics.todayData.value.success >= helper.conf.formData.deliveryLimit.value
-          ) {
-            stepMsg = `投递达到数量限制`
-            status.value = 'stop'
-            break
-          }
-          await delay(helper.conf.formData.delayDeliveryInterval, isStop)
-        }
-        if (isStop()) break
-        const hasMore = await helper.loadMoreJob(
-          delay(helper.conf.formData.delayDeliveryPageNext, isStop),
-        )
-        if (!hasMore) {
-          status.value = 'stop'
-          stepMsg = '投递结束, 无法继续下一页'
-          break
-        }
-      }
-    } catch (e) {
-      logger.error('投递未知错误', e)
-      stepMsg = `未知错误: ${e instanceof Error ? e.message : JSON.stringify(e)}`
+      errorMessage.value = e instanceof Error ? e.message : String(e)
+      logger.error('工作流执行失败', e)
+      return false
     } finally {
-      if (!stepMsg) {
-        stepMsg = '投递结束'
-        status.value = 'pending'
-      } else if (status.value !== 'stop') {
-        status.value = 'error'
-        errorMessage.value = stepMsg
-      }
-      void helper.notification(stepMsg)
-
-      const now = new Date()
       for (const t of pipeline.value) {
+        if (!usedTasks.has(t.id)) continue
         try {
           await t.onEnd?.({
-            now,
             helper,
+            now: new Date(),
             index: 0,
             log: logger.withContext({ id: 'workflow-end' }),
           })
@@ -426,19 +374,69 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           logger.error('onEnd error', t.id, e)
         }
       }
+      if (status.value === 'running') status.value = 'pending'
+      busy = false
     }
   }
-
-  const stop = () => (status.value = 'stop')
+  const executeOne = (data: WorkflowData<T, S>, mode: 'delivery') =>
+    withRun(() => runJob(data, mode))
+  const execute = (data: WorkflowData<T, S>, index = 0) =>
+    withRun(() => runJob(data, 'auto', index))
+  const executeAll = (rawDataMap: Map<string, T>, mode: 'auto' | 'filter' = 'auto') =>
+    withRun(async () => {
+      const isStop = () => status.value === 'stop'
+      await delay(helper.conf.formData.delayDeliveryStarts, isStop)
+      while (!isStop()) {
+        if (!helper.jobList.value.length) break
+        for (const [index, jobData] of helper.jobList.value.entries()) {
+          if (isStop()) break
+          if (
+            mode === 'auto' &&
+            helper.statistics.todayData.value.success >= helper.conf.formData.deliveryLimit.value
+          )
+            return
+          current.value = index + 1
+          const jobStatus = helper.jobResultMaps.get(jobData.key)?.status
+          if (
+            manuallyFiltered.has(jobData.key) ||
+            jobStatus === 'success' ||
+            jobStatus === 'warn' ||
+            (mode === 'filter' && jobStatus === 'ready')
+          )
+            continue
+          const rawData = rawDataMap.get(jobData.key)
+          if (!rawData) continue
+          await runJob(
+            { jobData, rawData, state: stateMaps.value.get(jobData.key) ?? {} },
+            mode,
+            index,
+          )
+          if (isStop()) break
+          await delay(helper.conf.formData.delayDeliveryInterval, isStop)
+        }
+        if (isStop()) break
+        if (
+          mode === 'auto' &&
+          helper.statistics.todayData.value.success >= helper.conf.formData.deliveryLimit.value
+        )
+          break
+        const hasMore = await helper.loadMoreJob(
+          delay(helper.conf.formData.delayDeliveryPageNext, isStop),
+        )
+        if (!hasMore) break
+      }
+    })
+  const stop = () => {
+    if (busy) status.value = 'stop'
+  }
   const reset = () => {
+    if (busy) return
     status.value = 'pending'
     helper.jobList.value.forEach((job) => {
       const v = helper.jobResultMaps.get(job.key)
-      if (!v || v.status === 'success') {
+      if (!v || v.status === 'success' || v.status === 'ready' || manuallyFiltered.has(job.key))
         return
-      }
-      v.msg = '等待中'
-      v.status = 'wait'
+      helper.jobResultMaps.set(job.key, { status: 'wait', msg: '等待中' })
     })
   }
 
@@ -452,9 +450,20 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     nodes,
     ctx: helper,
     stateMaps,
-    rebuild,
+    rebuild: async () => {
+      if (busy) return
+      busy = true
+      try {
+        await rebuild()
+      } finally {
+        busy = false
+      }
+    },
     execute,
     executeAll,
+    executeOne,
+    manuallyFiltered,
+    markFiltered,
     stop,
     reset,
   }
