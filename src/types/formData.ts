@@ -31,7 +31,7 @@ export interface FormData {
   sameHrFilter: FormDataCheckbox & { expire?: number }
   goldHunterFilter: FormDataCheckbox
   notification: FormDataCheckbox
-  useCache: FormDataCheckbox
+  useCache: FormDataCheckbox & { expire: number }
   aiGreeting: FormDataAi & {
     json?: boolean
     beforeImages?: string[]
@@ -54,7 +54,7 @@ export interface FormData {
   delayDeliveryStarts: number
   delayDeliveryInterval: number
   delayDeliveryPageNext: number
-  delayMessageSending: number
+
   version: string
 
   [key: string]: any

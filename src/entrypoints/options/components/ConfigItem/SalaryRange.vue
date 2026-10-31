@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import { formInfoData, useConf } from '@/composables/conf'
+import { useConf } from '@/composables/conf'
 
+import FormItem from './Form/FormItem.vue'
 import FormRange from './Form/FormRange.vue'
 
 const conf = useConf()

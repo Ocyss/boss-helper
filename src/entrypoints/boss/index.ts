@@ -68,6 +68,8 @@ function convertBossZpJobItemToJobData(item: BossZpJobItemData): JobData {
   return {
     key,
     link: `https://www.zhipin.com/job_detail/${item.encryptJobId}.html`,
+    companyId: item.encryptBrandId,
+    hrId: item.encryptBossId,
     jobName: item.jobName,
     positionName: item.jobName,
     jobDescription: '',
@@ -210,7 +212,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     return true
   }
 
-  async start(mode: 'auto' | 'filter' = 'auto') {
+  async start(mode: 'auto' | 'filter' | 'generate' | 'delivery' = 'auto') {
     if (this.jobActionBusy.value) return
     if (!this.workflow) {
       this.workflow = await bossWorkflow(this)
@@ -253,12 +255,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
           },
         })
       } else if (msg.type === 'text') {
-        this.pendingMessages.value = msg.content
-        await delay(this.conf.formData.delayMessageSending)
         m = this.geek.msgBuilder.createTextMessage(stanza, {
-          text: this.pendingMessages.value,
+          text: msg.content,
         })
-        this.pendingMessages.value = undefined
       } else {
         throw new Error('不支持的消息类型:' + msg['type'])
       }
@@ -266,6 +265,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
         qos: 1,
         retain: true,
       })
+      await delay(2)
     }
   }
 
@@ -284,11 +284,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       BossHelperCtx.instance.remove()
       BossHelperCtx.instance = null
     }
-    // TODO: 移除menu, 可能导致nuxtui实例冲突
-    // if (!document.querySelector('boss-helper-menu')) {
-    //   const menuElement = document.createElement('boss-helper-menu')
-    //   document.body.appendChild(menuElement)
-    // }
+
     const elm = await elmGetter.get(
       '.job-search-wrapper,.job-recommend-main,.page-jobs .page-jobs-main',
     )
@@ -321,6 +317,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     )
     await this.geek.connect()
   }
+
   getConfigItems() {
     return useConfigSections()
   }
@@ -380,44 +377,43 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     }
     this.jobMaps.set(key, job)
   }
+
   async _initJobList() {
     await useHookVueData(
       '#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main',
       'jobList',
       this._jobList,
       (v) => {
-        this.jobList.value = v.map((item) => {
-          // const jobData = convertBossZpJobItemToJobData(item)
-          // if (this.conf.formData.useCache.value) {
-          //   const cacheCheck = checkJobCache(jobData.key)
-          //   if (cacheCheck) {
-          //     jobData.status = {
-          //       status: cacheCheck.status,
-          //       msg: `${cacheCheck.message} (缓存)`,
-          //     }
-          //   }
-          // }
-          const key = `boss::${item.encryptJobId}`
-          const job = this.jobMaps.get(key)?.jobData ?? convertBossZpJobItemToJobData(item)
+        const seen = new Set<string>()
+        this.jobList.value = v
+          .filter((item) => {
+            if (seen.has(item.encryptJobId)) return false
+            seen.add(item.encryptJobId)
+            return true
+          })
+          .map((item) => {
+            const key = `boss::${item.encryptJobId}`
+            const job = this.jobMaps.get(key)?.jobData ?? convertBossZpJobItemToJobData(item)
 
-          let jobData = this._jobDataMap.get(job.key)
-          if (jobData) {
-            jobData = {
-              ...jobData,
-              jobitem: item,
+            let jobData = this._jobDataMap.get(job.key)
+            if (jobData) {
+              jobData = {
+                ...jobData,
+                jobitem: item,
+              }
+            } else {
+              jobData = {
+                jobitem: item,
+                detail: createLazyObject('岗位详情获取'),
+                boss: createLazyObject('Boss信息获取'),
+              }
             }
-          } else {
-            jobData = {
-              jobitem: item,
-              detail: createLazyObject('岗位详情获取'),
-              boss: createLazyObject('Boss信息获取'),
-            }
-          }
-          this._jobDataMap.set(job.key, jobData)
+            this._jobDataMap.set(job.key, jobData)
 
-          return job
-        })
+            return job
+          })
         this.jobList.value.forEach((job) => {
+          this.restoreJobCache(job.key)
           this.jobMaps.set(job.key, {
             jobData: job,
             rawData: this._jobDataMap.get(job.key)!,

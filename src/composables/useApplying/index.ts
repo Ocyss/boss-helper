@@ -1,66 +1,32 @@
 import { shallowRef, ref, reactive } from 'vue'
 
-import { PipelineCacheManager } from '@/composables/usePipelineCache'
-import type { PipelineCacheItem, ProcessorType } from '@/types/pipelineCache'
+import { createFeishuSync, feishuJobRow } from '@/utils/feishuSync'
 
 import type { HelperContext } from '../useHelper'
 import { DependencyMissingError } from './handles'
 import type {
   Handler,
-  JobStatus,
   Task,
   TaskContext,
   TaskPipeline,
   TaskResult,
   TaskStatus,
   WorkflowData,
+  WorkflowMode,
 } from './type'
 import { jobStatusList } from './type'
-
-// 全局缓存管理器实例
-let cacheManager: PipelineCacheManager | null = null
-
-/**
- * 创建缓存实例
- */
-export function getCacheManager(): PipelineCacheManager {
-  if (!cacheManager) {
-    cacheManager = new PipelineCacheManager()
-  }
-  return cacheManager
-}
-
-/**
- * 缓存Pipeline处理结果
- */
-export async function cachePipelineResult(
-  key: string,
-  jobName: string,
-  brandName: string,
-  status: JobStatus,
-  message: string,
-  processorType?: ProcessorType,
-): Promise<void> {
-  const cacheManager = getCacheManager()
-  await cacheManager.setCacheResult(key, jobName, brandName, status, message, processorType)
-}
-
-/**
- * 检查职位是否有有效缓存
- */
-export function checkJobCache(key: string): PipelineCacheItem | null {
-  const cacheManager = getCacheManager()
-
-  if (cacheManager.isValidCache(key)) {
-    const cached = cacheManager.getCachedResult(key)
-    return cached
-  }
-  return null
-}
 
 export type DeliveryWorkflow<C extends HelperContext<C, T, S>, T, S> = Awaited<
   ReturnType<typeof useDeliveryWorkflow<C, T, S>>
 >
+
+/** 用户主动停止时中断正在执行的任务 */
+class WorkflowStoppedError extends Error {
+  constructor() {
+    super('工作流已停止')
+    this.name = 'WorkflowStoppedError'
+  }
+}
 
 function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskResult | void {
   if (!res) return
@@ -109,6 +75,24 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   >([])
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
+  const toast = useToast()
+  const reportFeishuError = (error: unknown) => {
+    toast.add({
+      id: 'feishu-sync-error',
+      title: '飞书同步失败，待同步记录已保留',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  }
+  const feishuSync = createFeishuSync(reportFeishuError)
+  const queueFeishu = (data: WorkflowData<T, S>, count = true) => {
+    try {
+      feishuSync.add(feishuJobRow(helper, data, helper.jobResultMaps.get(data.jobData.key)), count)
+    } catch (error) {
+      logger.warn('飞书岗位快照生成失败，不影响工作流', error)
+      reportFeishuError(error)
+    }
+  }
 
   const rebuild = async () => {
     const _ctx: TaskContext<C, T, S> = {
@@ -149,6 +133,13 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             task.onEnd = async (ctx) => {
               await onEnd?.(ctx)
               await result.onEnd?.(ctx)
+            }
+          }
+          if (result.onDelivered) {
+            const onDelivered = task.onDelivered
+            task.onDelivered = async (ctx, data) => {
+              await onDelivered?.(ctx, data)
+              await result.onDelivered?.(ctx, data)
             }
           }
         }
@@ -220,7 +211,9 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   }
 
   const manuallyFiltered = reactive(new Set<string>())
-  let busy = false
+  const busy = ref(false)
+  const lastMode = ref<WorkflowMode | null>(null)
+  const drafts = reactive(new Map<string, string>())
   const usedTasks = new Set<string>()
   const markFiltered = (key: string) => {
     manuallyFiltered.add(key)
@@ -230,16 +223,84 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       id: 'manualFilter',
       isSkip: true,
     })
+    const data = helper.jobMaps.get(key)
+    if (data) queueFeishu(data, false)
+    if (!busy.value) void feishuSync.flush()
   }
   const isBlocked = (key: string) => status.value === 'stop' || manuallyFiltered.has(key)
 
-  const runJob = async (
-    data: WorkflowData<T, S>,
-    mode: 'auto' | 'filter' | 'delivery',
-    index = 0,
-  ) => {
+  // 停止信号监听: 用于强制中断正在 await 的任务(如挂起的网络请求)
+  const stopListeners = new Set<() => void>()
+  const notifyStop = () => {
+    for (const fn of [...stopListeners]) fn()
+  }
+
+  /**
+   * 带看门狗的任务执行: 超时或用户停止时 reject, 避免 Promise 永不 settle 导致工作流卡死
+   */
+  const runGuarded = <R>(promise: Promise<R>, timeout: number, taskId: string): Promise<R> =>
+    new Promise<R>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error(`任务「${taskId}」执行超时(${Math.round(timeout / 1000)}s)`))
+      }, timeout)
+      const onStop = () => {
+        cleanup()
+        reject(new WorkflowStoppedError())
+      }
+      const cleanup = () => {
+        clearTimeout(timer)
+        stopListeners.delete(onStop)
+      }
+      stopListeners.add(onStop)
+      promise.then(
+        (v) => {
+          cleanup()
+          resolve(v)
+        },
+        (e) => {
+          cleanup()
+          reject(e)
+        },
+      )
+    })
+
+  /** 任务默认超时: AI 120s(模型默认超时60s+缓冲), 详情请求 70s, 投递阶段 90s, 其余 30s */
+  const resolveTimeout = (t: Task<C, T, S>) =>
+    t.timeout ??
+    (t.state === 'ai'
+      ? 120_000
+      : t.state === 'request'
+        ? 70_000
+        : t.phase === 'delivery'
+          ? 90_000
+          : 30_000)
+
+  const saveJobResult = async (key: string, result: TaskResult) => {
+    if (!helper.conf.formData.useCache?.value) return
+    try {
+      await helper.jobCache.set(key, result)
+    } catch (e) {
+      logger.error('保存岗位缓存失败', e)
+    }
+  }
+
+  const runJob = async (data: WorkflowData<T, S>, mode: WorkflowMode, index = 0) => {
     const key = data.jobData.key
     if (isBlocked(key)) return
+    if (helper.conf.formData.useCache?.value && mode !== 'delivery') {
+      try {
+        const cached = await helper.jobCache.get(key, helper.conf.formData.useCache.expire)
+        if (isBlocked(key)) return
+        if (cached) {
+          helper.jobResultMaps.set(key, cached)
+          queueFeishu(data)
+          return
+        }
+      } catch (e) {
+        logger.error('读取岗位缓存失败', e)
+      }
+    }
     const wasReady = helper.jobResultMaps.get(key)?.status === 'ready'
     data.state = stateMaps.value.get(key) ?? data.state ?? {}
     stateMaps.value.set(key, data.state)
@@ -250,6 +311,15 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     const completed = new Set<string>()
     const visiting = new Set<string>()
     let delivered = false
+    const draft = drafts.get(key)
+    if (draft !== undefined && mode !== 'filter') {
+      data.state.aiGreeting = { ...data.state.aiGreeting, greeting: draft }
+      completed.add('AI招呼语生成')
+    }
+    const canRun = (t: Task<C, T, S>) =>
+      mode === 'filter'
+        ? !t.phase || t.phase === 'filter'
+        : mode !== 'generate' || t.phase !== 'delivery'
     const runTask = async (t: Task<C, T, S>): Promise<void> => {
       if (completed.has(t.id) || isBlocked(key)) return
       if (visiting.has(t.id)) throw new Error(`Cycle: ${t.id}`)
@@ -257,8 +327,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       for (const id of t.deps) {
         const dep = pipeline.value.find((task) => task.id === id)
         if (!dep) throw new Error(`Missing dependency: ${id}`)
-        if (mode === 'filter' && dep.phase === 'delivery')
-          throw new Error(`Filter depends on delivery: ${id}`)
+        if (!canRun(dep)) throw new Error(`Filter depends on delivery: ${id}`)
         await runTask(dep)
         if (isBlocked(key)) return
       }
@@ -278,15 +347,17 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             log: log.withContext({ task_id: t.id }),
           }
           let res: TaskResult | void
+          const taskTimeout = resolveTimeout(t)
           try {
-            res = meginResults(await fn(ctx, data))
+            res = meginResults(await runGuarded(fn(ctx, data), taskTimeout, t.id))
           } catch (e) {
+            if (e instanceof WorkflowStoppedError) throw e
             if (!(e instanceof DependencyMissingError)) throw e
             const dep = pipeline.value.find((task) => task.id === e.taskId)
-            if (!dep || (mode === 'filter' && dep.phase === 'delivery')) throw e
+            if (!dep || !canRun(dep)) throw e
             await runTask(dep)
             if (isBlocked(key)) return
-            res = meginResults(await fn(ctx, data))
+            res = meginResults(await runGuarded(fn(ctx, data), taskTimeout, t.id))
           }
           if (isBlocked(key)) return
           if (res) {
@@ -303,7 +374,12 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               stats[t.id] ??= {}
               stats[t.id]![res.status] = (stats[t.id]![res.status] ?? 0) + 1
             }
-            if (res.isSkip || res.status === 'error') throw { workflowResult: res }
+            if (res.isSkip || res.status === 'error') {
+              if ((!t.phase || t.phase === 'filter') && res.isSkip && res.status === 'warn') {
+                await saveJobResult(key, res)
+              }
+              throw { workflowResult: res }
+            }
           }
         }
         if (t.phase === 'delivery') delivered = true
@@ -313,11 +389,21 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
     try {
       if (mode !== 'delivery' && !wasReady) {
-        for (const t of pipeline.value.filter((t) => t.phase !== 'delivery')) await runTask(t)
+        for (const t of pipeline.value.filter((t) => !t.phase || t.phase === 'filter'))
+          await runTask(t)
       }
       if (isBlocked(key)) return
       if (mode === 'filter') {
         helper.jobResultMaps.set(key, { status: 'ready', msg: '待投递' })
+        return
+      }
+      for (const t of pipeline.value.filter((t) => t.phase === 'generate')) await runTask(t)
+      if (isBlocked(key)) return
+      if (mode === 'generate') {
+        const greeting = data.state.aiGreeting?.greeting
+        if (!greeting?.trim()) throw new Error('仅生成需要启用并配置 AI 招呼语')
+        drafts.set(key, greeting)
+        helper.jobResultMaps.set(key, { status: 'ready', msg: '待确认发送' })
         return
       }
       for (const t of pipeline.value.filter((t) => t.phase === 'delivery')) await runTask(t)
@@ -326,7 +412,20 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       }
       if (!isBlocked(key) && delivered) {
         helper.jobResultMaps.set(key, { status: 'success', msg: '投递成功' })
+        await saveJobResult(key, { status: 'success', msg: '投递成功' })
+        drafts.delete(key)
         helper.statistics.todayData.value.success++
+        for (const t of pipeline.value) {
+          if (!t.onDelivered) continue
+          try {
+            await t.onDelivered(
+              { helper, now: new Date(), index, log: log.withContext({ task_id: t.id }) },
+              data,
+            )
+          } catch (e) {
+            log.error('onDelivered error', t.id, e)
+          }
+        }
       }
     } catch (e) {
       if (isBlocked(key)) return
@@ -341,15 +440,18 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       if (manuallyFiltered.has(key)) markFiltered(key)
       else if (status.value === 'stop')
         helper.jobResultMaps.set(key, { status: 'wait', msg: '已停止' })
+      queueFeishu(data)
+      if (status.value === 'stop') void feishuSync.flush()
     }
   }
 
   const withRun = async (fn: () => Promise<void>) => {
-    if (busy) return false
-    busy = true
+    if (busy.value) return false
+    busy.value = true
     status.value = 'running'
     errorMessage.value = null
     usedTasks.clear()
+    void feishuSync.flush()
     try {
       await rebuild()
       if (errorMessage.value) throw new Error(errorMessage.value)
@@ -374,21 +476,51 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           logger.error('onEnd error', t.id, e)
         }
       }
+      void feishuSync.flush()
       if (status.value === 'running') status.value = 'pending'
-      busy = false
+      busy.value = false
     }
   }
   const executeOne = (data: WorkflowData<T, S>, mode: 'delivery') =>
     withRun(() => runJob(data, mode))
   const execute = (data: WorkflowData<T, S>, index = 0) =>
     withRun(() => runJob(data, 'auto', index))
-  const executeAll = (rawDataMap: Map<string, T>, mode: 'auto' | 'filter' = 'auto') =>
+  const executeAll = (rawDataMap: Map<string, T>, mode: WorkflowMode = 'auto') =>
     withRun(async () => {
+      lastMode.value = mode
+      if (mode === 'generate' && !helper.conf.formData.aiGreeting.enable)
+        throw new Error('仅生成需要先启用并配置 AI 招呼语')
+      if (mode === 'delivery') {
+        const queue = helper.jobList.value.filter(
+          (job) => helper.jobResultMaps.get(job.key)?.status === 'ready' && !drafts.has(job.key),
+        )
+        for (const job of queue) {
+          if (
+            status.value === 'stop' ||
+            helper.statistics.todayData.value.success >= helper.conf.formData.deliveryLimit.value
+          )
+            break
+          const data = helper.jobMaps.get(job.key)
+          if (data) await runJob(data, 'delivery')
+          await delay(helper.conf.formData.delayDeliveryInterval, () => status.value === 'stop')
+        }
+        return
+      }
       const isStop = () => status.value === 'stop'
       await delay(helper.conf.formData.delayDeliveryStarts, isStop)
+      const seenJobs = new Set<string>()
+      let repeatedJobs = 0
       while (!isStop()) {
-        if (!helper.jobList.value.length) break
-        for (const [index, jobData] of helper.jobList.value.entries()) {
+        const jobs = helper.jobList.value.slice()
+        if (!jobs.length) break
+        const hasNewJobs = jobs.some((job) => !seenJobs.has(job.key))
+        repeatedJobs = hasNewJobs ? 0 : repeatedJobs + jobs.length
+        for (const job of jobs) seenJobs.add(job.key)
+        if (repeatedJobs >= 50) {
+          log.warn('连续遇到至少 50 个重复岗位且没有新岗位，停止翻页')
+          break
+        }
+        for (const [index, jobData] of jobs.entries()) {
           if (isStop()) break
           if (
             mode === 'auto' &&
@@ -401,6 +533,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             manuallyFiltered.has(jobData.key) ||
             jobStatus === 'success' ||
             jobStatus === 'warn' ||
+            drafts.has(jobData.key) ||
             (mode === 'filter' && jobStatus === 'ready')
           )
             continue
@@ -420,6 +553,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           helper.statistics.todayData.value.success >= helper.conf.formData.deliveryLimit.value
         )
           break
+        void feishuSync.flush()
         const hasMore = await helper.loadMoreJob(
           delay(helper.conf.formData.delayDeliveryPageNext, isStop),
         )
@@ -427,10 +561,14 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       }
     })
   const stop = () => {
-    if (busy) status.value = 'stop'
+    if (busy.value) {
+      status.value = 'stop'
+      notifyStop()
+    }
+    void feishuSync.flush()
   }
   const reset = () => {
-    if (busy) return
+    if (busy.value) return
     status.value = 'pending'
     helper.jobList.value.forEach((job) => {
       const v = helper.jobResultMaps.get(job.key)
@@ -442,6 +580,9 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
 
   return {
     items,
+    busy,
+    lastMode,
+    drafts,
     status,
     current,
     total,
@@ -451,12 +592,12 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     ctx: helper,
     stateMaps,
     rebuild: async () => {
-      if (busy) return
-      busy = true
+      if (busy.value) return
+      busy.value = true
       try {
         await rebuild()
       } finally {
-        busy = false
+        busy.value = false
       }
     },
     execute,

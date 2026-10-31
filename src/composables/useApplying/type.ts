@@ -7,8 +7,8 @@ import { useDeliveryWorkflow } from '.'
 import { DependencyMissingError } from './handles'
 import type { GreetingResult } from './utils'
 
-export type TaskPhase = 'filter' | 'delivery'
-export type WorkflowMode = 'auto' | 'filter'
+export type TaskPhase = 'filter' | 'generate' | 'delivery'
+export type WorkflowMode = 'auto' | 'filter' | 'generate' | 'delivery'
 
 export type Task<C extends HelperContext<C, T, S>, T, S> = {
   id: string
@@ -21,7 +21,12 @@ export type Task<C extends HelperContext<C, T, S>, T, S> = {
   desc?: string
   state?: JobStatus
   stateMsg?: string
+  /** 任务执行超时(ms), 超时后视为失败, 防止工作流卡死 */
+  timeout?: number
+  /** 整个工作流结束时调用 */
   onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
+  /** 岗位投递成功后调用（如记录相同公司/HR 去重缓存） */
+  onDelivered?: (ctx: TaskContext<C, T, S>, data: WorkflowData<T, S>) => void | Promise<void>
 }
 
 export type TaskPipeline<C extends HelperContext<C, T, S>, T, S> = Array<Task<C, T, S>>
@@ -85,12 +90,14 @@ export type TaskHandler<C extends HelperContext<C, T, S>, T, S> =
       before?: Handler<C, T, S>[]
       after?: Handler<C, T, S>[]
       onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
+      onDelivered?: (ctx: TaskContext<C, T, S>, data: WorkflowData<T, S>) => void | Promise<void>
     } | void)
   | ((ctx: TaskContext<C, T, S>) => Promise<{
       fn: Handler<C, T, S>
       before?: Handler<C, T, S>[]
       after?: Handler<C, T, S>[]
       onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
+      onDelivered?: (ctx: TaskContext<C, T, S>, data: WorkflowData<T, S>) => void | Promise<void>
     } | void>)
 
 export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
@@ -105,7 +112,9 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
     desc?: string
     state?: JobStatus
     stateMsg?: string
+    timeout?: number
     onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
+    onDelivered?: (ctx: TaskContext<C, T, S>, data: WorkflowData<T, S>) => void | Promise<void>
   },
 ): (options?: {
   task?: TaskHandler<C, T, S>
@@ -117,7 +126,9 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
   desc?: string
   state?: JobStatus
   stateMsg?: string
+  timeout?: number
   onEnd?: (ctx: TaskContext<C, T, S>) => void | Promise<void>
+  onDelivered?: (ctx: TaskContext<C, T, S>, data: WorkflowData<T, S>) => void | Promise<void>
 }) => Task<C, T, S> {
   return (options) => {
     const {
@@ -130,7 +141,9 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
       desc: s = opt?.desc,
       state: st = opt?.state,
       stateMsg: sm = opt?.stateMsg,
+      timeout: to = opt?.timeout,
       onEnd: oe = opt?.onEnd,
+      onDelivered: od = opt?.onDelivered,
     } = options || {}
     return {
       id,
@@ -143,7 +156,9 @@ export function defineTaskHandler<C extends HelperContext<C, T, S>, T, S>(
       desc: s,
       state: st,
       stateMsg: sm,
+      timeout: to,
       onEnd: oe,
+      onDelivered: od,
     }
   }
 }

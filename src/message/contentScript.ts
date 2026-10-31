@@ -39,6 +39,18 @@ export class ContentCounter implements BackgroundCounter {
     return this.background.request(...args)
   }
 
+  async feishuFetch(...args: Parameters<BackgroundCounter['feishuFetch']>) {
+    return this.background.feishuFetch(...args)
+  }
+
+  async createTableBoss() {
+    return this.background.createTableBoss()
+  }
+
+  async feishuUpsert(...args: Parameters<BackgroundCounter['feishuUpsert']>) {
+    return this.background.feishuUpsert(...args)
+  }
+
   async notify(...args: Parameters<BackgroundCounter['notify']>) {
     return this.background.notify(...args)
   }

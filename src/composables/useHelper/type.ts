@@ -7,6 +7,10 @@ import type { amapDistance, amapGeocode } from '@/utils/amap'
 export type JobBaseData = {
   key: string
   link?: string
+  /** 公司唯一标识（用于相同公司去重缓存），缺省时回退为公司名 */
+  companyId?: string
+  /** HR/招聘者唯一标识（用于相同HR去重缓存），缺省时回退为招聘者姓名 */
+  hrId?: string
   /** 职位名称，例如：'前端开发工程师' */
   jobName: string
   /** 职位名称，例如：'前端工程师' */
@@ -130,6 +134,8 @@ export type AlertItem = ExtendedAlertProps & {
 export type ConfigItem =
   | {
       key: string
+      label?: string
+      help?: string
       type:
         | 'select'
         | 'checkbox'

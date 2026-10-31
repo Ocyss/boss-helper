@@ -5,7 +5,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vu
 import Alert from '@/components/Alert.vue'
 import { useConf } from '@/composables/conf'
 import { useConfigSections } from '@/composables/conf/sections'
-import { useAccounts } from '@/composables/useAccounts'
 import { HelperKey } from '@/composables/useHelper'
 import type { HelperContext } from '@/composables/useHelper'
 import { useModel, ChatModel } from '@/composables/useModel'
@@ -13,11 +12,13 @@ import { counter } from '@/message'
 import { exportJson } from '@/utils/jsonImportExport'
 
 import AIPage from './pages/AIPage.vue'
+import FeishuPage from './pages/FeishuPage.vue'
 import GeneralPage from './pages/GeneralPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import ProvidersPage from './pages/ProvidersPage.vue'
 
 const formDataPresetsKey = 'local:FormDataPreses'
+
 const formDataPresets = ref([{ label: '默认配置', value: 'default' }])
 
 async function initPresets() {
@@ -34,48 +35,12 @@ useResizeObserver(header, () => {
 
 const toast = useToast()
 const conf = useConf()
-const accounts = useAccounts()
 const model = useModel()
 const schema = useConfigSections()
 const sections = computed(() => schema.value[1].filter((item) => item !== false))
 const helpText = ref('悬浮或聚焦配置项，即可在这里查看说明。')
 const hoveredHelp = ref('')
 const focusedHelp = ref('')
-
-async function _createPreset(label: string) {
-  try {
-    const value = Date.now().toString()
-    formDataPresets.value.push({
-      label,
-      value,
-    })
-    await counter.storageSet(formDataPresetsKey, jsonClone(formDataPresets.value))
-    toast.add({
-      title: '预设创建成功',
-      color: 'success',
-    })
-  } catch (e) {
-    toast.add({
-      title: `预设创建失败: ${String(e)}`,
-      color: 'error',
-    })
-    logger.error('预设创建失败', e)
-  }
-}
-
-async function _deletePreset(value: string) {
-  if (value === 'default') return
-  const accounts = useAccounts()
-  await accounts.init()
-  for (const account of accounts.accounts.value) {
-    if (account.preset === value) await accounts.setDefaultPreset(account.value, 'default')
-  }
-  formDataPresets.value = formDataPresets.value.filter((item) => item.value !== value)
-  await counter.storageSet(formDataPresetsKey, jsonClone(formDataPresets.value))
-  // An empty slot prevents deleted configuration from being reused.
-  await counter.storageSet(`local:web-geek-job-FormData-${value}`, {})
-  if (conf.formDataPreset.value === value) await switchPreset('default')
-}
 
 function readHelp(target: EventTarget | null) {
   if (!(target instanceof Element)) return ''
@@ -167,7 +132,11 @@ async function save() {
     await model.saveModel({ silent: true })
     baseline.value = saved
     modelBaseline.value = savedModels
-    toast.add({ title: '配置与模型已保存', color: 'success' })
+    toast.add({
+      title: '配置与模型已保存',
+      color: 'success',
+      description: '回到投递页面记得手动刷新, 避免配置不同步',
+    })
   })
 }
 async function reload() {
@@ -188,49 +157,16 @@ async function switchPreset(value: string) {
   })
 }
 
-async function createPreset() {
-  if (!allowDiscard()) return
-  const name = window.prompt('新预设名称（使用当前配置创建）')?.trim()
-  if (!name) return
-  await run(async () => {
-    await _createPreset(name)
-    await model.initModel()
-    markClean()
-    revision.value++
-  })
-}
-
-async function manage(action: () => Promise<unknown> | unknown) {
+async function manage(action: () => Promise<unknown> | unknown, reload = true) {
   if (!allowDiscard()) return
   await run(async () => {
-    await initialize()
-    revision.value++
+    if (reload) await initialize()
     await action()
-    await initialize()
+    if (reload) await initialize()
+    else await model.initModel()
     markClean()
+    revision.value++
   })
-}
-async function deletePreset(value: string, label: string) {
-  if (value === 'default' || !window.confirm(`确定删除预设“${label}”？`)) return
-  await manage(() => _deletePreset(value))
-}
-async function createAccount() {
-  const label = window.prompt('新账号名称')?.trim()
-  if (!label) return
-  await manage(() => accounts.createAccount(label, conf.formDataPreset.value))
-}
-async function deleteAccount(value: string, label: string) {
-  if (value === 'default' || !window.confirm(`确定删除账号“${label}”？`)) return
-  await manage(() => accounts.deleteAccount(value))
-}
-async function setDefaultPreset(value: string, preset: string) {
-  if (
-    accounts.accounts.value.find(
-      (account: { value: string; preset: string }) => account.value === value,
-    )?.preset === preset
-  )
-    return
-  await manage(() => accounts.setDefaultPreset(value, preset))
 }
 async function navigate(value: string | undefined) {
   if (!value) return
@@ -277,12 +213,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
           role="note"
           aria-label="配置帮助"
         >
-          <span class="font-medium text-default">配置帮助：</span>{{ helpText }}
+          <span class="font-medium text-default">配置帮助：</span>
+          <span class="wrap-break-word text-wrap">{{ helpText }}</span>
         </div>
       </header>
       <div class="options-layout">
         <aside class="options-sidebar space-y-5">
-          <div class="space-y-2">
+          <div class="space-y-2 flex flex-col">
             <USelect
               :model-value="conf.formDataPreset.value"
               :items="formDataPresets"
@@ -323,13 +260,19 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               @click="page = 'ai'"
             />
             <UButton
-              label="AI 提供商与模型"
+              label="AI 模型配置"
               icon="i-lucide-server"
               :variant="page === 'providers' ? 'soft' : 'ghost'"
               @click="page = 'providers'"
             />
+            <UButton
+              label="飞书多维表格集成"
+              icon="i-lucide-table-properties"
+              :variant="page === 'feishu' ? 'soft' : 'ghost'"
+              @click="page = 'feishu'"
+            />
           </nav>
-          <div class="space-y-2 border-t border-default pt-4">
+          <div class="space-y-2 border-t border-default pt-4 flex flex-col">
             <UButton
               label="导入配置"
               icon="i-lucide-upload"
@@ -359,24 +302,19 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             <ManagementPage
               v-show="page === 'management'"
               :busy="busy"
-              :form-data-presets="formDataPresets"
-              :accounts="accounts.accounts.value"
-              :active-account="accounts.activeAccount.value"
-              @create-preset="createPreset"
-              @delete-preset="deletePreset"
-              @create-account="createAccount"
-              @delete-account="deleteAccount"
-              @set-default-preset="setDefaultPreset"
+              v-model="formDataPresets"
+              :manage="manage"
             />
             <GeneralPage v-show="page === 'general'" :busy="busy" />
             <AIPage v-show="page === 'ai'" ref="aiEditor" />
             <ProvidersPage v-show="page === 'providers'" />
+            <FeishuPage v-show="page === 'feishu'" />
           </div>
         </main>
         <aside class="options-help" aria-label="配置帮助">
           <UCard>
             <template #header><h2 class="text-sm font-semibold">配置帮助</h2></template>
-            <p class="text-sm text-muted whitespace-pre-line wrap-break-word">
+            <p class="text-sm text-muted whitespace-pre-line wrap-break-word text-wrap">
               {{ helpText }}
             </p>
           </UCard>
@@ -407,9 +345,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             :disabled="!ready || busy"
             @click="conf.confRecommend"
           />
-
           <span class="text-xs text-muted md:ml-auto">{{
-            page === 'management' ? '管理操作即时保存' : '修改后请点击保存'
+            page === 'management'
+              ? '管理操作即时保存'
+              : page === 'feishu'
+                ? '飞书配置请在页面内单独保存'
+                : '修改后请点击保存'
           }}</span>
         </div>
       </footer>

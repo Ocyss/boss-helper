@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { createReusableTemplate } from '@vueuse/core'
-import type { ComponentPublicInstance } from 'vue'
 import { ref } from 'vue'
 
 import JobTable from '@/components/JobTable.vue'
@@ -13,7 +12,6 @@ const [DefineFilter, FilterControl] = createReusableTemplate()
 import JobCard from '@/components/JobCard.vue'
 import { useHelper } from '@/composables/useHelper'
 
-const jobSetRef = ref<Record<string, Element | ComponentPublicInstance | null>>({})
 const following = ref(true)
 
 const cards = ref<HTMLDivElement>()
@@ -109,24 +107,11 @@ function scrollHandler(key = helper.currentJob.value) {
   if (!key) {
     return
   }
-  const d = jobSetRef.value[key]
-  if (!d) {
-    return
-  }
-
-  if ('scrollIntoView' in d) {
-    d.scrollIntoView({
-      behavior: 'smooth',
-      block: 'nearest',
-      inline: 'center',
-    })
-  } else if ('$el' in d) {
-    d?.$el.scrollIntoView({
-      behavior: 'smooth',
-      block: 'nearest',
-      inline: 'center',
-    })
-  }
+  helper.shadowRoot?.getElementById(`boss-card-${key}`)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+    inline: 'center',
+  })
 }
 
 watch(
@@ -150,17 +135,7 @@ watch(
       <template #filter><FilterControl /></template>
     </JobTable>
     <div v-else ref="cards" class="card-grid" @wheel.stop="onWheel">
-      <JobCard
-        v-for="job in jobList"
-        :ref="
-          (ref) => {
-            jobSetRef[job.key] = ref
-          }
-        "
-        :key="job.key"
-        :job="job"
-        hover
-      />
+      <JobCard v-for="job in jobList" :key="job.key" :job="job" hover />
     </div>
     <DefineFollowing>
       <UButton

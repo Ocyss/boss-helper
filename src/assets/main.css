@@ -69,7 +69,8 @@ body {
   transition: -webkit-mask-image 0.2s ease;
 }
 
-html.dark {
+html[data-darkreader-scheme='dark'],
+html[dark] {
   .card-grid {
     scrollbar-color: #666 #201c29;
     color: #fff;
@@ -113,7 +114,7 @@ html.dark {
     border-radius: 30px;
     border-bottom-left-radius: 0;
     border-top-left-radius: 0;
-    background-color: var(--state-color);
+    background-color: var(--state-color) !important;
     color: #fff;
     padding: 7px 17px;
     text-wrap: nowrap;
@@ -135,7 +136,7 @@ html.dark {
     height: 0;
     border-left: 6px solid transparent;
     border-right: 0px solid transparent;
-    border-bottom: 10px solid oklch(from var(--state-color) calc(l * 0.75) c h);
+    border-bottom: 10px solid oklch(from var(--state-color) calc(l * 0.75) c h) !important;
   }
   .card-tag {
     display: block;
@@ -230,7 +231,8 @@ html.dark {
   }
 }
 
-html.dark {
+:host-context(html[data-darkreader-scheme='dark']),
+:host-context(html[dark]) {
   .job-card {
     background: linear-gradient(85deg, #434343, #262626);
     color: #fff;
@@ -243,28 +245,30 @@ html.dark {
     }
     .card-status {
       color: #fff;
-
       box-shadow: 1px -7px 12px -2px rgb(167 167 167 / 40%);
     }
-
     .card-tag {
       color: #b4b4b4;
     }
-
     .card-salary {
       color: #ff442e;
     }
-
     .author-row {
       color: #a09f9f;
-
       .company-name {
         color: #fff;
       }
     }
-
     &:not(:first-child) {
       box-shadow: -3rem 0 3rem -3rem #000;
     }
   }
+}
+
+div[data-slot='body'] article[data-role='assistant']:has(div.indicator) {
+  display: flex;
+  flex-direction: row-reverse;
+}
+div[data-slot='body'] article[data-role='assistant'] div[data-slot='container']:has(div.indicator) {
+  flex-direction: row-reverse;
 }

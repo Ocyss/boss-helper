@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { JobStatus } from '@/composables/useApplying/type'
-import { JobData, useHelper } from '@/composables/useHelper'
+import type { JobStatus } from '@/composables/useApplying/type'
+import { useHelper } from '@/composables/useHelper'
+import type { JobData } from '@/composables/useHelper'
 import { useJobActions } from '@/composables/useJobActions'
 
 const helper = useHelper()
@@ -75,10 +76,12 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
 <template>
   <UContextMenu :items="actions.items(job)">
     <div
+      :id="`boss-card-${job.key}`"
       class="job-card"
       :class="{ 'job-card-hover': hover }"
       :style="{
         '--state-color': jobStatus.color,
+        '--darkreader-bg--state-color': jobStatus.color,
         '--state-show': jobStatus.show,
       }"
       v-if="job"
@@ -158,9 +161,6 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
         v-if="jobResult"
         :title="jobResult?.reason || jobResult?.msg"
       >
-        <UIcon v-if="jobStatus.status === 'running'" name="i-line-md-loading-twotone-loop" />
-        <UIcon v-else-if="jobStatus.status === 'request'" name="i-svg-spinners-wifi-fade" />
-        <UIcon v-else-if="jobStatus.status === 'ai'" name="i-line-md-hazard-lights-loop" />
         {{
           jobResult?.msg ||
           jobResult?.reason ||

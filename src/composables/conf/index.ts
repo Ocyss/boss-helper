@@ -35,7 +35,7 @@ export const appearanceConf = useStorageAsync(
 )
 
 const isLoading = ref(true)
-const formData: FormData = reactive(defaultFormData)
+const formData: FormData = reactive(jsonClone(defaultFormData))
 const selectedPresets = useSessionStorage<Record<string, string>>('HelperPresets', {})
 const accountState = useAccounts()
 const formDataPreset = computed({
@@ -236,7 +236,9 @@ export const useConf = () => {
         'goldHunterFilter',
         'notification',
         'useCache',
-        'delay',
+        'delayDeliveryStarts',
+        'delayDeliveryInterval',
+        'delayDeliveryPageNext',
       ].reduce(
         (result, key) => {
           result[key] = defaultFormData[key as keyof FormData]
@@ -244,6 +246,7 @@ export const useConf = () => {
         },
         {} as Record<string, any>,
       ),
+      { clone: false },
     )
     logger.debug('formData推荐配置已应用')
     toast.add({
@@ -253,7 +256,7 @@ export const useConf = () => {
   }
 
   function confDelete() {
-    deepmerge(formData, defaultFormData)
+    deepmerge(formData, defaultFormData, { clone: false })
     logger.debug('formData已清空')
     toast.add({
       title: '配置清空成功, 不会自动保存, 请手动保存或重载恢复',

@@ -69,6 +69,7 @@ export async function sendPublishReq(
     const res = await fetch(url, {
       method: 'POST',
       headers: { Zp_token: token },
+      signal: AbortSignal.timeout(10_000),
     }).then((r) => r.json())
 
     res.code !== 0 && logger.error(`投递失败`, res)
@@ -86,6 +87,7 @@ export async function sendPublishReq(
           await fetch(url, {
             method: 'POST',
             headers: { Zp_token: token },
+            signal: AbortSignal.timeout(10_000),
           })
 
           return sendPublishReq(data, undefined, retries, { cid: 1 })
@@ -144,6 +146,7 @@ export async function getBossData(
       body: body,
       method: 'POST',
       headers: { Zp_token: token },
+      signal: AbortSignal.timeout(10_000),
     }).then((r) => r.json())
 
     if (res.code !== 0) {

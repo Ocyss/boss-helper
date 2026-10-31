@@ -81,9 +81,15 @@ export default defineConfig({
           alert: {
             slots: {
               root: 'px-4 py-2',
+              description: 'text-wrap',
             },
             defaultVariants: {
               orientation: 'horizontal',
+            },
+          },
+          toast: {
+            slots: {
+              description: 'text-wrap',
             },
           },
           button: {

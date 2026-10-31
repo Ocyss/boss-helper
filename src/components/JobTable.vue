@@ -22,6 +22,16 @@ function onContextmenu(_event: Event, row: TableRow<JobData>) {
   contextJob.value = row.original
 }
 
+// Keep row IDs unique at the table boundary, including in-place list updates.
+const tableJobs = computed(() => {
+  const seen = new Set<string>()
+  return props.jobs.filter((job) => {
+    if (seen.has(job.key)) return false
+    seen.add(job.key)
+    return true
+  })
+})
+
 const expanded = ref<Record<string, boolean>>({})
 const descriptions = ref<Record<string, { loading: boolean; error: string | null }>>({})
 const layout = useStorageAsync(
@@ -49,14 +59,13 @@ const columnSizing = computed({
 const columns: TableColumn<JobData>[] = [
   { id: 'index', header: '#', enableHiding: false },
   { id: 'job', header: '岗位' },
-  { id: 'salary', header: '薪资' },
   { id: 'company', header: '公司' },
+  { id: 'salary', header: '薪资' },
   { id: 'hr', header: 'HR' },
+  { id: 'status', header: '状态' },
   { id: 'address', header: '地点' },
   { id: 'skills', header: '标签 / 技能' },
   { id: 'welfare', header: '福利' },
-
-  { id: 'status', header: '状态' },
   { id: 'actions', enableHiding: false },
 ]
 const defaultWidths: Record<string, number> = {
@@ -168,7 +177,7 @@ type Virtualizer = {
 let virtualizer: Virtualizer | undefined
 let pendingLocation = false
 const currentIndex = computed(() =>
-  props.jobs.findIndex((job) => job.key === helper.currentJob.value),
+  tableJobs.value.findIndex((job) => job.key === helper.currentJob.value),
 )
 const virtualize = {
   estimateSize: 140,
@@ -195,7 +204,7 @@ function stopFollowing() {
   if (props.following) emit('update:following', false)
 }
 watch(
-  [() => props.following, () => helper.currentJob.value, () => props.jobs.map((job) => job.key)],
+  [() => props.following, () => helper.currentJob.value, currentIndex],
   async () => {
     await nextTick()
     locateCurrent()
@@ -263,7 +272,7 @@ function status(key: string) {
         v-model:column-sizing="columnSizing"
         v-model:column-order="columnOrder"
         :column-sizing-options="{ columnResizeMode: 'onChange' }"
-        :data="jobs"
+        :data="tableJobs"
         :columns="columns"
         :get-row-id="(job: JobData) => job.key"
         :virtualize="virtualize"
@@ -490,11 +499,6 @@ function status(key: string) {
             :title="status(row.original.key).title"
             class="flex min-w-0 items-center gap-2"
           >
-            <UIcon
-              v-if="status(row.original.key).icon"
-              :name="status(row.original.key).icon!"
-              class="shrink-0"
-            />
             <span class="truncate">{{ status(row.original.key).text }}</span>
           </div>
         </template>

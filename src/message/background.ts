@@ -3,7 +3,10 @@ import { openDB } from 'idb'
 
 import type { Browser } from '#imports'
 import { browser } from '#imports'
+import { createTableBoss, feishuFetch, feishuUpsert } from '@/utils/feishuBackground'
 import type { ResponseType } from '@/utils/request'
+
+export type { FeishuConfig } from '@/utils/feishuBackground'
 
 export const userKey = 'local:conf-user'
 
@@ -23,6 +26,10 @@ async function initDB() {
 const fetchControllers = new Map<string, AbortController>()
 
 export class BackgroundCounter {
+  feishuFetch = feishuFetch
+  createTableBoss = createTableBoss
+  feishuUpsert = feishuUpsert
+
   async openOptionsPage() {
     await browser.runtime.openOptionsPage()
     return true
@@ -93,7 +100,8 @@ export class BackgroundCounter {
     try {
       const res = await fetch(args.url, {
         ...args.init,
-        signal: controller.signal,
+        // 兜底超时: 防止请求挂起导致调用方 Promise 永不 settle
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
       })
       const body = await res.arrayBuffer()
       return {

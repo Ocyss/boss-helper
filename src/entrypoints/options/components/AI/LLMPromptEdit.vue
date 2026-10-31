@@ -8,7 +8,7 @@ import { useResizeObserver, useSessionStorage } from '@vueuse/core'
 import { computed, h, nextTick, reactive, ref, watch } from 'vue'
 
 import JobCard from '@/components/JobCard.vue'
-import { formInfoData, defaultFormData, useConf } from '@/composables/conf'
+import { defaultFormData, useConf } from '@/composables/conf'
 import { parseFiltering, parseGreeting } from '@/composables/useApplying/utils'
 import type { GreetingResult } from '@/composables/useApplying/utils'
 import { useHelper } from '@/composables/useHelper'
@@ -18,20 +18,17 @@ import { counter } from '@/message'
 import type { Prompt } from '@/types/formData'
 import { logger } from '@/utils/logger'
 
-import AIEditorSurface from './AIEditorSurface.vue'
 import GreetingImages from './GreetingImages.vue'
 
 const PROMPT_TEST_JOBS_KEY = 'local:prompt-test-jobs'
 
 const props = defineProps<{
   data: 'aiGreeting' | 'aiFiltering' | 'aiReply'
-  embedded?: boolean
 }>()
 const toast = useToast()
 const helper = useHelper()
 const conf = useConf()
 const model = useModel()
-const show = defineModel<boolean>({ default: false })
 const currentModel = ref(conf.formData[props.data].model)
 const modelItems = computed(() => model.modelData.value.map((v) => v as SelectMenuItem))
 
@@ -373,7 +370,6 @@ async function savePrompt(options?: { silent?: boolean } | Event): Promise<boole
   }
   await conf.confSaving(options)
   savedSnapshot.value = JSON.stringify(draft)
-  if (!props.embedded) show.value = false
   return true
 }
 
@@ -397,14 +393,8 @@ const testModelRef = useTemplateRef('testModel')
 </script>
 
 <template>
-  <AIEditorSurface
-    v-model:open="show"
-    :embedded="embedded"
-    :title="formInfoData[data].label"
-    :ui="{ content: 'sm:max-w-[70%]', body: 'flex flex-col gap-4' }"
-    :dismissible="false"
-  >
-    <template #body>
+  <section class="flex min-w-0 flex-col gap-4">
+    <div class="flex min-w-0 flex-col gap-4">
       <div v-if="data === 'aiFiltering'">
         <UFormField label="过滤分数">
           <UInputNumber v-model="score" :min="-100" :max="100" size="sm" placeholder="请输入分数" />
@@ -455,7 +445,7 @@ const testModelRef = useTemplateRef('testModel')
         variant="soft"
       />
       <p class="text-sm text-muted">
-        编辑内容不会自动保存；点击「保存提示词」后生效。测试会向所选提供商发送岗位内容，可能产生费用。
+        编辑内容不会自动保存；点击页面底部「保存配置与模型」后生效。测试会向所选提供商发送岗位内容，可能产生费用。
       </p>
       <div ref="messageList" class="demo-dynamic space-y-4">
         <div v-for="(item, index) in message" :key="index" class="flex items-start gap-2">
@@ -480,21 +470,9 @@ const testModelRef = useTemplateRef('testModel')
           />
         </div>
       </div>
-    </template>
+    </div>
 
-    <template #footer>
-      <UButton
-        v-if="!embedded"
-        color="neutral"
-        variant="outline"
-        @click="
-          () => {
-            show = false
-          }
-        "
-      >
-        关闭
-      </UButton>
+    <div class="flex flex-wrap justify-end gap-2 border-t border-default pt-4">
       <UButton
         color="neutral"
         variant="soft"
@@ -506,9 +484,8 @@ const testModelRef = useTemplateRef('testModel')
       >
         测试
       </UButton>
-      <UButton color="primary" @click="savePrompt"> 保存提示词 </UButton>
-    </template>
-  </AIEditorSurface>
+    </div>
+  </section>
   <USlideover
     v-model:open="testDialog"
     title="Prompt 测试"

@@ -8,6 +8,28 @@ import { useJobActions } from '@/composables/useJobActions'
 
 const helper = useHelper()
 const actions = useJobActions()
+const running = computed(() => helper.workflow?.status.value === 'running')
+const startDisabled = computed(() => running.value || helper.jobActionBusy.value)
+const deliveryMode = computed(() => {
+  const mode = helper.workflow?.lastMode.value
+  return mode === 'filter' || mode === 'generate' || mode === 'delivery' ? 'delivery' : 'auto'
+})
+const deliveryLabel = computed(() =>
+  helper.workflow?.status.value === 'stop' &&
+  (helper.workflow?.lastMode.value === 'auto' || helper.workflow?.lastMode.value === 'delivery')
+    ? '继续投递'
+    : '开始投递',
+)
+const filterLabel = computed(() =>
+  helper.workflow?.status.value === 'stop' && helper.workflow?.lastMode.value === 'filter'
+    ? '继续仅筛选'
+    : '开始仅筛选',
+)
+const generateLabel = computed(() =>
+  helper.workflow?.status.value === 'stop' && helper.workflow?.lastMode.value === 'generate'
+    ? '继续仅生成'
+    : '开始仅生成',
+)
 
 const { todayData, statisticsData } = helper.statistics
 
@@ -123,19 +145,30 @@ onMounted(() => {
       <UFieldGroup>
         <UButton
           color="primary"
-          data-help="点击开始就会开始投递"
-          :loading="helper.workflow?.status.value === 'running'"
-          @click="actions.run('开始投递', () => helper.start())"
+          :data-help="
+            deliveryMode === 'delivery' ? '仅投递现有 ready 队列中的岗位' : '筛选、生成招呼语并投递'
+          "
+          :loading="running"
+          :disabled="startDisabled"
+          @click="actions.run(deliveryLabel, () => helper.start(deliveryMode))"
         >
-          {{ helper.workflow?.status.value === 'stop' ? '继续' : '开始' }}
+          {{ deliveryLabel }}
         </UButton>
         <UButton
           color="neutral"
-          :disabled="helper.workflow?.status.value === 'running'"
+          :disabled="startDisabled"
           data-help="仅筛选岗位，不自动投递"
-          @click="actions.run('开始仅筛选', () => helper.start('filter'))"
+          @click="actions.run(filterLabel, () => helper.start('filter'))"
         >
-          开始仅筛选
+          {{ filterLabel }}
+        </UButton>
+        <UButton
+          color="neutral"
+          :disabled="startDisabled"
+          data-help="仅生成招呼语草稿，不自动投递"
+          @click="actions.run(generateLabel, () => helper.start('generate'))"
+        >
+          {{ generateLabel }}
         </UButton>
         <UButton
           v-if="helper.workflow?.status.value === 'stop'"

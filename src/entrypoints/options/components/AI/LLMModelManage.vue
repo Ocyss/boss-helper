@@ -6,14 +6,11 @@ import { useModel, migrateModelConfig } from '@/composables/useModel'
 import { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 
-import AIEditorSurface from './AIEditorSurface.vue'
 import CreateLLM from './LLMModelEdit.vue'
 
-defineProps<{ embedded?: boolean }>()
 const modelStore = useModel()
 const createBoxShow = ref(false)
 const toast = useToast()
-const open = ref(false)
 
 function del(d: ModelConf) {
   modelStore.modelData.value = modelStore.modelData.value.filter((v) => d.key !== v.key)
@@ -53,10 +50,6 @@ function create(d: ModelConf) {
   }
   createBoxShow.value = false
 }
-function close() {
-  modelStore.initModel()
-  open.value = false
-}
 
 function exportllm() {
   exportJson(jsonClone(modelStore.modelData.value), 'Ai模型配置')
@@ -74,24 +67,17 @@ function importllm() {
 </script>
 
 <template>
-  <AIEditorSurface
-    :embedded="embedded"
-    v-model:open="open"
-    title="提供商与模型管理"
-    :ui="{ content: 'sm:max-w-[70%]' }"
-    ref="manageModelRef"
-    :dismissible="false"
-  >
-    <slot />
-    <template #body>
+  <section class="flex min-w-0 flex-col gap-4">
+    <div class="flex min-w-0 flex-col gap-4">
       <UAlert
         title="先连接提供商，再配置 AI 功能"
-        description="新建模型 → 填写 API 地址、API Key 和模型 ID → 测试连接 → 应用到列表 → 保存提供商配置。然后在招呼语或筛选中选择模型。支持 OpenAI Compatible、OpenAI Responses 与 Anthropic Messages 协议。"
+        description="新建模型 → 填写 API 地址、API Key 和模型 ID → 测试连接 → 应用到列表 → 点击页面底部「保存配置与模型」。然后在招呼语或筛选中选择模型。支持 OpenAI Compatible、OpenAI Responses 与 Anthropic Messages 协议。"
         color="info"
         variant="soft"
       />
       <p class="text-sm text-muted">
-        列表修改、复制、删除和导入不会自动保存。API Key 属于敏感信息，导出文件也包含密钥，请勿分享。
+        列表修改、复制、删除和导入不会自动保存，请点击页面底部「保存配置与模型」。API Key
+        属于敏感信息，导出文件也包含密钥，请勿分享。
       </p>
       <UTable
         :data="modelStore.modelData.value"
@@ -135,18 +121,12 @@ function importllm() {
         :model="createModelData"
         @create="create"
       />
-    </template>
+    </div>
 
-    <template #footer>
-      <div class="flex justify-end gap-2">
-        <UButton color="neutral" variant="outline" @click="close">
-          {{ embedded ? '放弃未保存的列表修改' : '取消' }}
-        </UButton>
-        <UButton color="success" @click="exportllm"> 导出 </UButton>
-        <UButton color="success" @click="importllm"> 导入 </UButton>
-        <UButton @click="newllm"> 新建模型 </UButton>
-        <UButton @click="modelStore.saveModel()"> 保存提供商配置 </UButton>
-      </div>
-    </template>
-  </AIEditorSurface>
+    <div class="flex flex-wrap justify-end gap-2 border-t border-default pt-4">
+      <UButton color="success" @click="exportllm"> 导出 </UButton>
+      <UButton color="success" @click="importllm"> 导入 </UButton>
+      <UButton @click="newllm"> 新建模型 </UButton>
+    </div>
+  </section>
 </template>

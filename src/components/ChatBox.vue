@@ -3,9 +3,11 @@ import { isPartStreaming, isToolStreaming } from '@nuxt/ui/utils/ai'
 import { getToolName, isReasoningUIPart, isTextUIPart, isToolUIPart } from 'ai'
 import type { UIMessage } from 'ai'
 
+import GreetingMessage from '@/components/GreetingMessage.vue'
 import { appearanceConf } from '@/composables/conf'
 import { parseFiltering } from '@/composables/useApplying/utils'
 import { useHelper } from '@/composables/useHelper'
+import { useJobActions } from '@/composables/useJobActions'
 import type { VueChatState, Message } from '@/composables/useModel'
 
 const open = defineModel('open', { default: false })
@@ -13,6 +15,7 @@ const following = ref(true)
 const chatMessages = useTemplateRef('chatMessages') // TODO: auto scroll
 
 const helper = useHelper()
+const actions = useJobActions()
 const selectJob = ref(
   helper.chatModel.jobs.value.length > 0 ? helper.chatModel.jobs.value[0] : null,
 )
@@ -31,6 +34,41 @@ const messages = computed(() => {
   return helper.chatModel.states.get(selectJob.value)
 })
 
+const draft = computed(() =>
+  selectJob.value ? helper.workflow?.drafts.get(selectJob.value) : undefined,
+)
+const lastGreetingsId = computed(
+  () =>
+    messages.value?.messagesRef.value
+      .filter((message) => message.role === 'assistant' && message.uiRole === 'greetings')
+      .at(-1)?.id,
+)
+const editingDraft = ref(false)
+const draftText = ref('')
+const draftBusy = computed(() => Boolean(helper.workflow?.busy.value || helper.jobActionBusy.value))
+
+watch(selectJob, () => {
+  editingDraft.value = false
+  draftText.value = ''
+})
+
+function editDraft() {
+  draftText.value = draft.value ?? ''
+  editingDraft.value = true
+}
+
+function saveDraft() {
+  if (!selectJob.value || draftBusy.value || !draftText.value.trim()) return
+  helper.workflow?.drafts.set(selectJob.value, draftText.value)
+  editingDraft.value = false
+}
+
+function sendDraft() {
+  const key = selectJob.value
+  if (!key || draftBusy.value || editingDraft.value || !draft.value?.trim()) return
+  void actions.run('发送并投递', () => helper.deliverJob(key))
+}
+
 watch(
   () => helper.currentJob.value,
   (v) => {
@@ -39,6 +77,14 @@ watch(
     }
   },
 )
+
+function onContactsWheel(event: WheelEvent) {
+  const contacts = event.currentTarget as HTMLDivElement
+  event.preventDefault()
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  contacts.scrollLeft +=
+    delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? contacts.clientWidth : 1)
+}
 
 function onClient(jobKey: string) {
   selectJob.value = jobKey
@@ -128,6 +174,20 @@ function scramble(from: string, to: string) {
 let matrixInterval: ReturnType<typeof setInterval> | undefined
 let textInterval: ReturnType<typeof setInterval> | undefined
 
+watch(
+  () => open.value,
+  (_) => {
+    nextTick(() => {
+      const h = helper.shadowRoot?.querySelector<HTMLDivElement>('div.boss-chat-box')
+      if (!h) return
+      h.style.width = appearanceConf.value.chatBoxWidth + 'px'
+    })
+  },
+  {
+    immediate: true,
+  },
+)
+
 onMounted(() => {
   nextStep()
   matrixInterval = setInterval(nextStep, 120)
@@ -153,16 +213,18 @@ onUnmounted(() => {
     :modal="false"
     :ui="{
       body: 'flex flex-col overscroll-contain p-2',
-      content: 'top-14 z-190',
-    }"
-    :style="{
-      width: `${appearanceConf.chatBoxWidth}px`,
+      content: 'top-14 z-190 boss-chat-box max-w-[unset] sm:max-w-[unset]',
+      header: 'items-start',
     }"
   >
     <template #header>
-      <div class="flex flex-row overflow-x-auto gap-1 flex-1">
+      <div
+        class="flex min-w-0 flex-row overflow-x-auto gap-1 flex-1 pb-1.5"
+        @wheel.stop="onContactsWheel"
+      >
         <UButton
           v-for="job in jobs"
+          class="shrink-0 text-nowrap"
           :avatar="{
             src: job.job?.jobData.brand.logo ?? job.job?.jobData.boss.avatar,
             loading: 'lazy',
@@ -212,11 +274,11 @@ onUnmounted(() => {
         :key="selectJob"
         ref="chatMessages"
         :messages="messages.messagesRef.value"
-        :user="{ variant: 'subtle', ui: { container: 'max-w-[85%] gap-1.5' } }"
+        :user="{ variant: 'subtle', ui: { container: 'max-w-[90%] gap-1.5' } }"
         :assistant="{
           variant: 'subtle',
           avatar: { icon: 'i-lucide-bot' },
-          ui: { container: 'gap-1.5' },
+          ui: { container: 'gap-1.5 max-w-[90%]' },
         }"
         should-auto-scroll
         should-scroll-to-bottom
@@ -246,10 +308,54 @@ onUnmounted(() => {
                 :streaming="isToolStreaming(part)"
               />
 
+              <GreetingMessage
+                v-else-if="
+                  isTextUIPart(part) &&
+                  message.role === 'assistant' &&
+                  message.uiRole === 'greetings'
+                "
+                :text="part.text"
+                :streaming="isPartStreaming(part)"
+                :greeting="message.id === lastGreetingsId ? draft : undefined"
+              />
               <p v-else-if="isTextUIPart(part)" class="whitespace-pre-wrap">
                 {{ message.uiRole === 'filtering' ? parseFiltering(part.text).message : part.text }}
               </p>
             </template>
+            <div
+              v-if="
+                message.role === 'assistant' &&
+                message.uiRole === 'greetings' &&
+                message.id === lastGreetingsId &&
+                draft !== undefined
+              "
+              class="mt-3 flex flex-col gap-2 border-t border-default pt-3"
+            >
+              <p class="text-sm font-medium">待确认草稿</p>
+              <textarea
+                v-if="editingDraft"
+                v-model="draftText"
+                aria-label="编辑招呼语草稿"
+                class="w-full rounded border border-default p-2"
+                rows="5"
+                :disabled="draftBusy"
+              />
+
+              <div class="flex gap-2" :title="draftBusy ? '暂停后才可操作' : ''">
+                <template v-if="editingDraft">
+                  <UButton :disabled="draftBusy || !draftText.trim()" @click="saveDraft">
+                    保存
+                  </UButton>
+                  <UButton color="neutral" @click="editingDraft = false">取消</UButton>
+                </template>
+                <UButton v-else color="neutral" :disabled="draftBusy" @click="editDraft">
+                  编辑
+                </UButton>
+                <UButton :disabled="draftBusy || editingDraft || !draft?.trim()" @click="sendDraft">
+                  发送并投递
+                </UButton>
+              </div>
+            </div>
           </template>
         </template>
         <template #indicator>
@@ -274,20 +380,5 @@ onUnmounted(() => {
         </template>
       </UChatMessages>
     </template>
-    <template #footer>
-      <UChatPrompt variant="soft" v-model="helper.pendingMessages.value">
-        <UChatPromptSubmit v-if="messages" :status="messages.statusRef.value" />
-      </UChatPrompt>
-    </template>
   </USlideover>
 </template>
-
-<style scoped>
-/* article.group\/message[data-role="assistant"] > indicator{
-.container{
-  [data-slot="container"]{
-
-  }
-}
-} */
-</style>

@@ -36,9 +36,12 @@ async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-col gap-4" data-help="AI 配置">
+  <div
+    class="flex min-w-0 flex-col gap-4"
+    data-help="AI 配置, 使用AI招呼语之前推荐禁用boss自带招呼语"
+  >
     <p class="text-sm text-muted">
-      先在提供商管理中配置并保存模型，再分别设置招呼语和岗位筛选。修改后请点击页面底部保存；提示词也可单独保存。
+      先在提供商管理中配置模型，再分别设置招呼语和岗位筛选。所有修改统一由页面底部「保存配置与模型」保存。
     </p>
     <UTabs v-model="active" :items="items" :unmount-on-hide="false" class="w-full">
       <template #greeting>
@@ -49,7 +52,7 @@ async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
             label="启用 AI 招呼语"
             @update:model-value="toggle('aiGreeting', $event)"
           />
-          <LLMPromptEdit ref="greetingEditor" data="aiGreeting" embedded />
+          <LLMPromptEdit ref="greetingEditor" data="aiGreeting" />
         </div>
       </template>
       <template #filtering>
@@ -60,7 +63,7 @@ async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
             label="启用 AI 岗位筛选"
             @update:model-value="toggle('aiFiltering', $event)"
           />
-          <LLMPromptEdit ref="filteringEditor" data="aiFiltering" embedded />
+          <LLMPromptEdit ref="filteringEditor" data="aiFiltering" />
         </div>
       </template>
     </UTabs>

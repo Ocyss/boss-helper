@@ -1,10 +1,11 @@
 import type { Toast } from '@nuxt/ui/runtime/composables/useToast.js'
 import { extendRef } from '@vueuse/core'
 import type { Reactive } from 'vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
 
 import { useConf } from '@/composables/conf'
+import { useAccounts } from '@/composables/useAccounts'
 import type { DeliveryWorkflow } from '@/composables/useApplying'
 import type { BossHelperError } from '@/composables/useApplying/deliverError'
 import type { TaskResult, WorkflowData } from '@/composables/useApplying/type'
@@ -12,18 +13,24 @@ import { useModel } from '@/composables/useModel'
 import { ChatModel } from '@/composables/useModel'
 import type { FormDataInput } from '@/types/formData'
 
+import { HelperCache } from './cache'
+import { JobResultCache } from './jobCache'
 import type { NetConf } from './netConf'
 import { initNetConf } from './netConf'
 import type { Log, JobData, LogData, ConfigAccordionItem, AlertItem } from './type'
 
 export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
+  shadowRoot: ShadowRoot | null = null
   netConf: Ref<NetConf | null>
   netConfTimer: NodeJS.Timeout | null = null
   conf: ReturnType<typeof useConf>
+  accounts: ReturnType<typeof useAccounts>
   models: ReturnType<typeof useModel>
   statistics: ReturnType<typeof useStatistics>
 
   chatModel: ChatModel
+  cache: HelperCache
+  jobCache: JobResultCache
   workflow: DeliveryWorkflow<C, T, S> | null = null
   workflowRunning = computed(() => this.workflow?.status.value === 'running')
   jobResultMaps: Reactive<Map<string, TaskResult>>
@@ -39,10 +46,10 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
     clear: () => void
     value: Log[]
   }
-  pendingMessages: Ref<string | undefined>
+
   constructor() {
-    this.pendingMessages = ref()
     this.conf = useConf()
+    this.accounts = useAccounts()
     this.models = useModel()
     this.statistics = useStatistics()
     this.currentJob = ref(null)
@@ -75,16 +82,48 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
     })
 
     this.chatModel = new ChatModel(this)
+    this.cache = new HelperCache(() => this.accounts.activeAccount.value)
+    this.jobCache = new JobResultCache(() => this.accounts.activeAccount.value)
 
     this.jobResultMaps = reactive(new Map())
     this.netConf = ref(null)
+    watch(
+      this.accounts.activeAccount,
+      () => {
+        this.jobResultMaps.clear()
+        this.workflow?.stateMaps.value.clear()
+        this.workflow?.drafts.clear()
+        this.workflow?.manuallyFiltered.clear()
+        for (const data of this.jobMaps?.values() ?? []) data.state = {}
+        for (const job of this.jobList?.value ?? []) this.restoreJobCache(job.key)
+      },
+      { flush: 'sync' },
+    )
+  }
+
+  restoreJobCache(key: string): void {
+    if (!this.conf.formData.useCache.value || this.jobResultMaps.has(key)) return
+    const account = this.accounts.activeAccount.value
+    void this.jobCache
+      .get(key, this.conf.formData.useCache.expire)
+      .then((cached) => {
+        if (
+          cached &&
+          this.accounts.activeAccount.value === account &&
+          this.conf.formData.useCache.value &&
+          !this.jobResultMaps.has(key)
+        ) {
+          this.jobResultMaps.set(key, cached)
+        }
+      })
+      .catch((error) => logger.error('恢复岗位缓存失败', error))
   }
 
   abstract loadMoreJob(delay: Promise<any>): Promise<boolean>
   abstract onMount(): Promise<void>
   abstract getConfigItems(): ComputedRef<[AlertItem[], (ConfigAccordionItem | false)[]]>
 
-  abstract start(mode?: 'auto' | 'filter'): Promise<void>
+  abstract start(mode?: 'auto' | 'filter' | 'generate' | 'delivery'): Promise<void>
   abstract hasJobDetails(key: string): boolean
   private detailRequests = new Map<string, Promise<void>>()
   jobActionBusy = ref(false)
@@ -183,5 +222,9 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
 
   async onJobCardClick(_key: string) {
     throw new Error('Method not implemented.')
+  }
+
+  setShadowRoot(shadow: ShadowRoot) {
+    this.shadowRoot = shadow
   }
 }

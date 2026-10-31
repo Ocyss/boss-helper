@@ -2,13 +2,15 @@
 import type { DropdownMenuItem } from '@nuxt/ui'
 
 import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
-import { formInfoData, useConf } from '@/composables/conf'
+import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper/index.js'
 import type { ConfigItem } from '@/composables/useHelper/type'
 
 import Address from './Address.vue'
 import CustomGreeting from './CustomGreeting.vue'
+import FormItem from './Form/FormItem.vue'
 import FormRange from './Form/FormRange.vue'
+import FormSelect from './Form/FormSelect.vue'
 import SalaryRange from './SalaryRange.vue'
 
 const props = defineProps<{
@@ -78,30 +80,27 @@ const exp = computed(() => {
 
   <FormItem
     v-else-if="item.type === 'select'"
-    v-bind="formInfoData[item.key]"
+    :label="item.label"
+    :help="item.help"
     v-model:enable="conf.formData[item.key].enable"
     v-model:include="conf.formData[item.key].include"
     :disabled="helper.workflowRunning.value"
   >
-    <formSelect
+    <FormSelect
       v-model:value="conf.formData[item.key].value"
       v-model:options="conf.formData[item.key].options"
     />
   </FormItem>
-  <span
-    v-else-if="item.type === 'checkbox'"
-    v-bind="formInfoData[item.key]"
-    :title="formInfoData[item.key]['data-help']"
-  >
-    <UCheckbox v-model="conf.formData[item.key].value" :label="formInfoData[item.key]['label']" />
+  <span v-else-if="item.type === 'checkbox'" :data-help="item.help" :title="item.help">
+    <UCheckbox v-model="conf.formData[item.key].value" :label="item.label" />
   </span>
   <span
     v-else-if="item.type === 'checkbox-expire'"
-    v-bind="formInfoData[item.key]"
-    :title="formInfoData[item.key]['data-help']"
+    :data-help="item.help"
+    :title="item.help"
     class="flex flex-row gap-0.5 justify-center items-center"
   >
-    <UCheckbox v-model="conf.formData[item.key].value" :label="formInfoData[item.key]['label']" />
+    <UCheckbox v-model="conf.formData[item.key].value" :label="item.label" />
     <UDropdownMenu v-model="conf.formData[item.key].expire" :items="exp" value-key="value">
       <UButton
         icon="i-lucide-clock-fading"

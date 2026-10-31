@@ -4,16 +4,17 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ChatBox from '@/components/ChatBox.vue'
 import JobCards from '@/components/JobCards.vue'
-import Version from '@/components/Menu/Version.vue'
 import About from '@/components/Tabs/About.vue'
 import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
 import Filter from '@/components/Tabs/Filter.vue'
 import Logs from '@/components/Tabs/Logs.vue'
 import Statistics from '@/components/Tabs/Statistics.vue'
+import Version from '@/components/Version.vue'
 import { useConf, appearanceConf } from '@/composables/conf'
 import { useAccounts } from '@/composables/useAccounts'
 import { useModel } from '@/composables/useModel'
 import { counter } from '@/message'
+import { logger } from '@/utils/logger'
 
 import { useHelper, VITE_VERSION } from './composables/useHelper'
 
@@ -25,6 +26,15 @@ const conf = useConf()
 const accounts = useAccounts()
 const switchingAccount = ref(false)
 const toast = useToast()
+const protocolShow = ref(false)
+const protocol = 'boss-protocol'
+// 修改此日期后，用户需要重新阅读并同意协议。
+const protocolVal = '2026/10/21'
+
+async function onProtocol() {
+  await counter.storageSet(protocol, protocolVal)
+  protocolShow.value = false
+}
 const presetOptions = ref<{ label: string; value: string }[]>([])
 const presetName = computed(() => {
   if (conf.formDataPreset.value === accounts.currentAccount.value?.preset) return ''
@@ -95,10 +105,19 @@ async function refreshConfiguration() {
 
 onUnmounted(() => window.removeEventListener('focus', refreshConfiguration))
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('focus', refreshConfiguration)
   void refreshConfiguration()
   chatOpen.value = appearanceConf.value.defaultShowChatBox
+
+  logger.info('BossHelper挂载成功')
+  toast.add({
+    description: 'BossHelper挂载成功!',
+    duration: 2000,
+  })
+
+  const protocolDate = await counter.storageGet<string>(protocol)
+  protocolShow.value = protocolDate !== protocolVal
 })
 
 function tagOpen(url: string) {
@@ -222,8 +241,8 @@ function openStore() {
                   size="xs"
                   :disabled="helper.workflowRunning.value"
                   :loading="switchingAccount"
-                  >切换预设</UButton
-                >
+                  >切换预设
+                </UButton>
               </UDropdownMenu>
               <UButton
                 v-if="helper.netConf.value?.feedback"
@@ -240,6 +259,54 @@ function openStore() {
         <JobCards />
       </div>
       <ChatBox v-model:open="chatOpen" />
+      <UModal
+        v-model:open="protocolShow"
+        title="Boss-Helper协议"
+        :close="false"
+        :dismissible="false"
+      >
+        <template #body>
+          1. 本插件完全免费且100%开源, 如果你是付费购买则是被骗了, 请投诉并举报商家
+          <br />
+          2. 暂时不维护文档(维护了也不会有多少人看), 所以配置会添加帮助信息, 足够理解用途,
+          不理解可反馈进行文案优化
+          <br />
+          3. 非常欢迎大家来提优化意见, pr提交(需参考CONTRIBUTING), tg交流群交流
+          <ULink to="https://t.me/ocyss_boss_helper" target="_blank">
+            https://t.me/ocyss_boss_helper
+          </ULink>
+          <br />
+          4. 遇到bug反馈之前一定需要分清是不是插件问题, 插件是否更新到最新版.
+          <br />
+          原生筛选并不严格, 其次无法下一页请手动滚到底部看看能否加载, 80%反馈均跟插件无关
+          <br />
+          如果还是有大量无用算命反馈, 插件将不再公开维护, 仅小范围自用更新
+          <br />
+          5. 投递在达到上限，或者页面无法滚动时会结束投递.
+          <br />
+          6. 不再维护暗黑模式, 可改用
+          <ULink to="https://darkreader.org" target="_blank"> darkreader 扩展 </ULink>
+          实现(会帮忙兼容)
+          <br />
+          7. 不再维护多账号模式的ck保存跟切换, 自行退出或使用其他插件/浏览器容器来实现
+          <br />
+          <br />
+          如果不同意该协议, 请手动卸载本插件
+          <br />
+          <br />
+          本项目仅供学习交流，禁止用于商业用途
+          <br />
+          使用该脚本有一定风险(如黑号,封号,权重降低等)，本项目不承担任何责任
+          <br />
+          Github开源地址:
+          <ULink to="https://github.com/ocyss/boss-helper" target="_blank">
+            https://github.com/ocyss/boss-helper
+          </ULink>
+        </template>
+        <template #footer>
+          <UButton color="error" @click="onProtocol"> 了解并同意! </UButton>
+        </template>
+      </UModal>
     </UApp>
   </div>
 </template>

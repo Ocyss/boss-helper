@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { formInfoData, useConf } from '@/composables/conf'
+import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
 import { counter } from '@/message'
 import { CustomGreetingItem } from '@/types/formData'
@@ -112,19 +112,21 @@ async function advancedGreetinSave(close: () => void) {
   <div data-help="自定义招呼语配置" class="flex flex-col gap-2">
     <div class="flex flex-row gap-3">
       <UCheckbox
-        v-bind="formInfoData.customGreeting"
+        label="自定义招呼语"
+        data-help="因为boss不支持将自定义的招呼语设置为默认招呼语。开启表示发送boss默认的招呼语后还会发送自定义招呼语"
         v-model="conf.formData.customGreeting.enable"
       />
       <UCheckbox
         v-if="conf.configLevel.expert"
-        v-bind="formInfoData.greetingVariable"
+        label="招呼语变量"
+        data-help="使用mitem模板引擎来对招呼语进行渲染;"
         v-model="conf.formData.greetingVariable.value"
       />
     </div>
     <UTextarea
       v-if="Array.isArray(conf.formData.customGreeting.value)"
       :disabled="true"
-      placeholder="请使用高级进行配置"
+      placeholder="请使用高级招呼语配置"
       :rows="3"
       autoresize
       :maxrows="7"
@@ -149,7 +151,13 @@ async function advancedGreetinSave(close: () => void) {
       :close="false"
       scrollable
     >
-      <UButton label="高级招呼语配置(支持图片)" color="neutral" variant="subtle" />
+      <UButton
+        label="高级招呼语配置(支持图片)"
+        color="neutral"
+        variant="subtle"
+        :disabled="conf.formData.aiGreeting.enable"
+        :title="conf.formData.aiGreeting.enable && 'AI招呼语已启用, 自定义招呼语不可用'"
+      />
 
       <template #body>
         <div class="flex flex-row gap-3 mb-3">

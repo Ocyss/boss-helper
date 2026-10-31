@@ -15,14 +15,13 @@
             <ULink to="https://github.com/Ocyss" target="_blank"> Ocyss_04 </ULink>
           </div>
           <div data-help="感谢每一个人的付出">
-            <div>
-              鸣谢:&#12288;
-              <ULink to="https://github.com/yangfeng20" target="_blank"> yangfeng20 </ULink>
-            </div>
-            <div>
-              感谢贡献:&#12288;
-              <ULink to="https://github.com/engvuchen" target="_blank"> engvuchen </ULink>
-            </div>
+            感谢贡献(无顺序之分):&#12288;
+            <ULink to="https://github.com/yangfeng20" target="_blank"> yangfeng20 </ULink>
+            <ULink to="https://github.com/engvuchen" target="_blank"> engvuchen </ULink>
+            <ULink to="https://github.com/PluviaCon" target="_blank"> PluviaCon </ULink>
+            <ULink to="https://github.com/a2urey" target="_blank"> a2urey </ULink>
+            <ULink to="https://github.com/Lqqqqqq123123" target="_blank"> Lqqqqqq123123 </ULink>
+            <ULink to="https://github.com/FaintFlower" target="_blank"> FaintFlower </ULink>
           </div>
         </div>
       </div>
@@ -34,13 +33,15 @@
           https://github.com/ocyss/boss-helper
         </ULink>
         <br />
-        greasyfork地址:
+        greasyfork地址(暂停维护不推荐使用):
         <ULink to="https://greasyfork.org/zh-CN/scripts/491340" target="_blank">
           https://greasyfork.org/zh-CN/scripts/491340
         </ULink>
         <br />
         <br />
         <div class="flex flex-wrap gap-2">
+          <ULink to="https://t.me/ocyss_boss_helper" target="_blank"> TG交流群 </ULink>
+
           <ULink
             to="https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g"
             target="_blank"

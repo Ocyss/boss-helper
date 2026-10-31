@@ -62,6 +62,7 @@
     "oxlint-tsgolint": "^7.0.2004",
     "proto2api": "^0.0.8",
     "protobufjs": "^8.8.1",
+    "puppeteer": "^25.16.0",
     "sass": "^1.106.0",
     "ts-proto": "^2.18.0",
     "typescript": "^7.0.2",

@@ -10,7 +10,7 @@ const title = useTitle(undefined, { observe: true })
 const helper = useHelper()
 const { todayData } = helper.statistics
 const { formData } = useConf()
-
+const ctx = useHelper()
 watch(
   () => appearanceConf.value.changeIcon,
   (v) => {
@@ -20,6 +20,9 @@ watch(
     const icon = useFavicon()
     icon.value = 'https://onlinecalculator.cc/public/favicon.svg'
   },
+  {
+    immediate: true,
+  },
 )
 
 watch(
@@ -28,6 +31,21 @@ watch(
     const h = document.getElementById('header')
     if (!h) return
     h.style.display = val ? 'none' : ''
+  },
+  {
+    immediate: true,
+  },
+)
+
+watch(
+  () => appearanceConf.value.chatBoxWidth,
+  (val) => {
+    const h = ctx.shadowRoot?.querySelector<HTMLDivElement>('div.boss-chat-box')
+    if (!h) return
+    h.style.width = val + 'px'
+  },
+  {
+    immediate: true,
   },
 )
 
@@ -43,6 +61,9 @@ watch(
         title.value = `${todayData.value.success}/${formData.deliveryLimit.value} - 在线计算器`
       })
     }
+  },
+  {
+    immediate: true,
   },
 )
 
@@ -79,14 +100,20 @@ watch(
       }
     }
   },
+  {
+    immediate: true,
+  },
 )
 
 watch(
   () => appearanceConf.value.listSink,
   (val) => {
-    const h = document.getElementById('boss-helper-job-warp')
+    const h = ctx.shadowRoot?.getElementById('app-root')
     if (!h) return
     h.style.marginBottom = val ? '300px' : 'unset'
+  },
+  {
+    immediate: true,
   },
 )
 </script>

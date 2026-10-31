@@ -2,9 +2,6 @@ import ui from '@nuxt/ui/vue-plugin'
 import { createApp } from 'vue'
 
 import { initExtensionCounter } from '@/message'
-
-import '@/assets/main.css'
-
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 function applySystemTheme() {
   document.documentElement.classList.toggle('dark', systemTheme.matches)

@@ -72,7 +72,7 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   tasks.amap({ deps: ['岗位详情获取'] }), // 高德地图
   tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
 
-  tasks.aiGreetingGenerate({ phase: 'delivery', deps: ['岗位详情获取'] }), // 投递前生成并校验AI招呼语
+  tasks.aiGreetingGenerate({ phase: 'generate', deps: ['岗位详情获取'] }), // 投递前生成并校验AI招呼语
 
   defineTaskHandler(
     '岗位投递',
@@ -81,7 +81,9 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
         if (ctx.helper.conf.formData.aiGreeting.enable) {
           const result = state.aiGreeting
           if (!result) throw new Error('AI招呼语尚未生成')
-          if (result.error?.trim()) throw new Error(`AI招呼语生成失败: ${result.error}`)
+          if (result.error?.trim()) {
+            return { ...taskResult.skip(result.error), msg: 'AI招呼语过滤' }
+          }
           if (!result.greeting.trim()) throw new Error('AI招呼语为空')
         }
         await sendPublishReq({

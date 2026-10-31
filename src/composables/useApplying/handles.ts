@@ -4,14 +4,7 @@ import type { HelperContext } from '~/composables/useHelper'
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
 import type { JobStatus, TaskContext, TaskResult } from './type'
 import { defineTaskHandler } from './type'
-import {
-  loadSet,
-  parseFiltering,
-  parseGreeting,
-  rangeMatch,
-  rangeMatchFormat,
-  saveSet,
-} from './utils'
+import { parseFiltering, parseGreeting, rangeMatch, rangeMatchFormat } from './utils'
 
 export class DependencyMissingError extends Error {
   constructor(public taskId: string) {
@@ -82,32 +75,22 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameCompanyFilter.value) {
         return
       }
-      const someSet = await loadSet(sameCompanyKey, ctx.helper.uid)
+      // 预加载缓存，避免投递成功后 onDelivered 时再进行 IO
+      await ctx.helper.cache.has(sameCompanyKey, '')
       return {
         fn: async (_, { jobData: data }) => {
-          if (someSet.has(data.key)) {
+          const id = data.companyId ?? data.brand.name
+          if (id && (await ctx.helper.cache.has(sameCompanyKey, id))) {
             ctx.helper.statistics.todayData.value.repeat++
             return taskResult.skip('相同公司已投递')
           }
         },
-        after: [
-          async (ctx, { jobData: data }) => {
-            someSet.set(data.key, Date.now())
-            if (ctx.index % 3 === 0) {
-              await saveSet(
-                sameCompanyKey,
-                ctx.helper.uid,
-                someSet,
-                ctx.helper.conf.formData.sameCompanyFilter.expire,
-              )
-            }
-          },
-        ],
-        onEnd: async (ctx) => {
-          await saveSet(
+        onDelivered: async (ctx, { jobData: data }) => {
+          const id = data.companyId ?? data.brand.name
+          if (!id) return
+          await ctx.helper.cache.add(sameCompanyKey, id)
+          await ctx.helper.cache.save(
             sameCompanyKey,
-            ctx.helper.uid,
-            someSet,
             ctx.helper.conf.formData.sameCompanyFilter.expire,
           )
         },
@@ -122,34 +105,21 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (!ctx.helper.conf.formData.sameHrFilter.value) {
         return
       }
-      const someSet = await loadSet(sameHrKey, ctx.helper.uid)
+      // 预加载缓存，避免投递成功后 onDelivered 时再进行 IO
+      await ctx.helper.cache.has(sameHrKey, '')
       return {
         fn: async (_, { jobData: data }) => {
-          if (data.key != null && someSet.has(data.key)) {
+          const id = data.hrId ?? data.boss.name
+          if (id && (await ctx.helper.cache.has(sameHrKey, id))) {
             ctx.helper.statistics.todayData.value.repeat++
             return taskResult.skip('相同hr已投递')
           }
         },
-        after: [
-          async (ctx, { jobData: data }) => {
-            someSet.set(data.key, Date.now())
-            if (ctx.index % 3 === 0) {
-              await saveSet(
-                sameHrKey,
-                ctx.helper.uid,
-                someSet,
-                ctx.helper.conf.formData.sameHrFilter.expire,
-              )
-            }
-          },
-        ],
-        onEnd: async (ctx) => {
-          await saveSet(
-            sameHrKey,
-            ctx.helper.uid,
-            someSet,
-            ctx.helper.conf.formData.sameHrFilter.expire,
-          )
+        onDelivered: async (ctx, { jobData: data }) => {
+          const id = data.hrId ?? data.boss.name
+          if (!id) return
+          await ctx.helper.cache.add(sameHrKey, id)
+          await ctx.helper.cache.save(sameHrKey, ctx.helper.conf.formData.sameHrFilter.expire)
         },
       }
     },
@@ -453,6 +423,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
           content,
           ctx.helper.conf.formData.aiGreeting.json === true,
         )
+        if (data.state.aiGreeting.error?.trim()) {
+          return {
+            ...taskResult.skip(data.state.aiGreeting.error),
+            msg: 'AI招呼语过滤',
+          }
+        }
       }
     },
     { label: 'AI招呼语生成', state: 'ai', stateMsg: '生成招呼语中' },
@@ -465,7 +441,9 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return async (ctx, data) => {
         const result = data.state.aiGreeting
         if (!result) throw new Error('AI招呼语尚未生成')
-        if (result.error?.trim()) throw new Error(`AI招呼语生成失败: ${result.error}`)
+        if (result.error?.trim()) {
+          return { ...taskResult.skip(result.error), msg: 'AI招呼语过滤' }
+        }
         if (!result.greeting.trim()) throw new Error('AI招呼语为空')
         const config = ctx.helper.conf.formData.aiGreeting
         if (config.json) {
