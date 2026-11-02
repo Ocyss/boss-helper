@@ -252,8 +252,8 @@ function status(key: string) {
     visible: !!result && value !== 'pending',
     color: stateColors[value],
     icon: stateIcons[value],
-    title: result?.reason || result?.msg,
-    text: result?.msg || result?.reason || (value === 'ready' ? '待投递' : '无内容'),
+    title: `${result?.isCache ? '缓存-' : ''}${result?.reason || result?.msg || ''}`,
+    text: `${result?.isCache ? '缓存-' : ''}${result?.msg || result?.reason || (value === 'ready' ? '待投递' : '无内容')}`,
   }
 }
 </script>

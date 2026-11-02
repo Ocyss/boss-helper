@@ -293,6 +293,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         const cached = await helper.jobCache.get(key, helper.conf.formData.useCache.expire)
         if (isBlocked(key)) return
         if (cached) {
+          logger.info('命中岗位结果缓存，复用结果', { job_key: key, mode })
           helper.jobResultMaps.set(key, cached)
           queueFeishu(data)
           return

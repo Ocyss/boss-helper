@@ -80,15 +80,15 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return {
         fn: async (_, { jobData: data }) => {
           const id = data.companyId ?? data.brand.name
-          if (id && (await ctx.helper.cache.has(sameCompanyKey, id))) {
+          if (id && (await ctx.helper.cache.has(sameCompanyKey, `${ctx.helper.key}:${id}`))) {
             ctx.helper.statistics.todayData.value.repeat++
-            return taskResult.skip('相同公司已投递')
+            return { ...taskResult.skip('相同公司已投递'), isCache: true }
           }
         },
         onDelivered: async (ctx, { jobData: data }) => {
           const id = data.companyId ?? data.brand.name
           if (!id) return
-          await ctx.helper.cache.add(sameCompanyKey, id)
+          await ctx.helper.cache.add(sameCompanyKey, `${ctx.helper.key}:${id}`)
           await ctx.helper.cache.save(
             sameCompanyKey,
             ctx.helper.conf.formData.sameCompanyFilter.expire,
@@ -110,15 +110,15 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return {
         fn: async (_, { jobData: data }) => {
           const id = data.hrId ?? data.boss.name
-          if (id && (await ctx.helper.cache.has(sameHrKey, id))) {
+          if (id && (await ctx.helper.cache.has(sameHrKey, `${ctx.helper.key}:${id}`))) {
             ctx.helper.statistics.todayData.value.repeat++
-            return taskResult.skip('相同hr已投递')
+            return { ...taskResult.skip('相同hr已投递'), isCache: true }
           }
         },
         onDelivered: async (ctx, { jobData: data }) => {
           const id = data.hrId ?? data.boss.name
           if (!id) return
-          await ctx.helper.cache.add(sameHrKey, id)
+          await ctx.helper.cache.add(sameHrKey, `${ctx.helper.key}:${id}`)
           await ctx.helper.cache.save(sameHrKey, ctx.helper.conf.formData.sameHrFilter.expire)
         },
       }

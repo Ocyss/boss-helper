@@ -113,6 +113,7 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
           this.conf.formData.useCache.value &&
           !this.jobResultMaps.has(key)
         ) {
+          logger.info('从缓存恢复岗位结果', { job_key: key })
           this.jobResultMaps.set(key, cached)
         }
       })

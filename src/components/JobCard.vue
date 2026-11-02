@@ -161,6 +161,7 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
         v-if="jobResult"
         :title="jobResult?.reason || jobResult?.msg"
       >
+        <UBadge v-if="jobResult.isCache" color="info" variant="soft" size="sm">缓存</UBadge>
         {{
           jobResult?.msg ||
           jobResult?.reason ||
