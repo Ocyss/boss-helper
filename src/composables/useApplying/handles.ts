@@ -6,6 +6,10 @@ import type { JobStatus, TaskContext, TaskResult } from './type'
 import { defineTaskHandler } from './type'
 import { parseFiltering, parseGreeting, rangeMatch, rangeMatchFormat } from './utils'
 
+function normalizeFilterText(text: string) {
+  return text.toLowerCase().replace(/\s/g, '')
+}
+
 export class DependencyMissingError extends Error {
   constructor(public taskId: string) {
     super(`Task dependency missing: ${taskId}`)
@@ -131,10 +135,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return
     }
     return async (_ctx, { jobData: data }) => {
-      const text = data.jobName.toLowerCase()
+      const text = normalizeFilterText(data.jobName)
       if (!text) return taskResult.skip('岗位名为空')
       for (const x of ctx.helper.conf.formData.jobTitle.value) {
-        if (text.includes(x.toLowerCase())) {
+        const keyword = normalizeFilterText(x)
+        if (!keyword) continue
+        if (text.includes(keyword)) {
           if (ctx.helper.conf.formData.jobTitle.include) {
             return
           }
@@ -161,14 +167,16 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
   company = defineTaskHandler<C, T, S>('公司名', (ctx) => {
     if (!ctx.helper.conf.formData.company.enable) return
     return async (_ctx, { jobData: data }) => {
-      const text = data.brand.name
+      const text = normalizeFilterText(data.brand.name)
       if (!text) return taskResult.skip('公司名为空')
 
       for (const x of ctx.helper.conf.formData.company.value) {
         if (!x) {
           continue
         }
-        if (text.includes(x)) {
+        const keyword = normalizeFilterText(x)
+        if (!keyword) continue
+        if (text.includes(keyword)) {
           if (ctx.helper.conf.formData.company.include) {
             return
           }
@@ -226,12 +234,14 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return
     }
     return async (ctx, { jobData }) => {
-      const content = jobData.jobDescription.toLowerCase()
+      const content = normalizeFilterText(jobData.jobDescription)
       for (const x of ctx.helper.conf.formData.jobContent.value) {
         if (!x) {
           continue
         }
-        const re = new RegExp(`(?<!(不|无).{0,5})${x.toLowerCase()}(?!系统|软件|工具|服务)`)
+        const keyword = normalizeFilterText(x)
+        if (!keyword) continue
+        const re = new RegExp(`(?<!(不|无).{0,5})${keyword}(?!系统|软件|工具|服务)`)
         if (content != null && re.test(content)) {
           if (ctx.helper.conf.formData.jobContent.include) {
             return
@@ -251,11 +261,14 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     }
     return async (_, { jobData }) => {
       const content = jobData.boss.title
+      const normalizedContent = content == null ? content : normalizeFilterText(content)
       for (const x of ctx.helper.conf.formData.hrPosition.value) {
         if (!x) {
           continue
         }
-        if (content != null && content.trim() === x) {
+        const keyword = normalizeFilterText(x)
+        if (!keyword) continue
+        if (normalizedContent != null && normalizedContent === keyword) {
           if (ctx.helper.conf.formData.hrPosition.include) {
             return
           }
@@ -276,12 +289,14 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       if (ctx.helper.conf.formData.jobAddress.value.length === 0 || !jobData.address) {
         return
       }
-      const content = jobData.address.toLowerCase()
+      const content = normalizeFilterText(jobData.address)
       for (const x of ctx.helper.conf.formData.jobAddress.value) {
         if (!x) {
           continue
         }
-        if (content.includes(x.toLowerCase())) {
+        const keyword = normalizeFilterText(x)
+        if (!keyword) continue
+        if (content.includes(keyword)) {
           if (ctx.helper.conf.formData.jobAddress.include) {
             return
           }

@@ -40,31 +40,31 @@ export function useConfigSections() {
                   type: 'select',
                   key: 'company',
                   label: '公司名',
-                  help: '公司名排除或包含在集合中，模糊匹配，可用于只投或不投某个公司/子公司。',
+                  help: '不区分大小写,自动移除空格. 公司名排除或包含在集合中，可用于只投或不投某个公司/子公司',
                 },
                 {
                   type: 'select',
                   key: 'jobTitle',
                   label: '岗位名',
-                  help: '岗位名排除或包含在集合中，模糊匹配，可用于只投或不投某个岗位名。',
+                  help: '不区分大小写,自动移除空格. 岗位名排除或包含在集合中，可用于只投或不投某个岗位名',
                 },
                 {
                   type: 'select',
                   key: 'jobContent',
                   label: '工作内容',
-                  help: "会自动检测上文(不是,不,无需),下文(系统,工具),例子：[外包,上门,销售,驾照], 排除: '外包岗位', 不排除: '不是外包'|'销售系统'",
+                  help: "不区分大小写,自动移除空格. 会自动检测上文(不是,不,无需),下文(系统,工具),例子：[外包,上门,销售,驾照], 排除: '外包岗位', 不排除: '不是外包'|'销售系统'",
                 },
                 {
                   type: 'select',
                   key: 'hrPosition',
                   label: 'Hr职位',
-                  help: 'Hr职位一定包含/排除在集合中，精确匹配, 不在内置中可手动输入,能实现只向经理等进行投递，毕竟人事干的不一定是人事',
+                  help: '不区分大小写,自动移除空格. Hr职位一定包含/排除在集合中，精确匹配, 不在内置中可手动输入,能实现只向经理等进行投递，毕竟人事干的不一定是人事',
                 },
                 conf.configLevel.intermediate && {
                   type: 'select',
                   key: 'jobAddress',
                   label: '工作地址',
-                  help: '只能为包含模式, 即投递工作地址当中必须包含当前内容中的任意一项，否则排除',
+                  help: '不区分大小写,自动移除空格, 即投递工作地址当中必须包含当前内容中的任意一项',
                 },
                 {
                   type: 'div',
@@ -107,7 +107,7 @@ export function useConfigSections() {
                   label: '好友过滤(已聊)',
                   help: '判断和hr是否建立过聊天，理论上能过滤的同hr，但是不同岗位的工作',
                 },
-                {
+                conf.configLevel.advanced && {
                   type: 'checkbox',
                   key: 'bossGoldMedalHr',
                   label: '过滤金牌面试官',

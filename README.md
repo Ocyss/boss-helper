@@ -58,7 +58,6 @@ greasyfork地址(0.2旧版本): <https://greasyfork.org/zh-CN/scripts/491340>
   - [x] 模板语言
   - [x] 支持chatGPT
 - AI赋能
-  - [ ] 自动回复聊天
   - [x] 多模型管理
 - 额外功能(有时间会写)
   - [x] 自适应UI适配手机

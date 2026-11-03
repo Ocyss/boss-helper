@@ -147,6 +147,7 @@ export type ConfigItem =
             | 'appearance'
             | 'checkbox-expire'
           )
+      extra?: { [key: string]: any }
     }
   | AlertItem
   | {

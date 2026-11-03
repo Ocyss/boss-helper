@@ -12,9 +12,7 @@ defineExpose({ save, isDirty })
 </script>
 
 <template>
-  <UCard
-    data-help="先配置提供商与模型，再选择招呼语或岗位筛选，修改提示词并保存。回复功能暂未开放。"
-  >
+  <UCard data-help="先配置提供商与模型，再选择招呼语或岗位筛选，修改提示词并保存。">
     <AI ref="editor" />
   </UCard>
 </template>

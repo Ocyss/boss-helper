@@ -24,6 +24,7 @@ export function createAdvancedFetch(
     }
     return transport(input, {
       ...init,
+      credentials: 'omit',
       headers,
       ...(body === undefined ? {} : { body }),
     })

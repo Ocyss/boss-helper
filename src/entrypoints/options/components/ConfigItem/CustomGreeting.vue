@@ -246,5 +246,14 @@ async function advancedGreetinSave(close: () => void) {
         />
       </template>
     </UModal>
+    <p class="text-sm text-muted" v-if="conf.configLevel.expert">
+      开启「招呼语变量」后可使用变量渲染招呼语，详见
+      <ULink
+        to="https://github.com/ocyss/boss-helper/blob/main/TEMPLATE_VARIABLES.md"
+        target="_blank"
+      >
+        模板变量表 </ULink
+      >。
+    </p>
   </div>
 </template>

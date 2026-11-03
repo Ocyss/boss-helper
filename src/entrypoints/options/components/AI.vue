@@ -27,7 +27,6 @@ const running = computed(() => helper.workflow?.status.value === 'running')
 const items = [
   { label: '招呼语', value: 'aiGreeting', slot: 'greeting' as const },
   { label: '筛选', value: 'aiFiltering', slot: 'filtering' as const },
-  { label: '回复（暂未开放）', value: 'aiReply', disabled: true },
 ]
 
 async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
@@ -41,7 +40,13 @@ async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
     data-help="AI 配置, 使用AI招呼语之前推荐禁用boss自带招呼语"
   >
     <p class="text-sm text-muted">
-      先在提供商管理中配置模型，再分别设置招呼语和岗位筛选。所有修改统一由页面底部「保存配置与模型」保存。
+      先在提供商管理中配置模型，再分别设置招呼语和岗位筛选。 提示词支持变量渲染，详见
+      <ULink
+        to="https://github.com/ocyss/boss-helper/blob/main/TEMPLATE_VARIABLES.md"
+        target="_blank"
+      >
+        模板变量表 </ULink
+      >。
     </p>
     <UTabs v-model="active" :items="items" :unmount-on-hide="false" class="w-full">
       <template #greeting>
