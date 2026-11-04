@@ -14,8 +14,7 @@ body:
       label: 版本信息
       description: |
         新版扩展：请在此粘贴反馈时自动复制的完整环境信息。
-        旧版扩展（未自动复制）：请从扩展管理页面获取扩展版本，并打开 chrome://version（Chrome）、edge://version（Edge）或 brave://version（Brave），手动复制浏览器完整版本、操作系统和 User Agent。其他浏览器请查看对应的版本页面。
-        请尽量补充主题与语言、屏幕尺寸、页面视口、像素比例、网络状态及安全上下文；无法获取的项目可注明“未知”。
+        旧版扩展（未自动复制）：请从扩展管理页面获取扩展版本，并打开 chrome://version（Chrome）、edge://version（Edge）或 firefox://version（Firefox），手动复制浏览器完整版本、操作系统和 User Agent。其他浏览器请查看对应的版本页面。
         仅复制与环境相关的信息，请勿粘贴版本页面中的个人资料路径、命令行参数或其他敏感信息。
       placeholder: |
         🧩 扩展版本：
