@@ -1,6 +1,6 @@
 {
-  "version": "0.5.2",
-  "version_description": "0.5.2: 修复统计功能失效, 完善日志记录, 修复投递失败后继续投递的问题",
+  "version": "0.5.3-2",
+  "version_description": "UI优化, 增加仅生成/仅过滤, AI招呼语支持发送图片, 飞书多维表格集成等",
   "store": {
     "chrome": [
       "Chrome Store, 需要魔法，审核速度较慢",
@@ -29,5 +29,5 @@
     ]
   },
   "notification": [],
-  "feedback": "https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g"
+  "feedback": "https://github.com/Ocyss/boss-helper/issues/new"
 }

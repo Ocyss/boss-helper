@@ -1,7 +1,7 @@
 {
   "name": "boss-helper",
   "displayName": "BossHelper",
-  "version": "0.5.3",
+  "version": "0.5.3-2",
   "private": true,
   "description": "Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率,技术栈使用VIte + Vue3 + element-plus",
   "workspaces": [

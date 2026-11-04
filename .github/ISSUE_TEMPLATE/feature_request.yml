@@ -1,0 +1,45 @@
+name: 功能建议
+description: 提出新功能或改进建议。
+title: '[Feature] '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢建议！提交前请先搜索已有 Issue，看看是否已有类似讨论。
+        请勿上传账号、Cookie、Token、简历、聊天记录等敏感信息；图片请先脱敏。
+  - type: input
+    id: extension-version
+    attributes:
+      label: 扩展版本
+      description: 可在浏览器的扩展管理页面查看 Boss Helper 的版本号。
+      placeholder: 例如：1.2.3
+    validations:
+      required: true
+  - type: input
+    id: browser-version
+    attributes:
+      label: 浏览器名称及版本
+      description: 请在浏览器的“关于”页面查看完整版本号。
+      placeholder: 例如：Chrome 130.0.6723.92 / Edge 130.0.2849.80
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 功能描述
+      description: 请描述使用场景、当前遇到的困难，以及希望增加或改进的功能。
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: 期望效果
+      description: 你希望这个功能如何使用、达到什么效果？如有替代方案，也欢迎说明。
+    validations:
+      required: true
+  - type: textarea
+    id: images
+    attributes:
+      label: 图片补充
+      description: 可将参考截图、示意图等拖入此处，或粘贴上传，提交前请遮盖个人信息。

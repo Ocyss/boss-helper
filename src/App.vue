@@ -17,6 +17,7 @@ import { counter } from '@/message'
 import { logger } from '@/utils/logger'
 
 import { useHelper, VITE_VERSION } from './composables/useHelper'
+import { get_system_version } from './utils'
 
 const model = useModel()
 
@@ -120,8 +121,25 @@ onMounted(async () => {
   protocolShow.value = protocolDate !== protocolVal
 })
 
-function tagOpen(url: string) {
-  window.open(url)
+function feedback() {
+  const url = helper.netConf.value?.feedback
+  if (url) {
+    const feedbackText = get_system_version()
+    try {
+      navigator.clipboard.writeText(feedbackText)
+      toast.add({ title: '环境信息已复制到剪贴板', color: 'success' })
+    } catch {}
+    if (
+      prompt(
+        '即将前往github进行反馈, 已尝试自动复制版本信息, 如果失败请尝试手动复制, 点击确认即刻跳转',
+        feedbackText,
+      )
+    ) {
+      window.open(url)
+    }
+  } else {
+    toast.add({ title: '暂无反馈地址', color: 'error' })
+  }
 }
 
 const isDot = computed(() => {
@@ -249,7 +267,7 @@ function openStore() {
                 class="ml-2"
                 size="xs"
                 color="info"
-                @click.stop="tagOpen(helper.netConf.value.feedback)"
+                @click.stop="feedback"
               >
                 反馈
               </UButton>

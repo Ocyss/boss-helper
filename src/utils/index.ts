@@ -1,5 +1,41 @@
 import { counter } from '@/message'
 
+export function get_system_version(): string {
+  const { userAgent, language, platform, userAgentData } = navigator as Navigator & {
+    userAgentData: {
+      brands: Array<{ brand: string; version: string }>
+      platform?: string
+    }
+  }
+  const browser =
+    userAgentData?.brands
+      ?.filter(({ brand }) => !/not.?a.?brand/i.test(brand))
+      .map(({ brand, version }) => `${brand} ${version}`)
+      .join(' / ') ||
+    userAgent.match(/(?:Edg|OPR|Firefox|Chrome)\/[\d.]+|Version\/[\d.]+.*Safari/)?.[0] ||
+    '未知'
+  const theme = matchMedia('(prefers-color-scheme: dark)').matches ? '深色' : '浅色'
+  const version = __APP_VERSION__
+  const feedback = `
+╭─ 📋 反馈环境信息 ${new Date().toLocaleString()}
+│
+│ 🧩 扩展版本：${version}
+│ 🌐 浏览器：${browser}
+│ 💻 系统平台：${userAgentData?.platform || platform || '未知'}
+│ 🎨 主题语言：${theme} / ${language}
+│ 🖥️ 屏幕尺寸：${screen.width} × ${screen.height}
+│ 📐 页面视口：${innerWidth} × ${innerHeight}
+│ 🔍 像素比例：${devicePixelRatio}x
+│ 📡 网络状态：${navigator.onLine ? '在线' : '离线'}
+│ 🔒 安全上下文：${isSecureContext ? '是' : '否'}
+│
+╰─ 🔎 User Agent
+${userAgent}
+`.trim()
+
+  return feedback
+}
+
 // 通知
 export async function notification(
   message: string,
