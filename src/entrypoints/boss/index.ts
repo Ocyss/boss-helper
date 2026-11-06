@@ -222,6 +222,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 
   async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
     logger.debug('发送消息', { jobKey: data.jobData.key, msg: msgs })
+    await this.geek.connect()
 
     const stanza = {
       uid: Number(data.rawData.boss.data.bossId),
@@ -261,10 +262,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       } else {
         throw new Error('不支持的消息类型:' + msg['type'])
       }
-      this.geek.client.publish('chat', this.geek.msgBuilder.encode(m), {
-        qos: 1,
-        retain: true,
-      })
+      await this.geek.send(this.geek.msgBuilder.encode(m), stanza.clientMid)
       await delay(2)
     }
   }

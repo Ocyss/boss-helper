@@ -9,15 +9,38 @@ export class GeekChatClientManager {
   msgBuilder!: ProtoBufferMessage
 
   private connecting?: Promise<void>
+  private reconnectTimer?: ReturnType<typeof setTimeout>
+  private retryDelay = 1000
+
+  private scheduleReconnect() {
+    if (this.reconnectTimer) return
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
+      void this.connect().catch((error) => {
+        logger.error('消息发送ws: 重新初始化失败', error)
+        this.scheduleReconnect()
+      })
+    }, this.retryDelay)
+    this.retryDelay = Math.min(this.retryDelay * 2, 30000)
+  }
 
   constructor() {}
 
   async connect() {
     if (this.connecting) return this.connecting
-    if (this.client && !this.client.disconnected) return
+    if (this.client?.connected) return
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
+    }
+    this.client?.end(true)
     this.connecting = this.initConnection()
     try {
       await this.connecting
+      this.retryDelay = 1000
+    } catch (error) {
+      this.scheduleReconnect()
+      throw error
     } finally {
       this.connecting = undefined
     }
@@ -30,7 +53,9 @@ export class GeekChatClientManager {
       zpData: {
         wt2: string
       }
-    } = await fetch(`https://www.zhipin.com/wapi/zppassport/get/wt`).then((res) => res.json())
+    } = await fetch(`https://www.zhipin.com/wapi/zppassport/get/wt`, {
+      signal: AbortSignal.timeout(10000),
+    }).then((res) => res.json())
     if (res.code !== 0) {
       logger.error(`消息发送ws: 获取 wt 失败: ${res.message}`)
       throw new Error(`消息发送ws: 获取 wt 失败: ${res.message}`)
@@ -65,7 +90,9 @@ export class GeekChatClientManager {
       password: wt,
       keepalive: 25,
       clean: true,
-      reconnectPeriod: 1000,
+      // 统一重新初始化，以便重试时重新获取 wt，而不是复用失效凭证。
+      reconnectPeriod: 0,
+      queueQoSZero: false,
       connectTimeout: 10000,
       protocolVersion: 4,
       createWebsocket: (url: string) => {
@@ -144,10 +171,90 @@ export class GeekChatClientManager {
         logger.info('消息发送ws: MQTT 回执（PUBACK 不代表业务发送成功）', packet)
       }
     })
-    client.on('close', () => logger.warn('消息发送ws: MQTT 连接关闭'))
+    client.on('close', () => {
+      logger.warn('消息发送ws: MQTT 连接关闭')
+      if (this.client === client) this.scheduleReconnect()
+    })
     client.on('offline', () => logger.warn('消息发送ws: MQTT 离线'))
-    client.on('error', (error) => logger.error('消息发送ws: MQTT 错误', error))
+    client.on('error', (error) => {
+      logger.error('消息发送ws: MQTT 错误', error)
+      client.end(true)
+      if (this.client === client) this.scheduleReconnect()
+    })
     client.on('reconnect', () => logger.info('消息发送ws: MQTT 正在重连'))
+    await new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer)
+        client.off('connect', onConnect)
+        client.off('error', onError)
+        client.off('close', onClose)
+        if (error) {
+          client.end(true)
+          reject(error)
+        } else resolve()
+      }
+      const onConnect = () => finish()
+      const onError = (error: Error) => finish(error)
+      const onClose = () => finish(new Error('MQTT 连接建立前已关闭'))
+      const timer = setTimeout(() => finish(new Error('MQTT 连接超时')), 15000)
+      client.once('connect', onConnect)
+      client.once('error', onError)
+      client.once('close', onClose)
+    })
+  }
+
+  async send(payload: Uint8Array, clientMid: number) {
+    const client = this.client
+    if (!client?.connected || client.disconnecting) {
+      this.scheduleReconnect()
+      throw new Error('MQTT 未连接，消息未发送')
+    }
+    await new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer)
+        client.off('message', onMessage)
+        client.off('close', onClose)
+        client.off('error', onError)
+        if (error) reject(error)
+        else resolve()
+      }
+      const onClose = () => finish(new Error('MQTT 连接关闭，消息发送结果未确认'))
+      const onError = (error: Error) => finish(error)
+      const onMessage = (topic: string, body: Uint8Array) => {
+        if (topic !== 'chat') return
+        try {
+          const protocol = this.msgBuilder.ChatProtocol.toObject(
+            this.msgBuilder.ChatProtocol.decode(body),
+            { longs: String },
+          )
+          if (
+            protocol.type === 5 &&
+            protocol.messageSync?.some(
+              (sync: { clientMid: string; serverMid: string }) =>
+                sync.clientMid === String(clientMid) && BigInt(sync.serverMid) > 0n,
+            )
+          )
+            finish()
+        } catch (error) {
+          logger.warn('消息发送ws: 业务回执解析失败', error)
+        }
+      }
+      const timer = setTimeout(() => {
+        finish(new Error('等待消息业务回执超时，发送结果未确认，请勿直接重复发送'))
+        client.end(true)
+        this.scheduleReconnect()
+      }, 15000)
+      client.on('message', onMessage)
+      client.once('close', onClose)
+      client.once('error', onError)
+      try {
+        client.publish('chat', payload, { qos: 1, retain: true }, (error) => {
+          if (error) finish(error)
+        })
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
   }
 
   private logProtocol(direction: string, topic: string, payload: Uint8Array, metadata: object) {
@@ -167,7 +274,7 @@ export class GeekChatClientManager {
           return value
         }
       })
-      logger.info(`消息发送ws: ${direction} Protobuf`, {
+      logger.debug(`消息发送ws: ${direction} Protobuf`, {
         ...context,
         protocol: parsed,
         protocolJson,
