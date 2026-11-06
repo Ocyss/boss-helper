@@ -46,8 +46,8 @@ export class BackgroundCounter {
     const res = await fetch(args.url, {
       ...args.data,
       signal,
-      mode: 'cors',
-      credentials: 'include',
+      mode: 'no-cors',
+      credentials: 'omit',
     }).then(async (res) => {
       console.log('request res', res)
 

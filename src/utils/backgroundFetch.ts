@@ -50,8 +50,8 @@ export function backgroundFetch(input: RequestInfo | URL, init?: RequestInit): P
         method: mergedInit?.method,
         headers: headersToObject(mergedInit?.headers),
         body: typeof mergedInit?.body === 'string' ? mergedInit.body : undefined,
-        credentials: mergedInit?.credentials ?? 'include',
-        mode: mergedInit?.mode ?? 'cors',
+        credentials: mergedInit?.credentials ?? 'omit',
+        mode: mergedInit?.mode ?? 'no-cors',
       },
     })
     .then((response) => {
