@@ -52,10 +52,15 @@ export function backgroundFetch(input: RequestInfo | URL, init?: RequestInit): P
         body: typeof mergedInit?.body === 'string' ? mergedInit.body : undefined,
         credentials: mergedInit?.credentials ?? 'omit',
         // 后台通过扩展主机权限跨域，保留鉴权头并允许读取响应。
-        mode: mergedInit?.mode ?? 'cors',
+        mode: 'cors',
       },
     })
     .then((response) => {
+      if (response.status === 0) {
+        throw new Error(
+          'AI 请求无法读取响应（status: 0）。请重新加载扩展并刷新页面，确认扩展已获准访问提供商域名。',
+        )
+      }
       return new Response(new Uint8Array(response.body), {
         status: response.status,
         statusText: response.statusText,
