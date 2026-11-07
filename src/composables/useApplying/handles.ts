@@ -136,7 +136,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     }
     return async (_ctx, { jobData: data }) => {
       const text = normalizeFilterText(data.jobName)
-      if (!text) return taskResult.skip('岗位名为空')
+
       for (const x of ctx.helper.conf.formData.jobTitle.value) {
         const keyword = normalizeFilterText(x)
         if (!keyword) continue
@@ -168,7 +168,6 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     if (!ctx.helper.conf.formData.company.enable) return
     return async (_ctx, { jobData: data }) => {
       const text = normalizeFilterText(data.brand.name)
-      if (!text) return taskResult.skip('公司名为空')
 
       for (const x of ctx.helper.conf.formData.company.value) {
         if (!x) {
@@ -286,10 +285,7 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       return
     }
     return async (_, { jobData }) => {
-      if (ctx.helper.conf.formData.jobAddress.value.length === 0 || !jobData.address) {
-        return
-      }
-      const content = normalizeFilterText(jobData.address)
+      const content = normalizeFilterText(jobData.address ?? '')
       for (const x of ctx.helper.conf.formData.jobAddress.value) {
         if (!x) {
           continue
@@ -303,7 +299,9 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
           return taskResult.skip(`工作地址含有排除关键词 [${x}]`)
         }
       }
-      return taskResult.skip(`工作地址不包含关键词: ${content}`)
+      if (ctx.helper.conf.formData.jobAddress.include) {
+        return taskResult.skip(`工作地址不包含关键词: ${content}`)
+      }
     }
   })
 

@@ -64,7 +64,7 @@ export function useConfigSections() {
                   type: 'select',
                   key: 'jobAddress',
                   label: '工作地址',
-                  help: '不区分大小写,自动移除空格, 即投递工作地址当中必须包含当前内容中的任意一项',
+                  help: '不区分大小写,自动移除空格. 包含模式须命中任意关键词,排除模式命中任意关键词则跳过; 地址为空按未命中处理',
                 },
                 {
                   type: 'div',

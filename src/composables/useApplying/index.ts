@@ -50,7 +50,7 @@ function meginResults(res: void | TaskResult | Array<TaskResult | void>): TaskRe
         msg: [acc.msg, r.msg].filter(Boolean).join('\n') || undefined,
         isCache: acc.isCache || r.isCache,
       }
-    }, res[0] ?? {})
+    }, {})
   }
   return res
 }
@@ -336,7 +336,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       if (handler) {
         usedTasks.add(t.id)
         helper.jobResultMaps.set(key, {
-          status: t.state ?? 'running',
+          status: delivered ? 'success' : (t.state ?? 'running'),
           msg: t.stateMsg ?? '运行中',
         })
         for (const fn of [...t.before, handler, ...t.after]) {
@@ -364,11 +364,37 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           if (res) {
             res.status ??= res.isSkip ? 'warn' : undefined
             res.msg ??= t.label ?? t.id
+            if (
+              !delivered &&
+              t.phase === 'delivery' &&
+              fn === handler &&
+              res.status === 'success' &&
+              !res.isSkip
+            ) {
+              delivered = true
+              helper.jobResultMaps.set(key, { status: 'success', msg: '投递成功' })
+              await saveJobResult(key, { status: 'success', msg: '投递成功' })
+              drafts.delete(key)
+              helper.statistics.todayData.value.success++
+              for (const task of pipeline.value) {
+                if (!task.onDelivered) continue
+                try {
+                  await task.onDelivered(
+                    { helper, now: new Date(), index, log: log.withContext({ task_id: task.id }) },
+                    data,
+                  )
+                } catch (e) {
+                  log.error('onDelivered error', task.id, e)
+                }
+              }
+            }
             helper.jobResultMaps.set(
               key,
-              res.status === 'success' && !res.isSkip
-                ? { ...res, status: 'running', msg: '投递处理中' }
-                : res,
+              delivered
+                ? { ...res, status: 'success', isSkip: false }
+                : res.status === 'success' && !res.isSkip
+                  ? { ...res, status: 'running', msg: '投递处理中' }
+                  : res,
             )
             if (res.status) {
               const stats = helper.statistics.todayData.value.tasks
@@ -376,14 +402,18 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               stats[t.id]![res.status] = (stats[t.id]![res.status] ?? 0) + 1
             }
             if (res.isSkip || res.status === 'error') {
-              if ((!t.phase || t.phase === 'filter') && res.isSkip && res.status === 'warn') {
+              if (
+                !delivered &&
+                (!t.phase || t.phase === 'filter') &&
+                res.isSkip &&
+                res.status === 'warn'
+              ) {
                 await saveJobResult(key, res)
               }
               throw { workflowResult: res }
             }
           }
         }
-        if (t.phase === 'delivery') delivered = true
       }
       visiting.delete(t.id)
       completed.add(t.id)
@@ -413,28 +443,25 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       }
       if (!isBlocked(key) && delivered) {
         helper.jobResultMaps.set(key, { status: 'success', msg: '投递成功' })
-        await saveJobResult(key, { status: 'success', msg: '投递成功' })
-        drafts.delete(key)
-        helper.statistics.todayData.value.success++
-        for (const t of pipeline.value) {
-          if (!t.onDelivered) continue
-          try {
-            await t.onDelivered(
-              { helper, now: new Date(), index, log: log.withContext({ task_id: t.id }) },
-              data,
-            )
-          } catch (e) {
-            log.error('onDelivered error', t.id, e)
-          }
-        }
       }
     } catch (e) {
       if (isBlocked(key)) return
-      if (e && typeof e === 'object' && 'workflowResult' in e) return
+      if (e && typeof e === 'object' && 'workflowResult' in e) {
+        if (delivered) {
+          const result = e.workflowResult as TaskResult
+          helper.jobResultMaps.set(key, {
+            ...result,
+            status: 'success',
+            isSkip: false,
+            msg: `投递成功，后续处理失败：${result.msg ?? ''}`,
+          })
+        }
+        return
+      }
       log.error('工作流任务执行失败', e)
       helper.jobResultMaps.set(key, {
-        status: 'error',
-        msg: '执行失败',
+        status: delivered ? 'success' : 'error',
+        msg: delivered ? '投递成功，后续处理失败' : '执行失败',
         reason: e instanceof Error ? e.message : String(e),
       })
     } finally {

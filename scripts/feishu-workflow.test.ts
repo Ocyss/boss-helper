@@ -64,7 +64,7 @@ mock.module('@/utils/feishuSync', () => realFeishuSync)
 
 const { useDeliveryWorkflow } = await import('../src/composables/useApplying/index')
 type Data = WorkflowData<{ key: string }, Record<string, never>>
-type Handler = (ctx: unknown, data: Data) => Promise<void | TaskResult>
+type Handler = (ctx: unknown, data: Data) => Promise<void | TaskResult | Array<TaskResult | void>>
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -122,19 +122,26 @@ function fixture(
           data.state.aiGreeting = { greeting: '您好，我对这个岗位很感兴趣', reason: '技能匹配' }
         }),
     ),
-    delivery: mock(overrides.delivery ?? (async () => {})),
+    delivery: mock(overrides.delivery ?? (async () => ({ status: 'success', msg: '投递成功' }))),
   }
   const tasks = (['filter', 'generate', 'delivery'] as const).map((phase) => ({
     id: phase,
     phase,
     deps: [],
     before: [],
-    after: [],
+    after: [] as Handler[],
+    onDelivered: mock(async () => {}),
     task: () => handlers[phase],
   }))
   // The fixture intentionally implements only the HelperContext surface consumed here.
   const create = () => useDeliveryWorkflow(tasks as any, helper as any)
-  return { helper, handlers, create, raw: new Map(jobs.map((job) => [job.key, { key: job.key }])) }
+  return {
+    helper,
+    handlers,
+    tasks,
+    create,
+    raw: new Map(jobs.map((job) => [job.key, { key: job.key }])),
+  }
 }
 
 async function settleSync() {
@@ -176,6 +183,62 @@ describe('真实 executeAll 的岗位结果缓存', () => {
       status: 'success',
       msg: '投递成功',
     })
+    await settleSync()
+  })
+
+  for (const outcome of ['throw', 'skip'] as const) {
+    test(`投递成功后 after ${outcome} 保留成功结果且仅记录一次`, async () => {
+      const f = fixture()
+      f.helper.conf.formData.useCache.value = true
+      const success = { status: 'success', msg: '投递成功' }
+      const after = mock(async () => {
+        expect(f.helper.jobCache.set).toHaveBeenCalledTimes(1)
+        expect(f.helper.jobCache.set).toHaveBeenCalledWith('job-0', success)
+        expect(f.helper.statistics.todayData.value.success).toBe(1)
+        for (const task of f.tasks) expect(task.onDelivered).toHaveBeenCalledTimes(1)
+        if (outcome === 'throw') throw new Error('招呼语发送失败')
+        return { status: 'warn' as const, isSkip: true, msg: '招呼语跳过', reason: '后续条件不符' }
+      })
+      f.tasks.find((task) => task.phase === 'delivery')!.after.push(after)
+      const workflow = await f.create()
+      expect(await workflow.executeAll(f.raw, 'auto')).toBe(true)
+      expect(after).toHaveBeenCalledTimes(1)
+      expect(f.handlers.delivery).toHaveBeenCalledTimes(1)
+      expect(f.helper.jobCache.set).toHaveBeenCalledTimes(1)
+      expect(f.helper.jobCache.set).toHaveBeenCalledWith('job-0', success)
+      expect(f.helper.statistics.todayData.value.success).toBe(1)
+      for (const task of f.tasks) expect(task.onDelivered).toHaveBeenCalledTimes(1)
+      expect(f.helper.jobResultMaps.get('job-0')).toMatchObject({
+        status: 'success',
+        msg: expect.stringContaining('后续处理失败'),
+        reason: outcome === 'throw' ? '招呼语发送失败' : '后续条件不符',
+      })
+      expect(f.helper.jobResultMaps.get('job-0')?.isSkip).not.toBe(true)
+      await settleSync()
+    })
+  }
+
+  test('数组结果的首项消息和原因仅合并一次', async () => {
+    const f = fixture(1, {
+      filter: async () => [
+        { status: 'warn', isSkip: true, msg: '首项消息', reason: '首项原因' },
+        undefined,
+        { status: 'warn', msg: '第二项消息', reason: '第二项原因' },
+      ],
+    })
+    f.helper.conf.formData.useCache.value = true
+    const workflow = await f.create()
+    expect(await workflow.executeAll(f.raw, 'auto')).toBe(true)
+    const result = {
+      status: 'warn',
+      isSkip: true,
+      msg: '首项消息\n第二项消息',
+      reason: '首项原因\n第二项原因',
+    }
+    expect(f.helper.jobResultMaps.get('job-0')).toMatchObject(result)
+    expect(f.helper.jobCache.set).toHaveBeenCalledTimes(1)
+    expect(f.helper.jobCache.set).toHaveBeenCalledWith('job-0', expect.objectContaining(result))
+    expect(f.handlers.delivery).not.toHaveBeenCalled()
     await settleSync()
   })
 
