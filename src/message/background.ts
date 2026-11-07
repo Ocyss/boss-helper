@@ -46,8 +46,9 @@ export class BackgroundCounter {
     const res = await fetch(args.url, {
       ...args.data,
       signal,
-      mode: 'no-cors',
-      credentials: 'omit',
+      // 跨域访问由扩展主机权限授权；no-cors 会过滤 Authorization 等请求头。
+      mode: args.data.mode ?? 'cors',
+      credentials: args.data.credentials ?? 'omit',
     }).then(async (res) => {
       console.log('request res', res)
 

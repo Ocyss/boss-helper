@@ -1,6 +1,6 @@
 {
-  "version": "0.5.4",
-  "version_description": "UI优化, 增加仅生成/仅过滤, AI招呼语支持发送图片, 飞书多维表格集成等, 修复ai本地请求",
+  "version": "0.5.5",
+  "version_description": "UI优化, 增加仅生成/仅过滤, AI招呼语支持发送图片, 飞书多维表格集成等, 修复ai请求错误",
   "store": {
     "chrome": [
       "Chrome Store, 需要魔法，审核速度较慢",
