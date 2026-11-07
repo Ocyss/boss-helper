@@ -101,6 +101,8 @@ export class BackgroundCounter {
     try {
       const res = await fetch(args.url, {
         ...args.init,
+        // AI 请求必须读取响应；同时覆盖旧内容脚本传来的 no-cors。
+        mode: 'cors',
         // 兜底超时: 防止请求挂起导致调用方 Promise 永不 settle
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
       })
