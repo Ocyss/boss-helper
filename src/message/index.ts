@@ -58,6 +58,10 @@ export const counter = new Proxy({} as ContentCounter, {
 
 export const ExtStorage: StorageLikeAsync = {
   async getItem(key) {
+    // WXT evaluates entrypoint imports in SSR without initializing the bridge.
+    // Waiting for that bridge here would leave the build polling forever.
+    if (import.meta.env.SSR) return null
+
     return new Promise((resolve) => {
       const t = setInterval(() => {
         if (_counter) {
@@ -70,9 +74,11 @@ export const ExtStorage: StorageLikeAsync = {
     })
   },
   async setItem(key, value) {
+    if (import.meta.env.SSR) return
     await counter.storageSet(key, value)
   },
   async removeItem(key) {
+    if (import.meta.env.SSR) return
     await counter.storageRm(key)
   },
 }
