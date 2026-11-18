@@ -1,6 +1,13 @@
 import type { FormDataRange } from '@/types/formData'
 import { parseGptJson } from '@/utils/ai'
 
+import type { TaskResult } from './type'
+
+export function jobStatusText(result?: TaskResult): string {
+  if (!result || result.status === 'pending') return '未开始'
+  return result.msg || result.reason || (result.status === 'ready' ? '待投递' : '无内容')
+}
+
 export function rangeMatchFormat(v: FormDataRange, unit: string): string {
   return `${v[0]} - ${v[1]} ${unit} ${v[2] ? '严格' : '宽松'}`
 }

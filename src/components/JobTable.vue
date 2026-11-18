@@ -6,6 +6,7 @@ import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 
 import { appearanceConf } from '@/composables/conf'
 import type { JobStatus } from '@/composables/useApplying/type'
+import { jobStatusText } from '@/composables/useApplying/utils'
 import type { JobData } from '@/composables/useHelper'
 import { useHelper } from '@/composables/useHelper'
 import { useJobActions } from '@/composables/useJobActions'
@@ -253,7 +254,7 @@ function status(key: string) {
     color: stateColors[value],
     icon: stateIcons[value],
     title: `${result?.isCache ? '缓存-' : ''}${result?.reason || result?.msg || ''}`,
-    text: `${result?.isCache ? '缓存-' : ''}${result?.msg || result?.reason || (value === 'ready' ? '待投递' : '无内容')}`,
+    text: `${result?.isCache ? '缓存-' : ''}${jobStatusText(result)}`,
   }
 }
 </script>

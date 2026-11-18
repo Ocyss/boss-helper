@@ -12,6 +12,7 @@ import { counter } from '@/message'
 import { exportJson } from '@/utils/jsonImportExport'
 
 import AIPage from './pages/AIPage.vue'
+import CachePage from './pages/CachePage.vue'
 import FeishuPage from './pages/FeishuPage.vue'
 import GeneralPage from './pages/GeneralPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
@@ -254,6 +255,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             />
             <USeparator class="my-2" />
             <UButton
+              label="缓存管理"
+              icon="i-lucide-database"
+              :variant="page === 'cache' ? 'soft' : 'ghost'"
+              @click="page = 'cache'"
+            />
+            <UButton
               label="AI 配置"
               icon="i-lucide-sparkles"
               :variant="page === 'ai' ? 'soft' : 'ghost'"
@@ -306,6 +313,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               :manage="manage"
             />
             <GeneralPage v-show="page === 'general'" :busy="busy" />
+            <CachePage v-if="page === 'cache'" />
             <AIPage v-show="page === 'ai'" ref="aiEditor" />
             <ProvidersPage v-show="page === 'providers'" />
             <FeishuPage v-show="page === 'feishu'" />
@@ -346,7 +354,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             @click="conf.confRecommend"
           />
           <span class="text-xs text-muted md:ml-auto">{{
-            page === 'management'
+            page === 'management' || page === 'cache'
               ? '管理操作即时保存'
               : page === 'feishu'
                 ? '飞书配置请在页面内单独保存'

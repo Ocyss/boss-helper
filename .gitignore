@@ -30,6 +30,7 @@ logapi.zhipin.*.pem
 /local
 
 /.env*
+!/.env.submit.example
 
 .wxt
 

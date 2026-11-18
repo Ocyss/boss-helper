@@ -1,13 +1,58 @@
 name: Build and Release
 
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
-    tags:
-      - '*'
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Check matching versions and version changes
+        id: check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base="$BASE_SHA"
+          if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]]; then
+            base=$(git rev-parse HEAD^)
+          fi
+          node scripts/check-version.mjs "$base"
+      - name: Reject an existing tag pointing to another commit
+        if: steps.check.outputs.release == 'true' && github.event_name != 'pull_request'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA" || {
+              echo "Tag $tag already belongs to another commit"
+              exit 1
+            }
+          fi
+
   build:
+    needs: version
+    if: needs.version.outputs.release == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -30,7 +75,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: '1.4.4'
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -39,23 +84,17 @@ jobs:
         timeout-minutes: 10
         run: node scripts/zip-ci.mjs ${{ matrix.browser }}
 
-      - name: Prepare release
-        run: |
-          mkdir release
-          cp .output/*.zip release/
-          rm -f release/*sources.zip
-          ls -lah release
-
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: boss-helper-${{ matrix.browser }}
-          path: release
+          path: |
+            .output/*-${{ matrix.browser }}.zip
+            .output/*-sources.zip
           if-no-files-found: error
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version, build]
     runs-on: ubuntu-latest
 
     permissions:
@@ -72,7 +111,54 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Latest Build
-          prerelease: true
-          files: dist/*
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: v${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*-chrome.zip
+            dist/*-edge.zip
+            dist/*-firefox.zip
+
+  submit:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, edge, firefox]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: boss-helper-${{ matrix.browser }}
+          path: .output
+      - name: Authenticate and submit to ${{ matrix.browser }}
+        env:
+          CHROME_API_VERSION: v1.1
+          CHROME_EXTENSION_ID: ogkmgjbagackkdlcibcailacnncgonbn
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          FIREFOX_EXTENSION_ID: '2898062'
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+          FIREFOX_CHANNEL: listed
+        run: |
+          bun run submit ${{ matrix.browser }} --dry-run
+          bun run submit ${{ matrix.browser }}

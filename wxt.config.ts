@@ -36,6 +36,9 @@ export default defineConfig({
   srcDir: 'src',
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}',
   modules: ['@wxt-dev/module-vue'],
+  zip: {
+    excludeSources: ['**/.env*'],
+  },
   // imports: false,
 
   vite: () => ({

@@ -402,12 +402,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
               stats[t.id]![res.status] = (stats[t.id]![res.status] ?? 0) + 1
             }
             if (res.isSkip || res.status === 'error') {
-              if (
-                !delivered &&
-                (!t.phase || t.phase === 'filter') &&
-                res.isSkip &&
-                res.status === 'warn'
-              ) {
+              if (!delivered && res.isSkip && res.status === 'warn') {
                 await saveJobResult(key, res)
               }
               throw { workflowResult: res }

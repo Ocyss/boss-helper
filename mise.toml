@@ -1,5 +1,3 @@
-
-
 [tasks.dev]
 alias = "default"
 run = "bun run dev"

@@ -68,6 +68,8 @@ greasyfork地址(0.2旧版本): <https://greasyfork.org/zh-CN/scripts/491340>
 
 ## 参与贡献
 
+自动发布与商店凭据配置见 [发布版本](docs/releasing.md)。
+
 1. Fork 本仓库并克隆到本地。
 2. 在新分支上进行您的更改：`git checkout -b 您的分支名称`
 3. 提交更改：`git commit -am '描述您的更改'`

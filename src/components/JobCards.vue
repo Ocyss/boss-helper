@@ -10,6 +10,7 @@ const [DefineFollowing, FollowingControl] = createReusableTemplate()
 const [DefineFilter, FilterControl] = createReusableTemplate()
 
 import JobCard from '@/components/JobCard.vue'
+import { jobStatusText } from '@/composables/useApplying/utils'
 import { useHelper } from '@/composables/useHelper'
 
 const following = ref(true)
@@ -20,37 +21,15 @@ const helper = useHelper()
 const filterItemsChecked = ref<Record<string, boolean>>({})
 
 const filterItems = computed<(DropdownMenuItem & { value: string })[]>(() =>
-  (
-    [
-      {
-        type: 'checkbox',
-        value: 'success',
-        label: '投递成功',
-        color: 'success',
-      },
-      { type: 'checkbox', value: 'ready', label: '待投递', color: 'info' },
-      {
-        type: 'checkbox',
-        value: 'manualFilter',
-        label: '手动过滤',
-        color: 'warning',
-      },
-      ...(helper.workflow?.pipeline.value.map(
-        (item) =>
-          ({
-            type: 'checkbox',
-            label: item.label ?? item.id,
-            value: item.id,
-          }) satisfies DropdownMenuItem,
-      ) ?? []),
-      { type: 'checkbox', value: 'error', label: '投递错误', color: 'error' },
-      { type: 'checkbox', value: 'not_started', label: '未开始' },
-    ] satisfies DropdownMenuItem[]
-  ).map((item) => ({
-    ...item,
-    checked: filterItemsChecked.value[item.value] ?? true,
+  [
+    ...new Set(helper.jobList.value.map((job) => jobStatusText(helper.jobResultMaps.get(job.key)))),
+  ].map((value) => ({
+    type: 'checkbox',
+    value,
+    label: value,
+    checked: filterItemsChecked.value[value] ?? true,
     onUpdateChecked(checked: boolean) {
-      filterItemsChecked.value[item.value] = checked
+      filterItemsChecked.value[value] = checked
     },
     onSelect(e: Event) {
       e.preventDefault()
@@ -58,30 +37,11 @@ const filterItems = computed<(DropdownMenuItem & { value: string })[]>(() =>
   })),
 )
 
-const jobList = computed(() => {
-  return helper.jobList.value.filter((job) => {
-    const res = helper.jobResultMaps.get(job.key)
-    if (res?.status === 'ready') {
-      return filterItemsChecked.value.ready ?? true
-    }
-    if (res?.id === 'manualFilter') {
-      return filterItemsChecked.value.manualFilter ?? true
-    }
-    if (!res || !res.id) {
-      return filterItemsChecked.value.not_started ?? true
-    }
-    if (res.status === 'success') {
-      return filterItemsChecked.value.success ?? true
-    }
-    if (res.status === 'error') {
-      return filterItemsChecked.value.error ?? true
-    }
-    if (filterItemsChecked.value[res.id] === false) {
-      return false
-    }
-    return true
-  })
-})
+const jobList = computed(() =>
+  helper.jobList.value.filter(
+    (job) => filterItemsChecked.value[jobStatusText(helper.jobResultMaps.get(job.key))] ?? true,
+  ),
+)
 
 function filterSelectAll() {
   filterItems.value.forEach((item) => (filterItemsChecked.value[item.value] = true))

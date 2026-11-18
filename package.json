@@ -1,7 +1,7 @@
 {
   "name": "boss-helper",
   "displayName": "BossHelper",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "private": true,
   "description": "Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率,技术栈使用VIte + Vue3 + element-plus",
   "workspaces": [
@@ -9,6 +9,9 @@
   ],
   "type": "module",
   "scripts": {
+    "version:check": "node scripts/check-version.mjs",
+    "submit": "node scripts/submit.mjs",
+    "submit:check": "node scripts/submit.mjs --dry-run",
     "dev": "wxt",
     "dev:edge": "wxt -b edge",
     "dev:firefox": "wxt -b firefox --mv3",
@@ -57,9 +60,9 @@
     "lint-staged": "^17.6.0",
     "npm-run-all": "^4.1.5",
     "openapi-typescript": "^7.13.0",
-    "oxfmt": "^0.74.0",
-    "oxlint": "^1.89.0",
-    "oxlint-tsgolint": "^7.0.2004",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "proto2api": "^0.0.8",
     "protobufjs": "^8.8.1",
     "puppeteer": "^25.16.0",
@@ -68,8 +71,8 @@
     "typescript": "^7.0.2",
     "uid": "^2.0.2",
     "vite-plugin-tailwind-shadowdom": "^1.1.1",
-    "vue-tsc": "^3.3.13",
-    "wxt": "0.21.4"
+    "vue-tsc": "^3.3.14",
+    "wxt": "0.21.5"
   },
   "lint-staged": {
     "*": "oxfmt --no-error-on-unmatched-pattern",
