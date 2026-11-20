@@ -146,14 +146,6 @@ async function onFiles(event: Event) {
         updatedAt: Date.now(),
         enable: true,
       }
-      const modelConf = model.modelData.value.find((item) => item.key === 'simple-default')
-      if (modelConf?.data) {
-        try {
-          Object.assign(profile, await structureResume(text, modelConf))
-        } catch {
-          // 提炼失败时保留原文摘要，不阻塞上传
-        }
-      }
       conf.formData.resumeProfiles.push(profile)
       if (!activeId.value) activeId.value = profile.id
     }
@@ -294,10 +286,10 @@ function openAdvanced() {
           <div class="flex flex-col gap-4">
             <div class="flex flex-wrap items-center gap-3">
               <UButton :loading="uploading" @click="pickFiles">
-                {{ uploading ? '解析并提炼中…' : '选择 .md 简历' }}
+                {{ uploading ? '解析中…' : '选择 .md 简历' }}
               </UButton>
               <input ref="fileInput" type="file" accept=".md,.markdown,.txt" multiple class="hidden" @change="onFiles" />
-              <span class="text-sm text-muted">文件名会作为简历名称，上传后自动提炼摘要</span>
+              <span class="text-sm text-muted">文件名会作为简历名称，上传后可点「AI 提炼」生成摘要</span>
             </div>
 
             <div class="flex items-center gap-2">
