@@ -24,6 +24,16 @@ export interface ResumeData {
 
 export type ResumeStructured = Omit<ResumeData, 'raw' | 'updatedAt'>
 
+/** 多份简历：同一份简历可以对应不同岗位方向 */
+export interface ResumeProfile extends ResumeData {
+  id: string
+  /** 展示名称，默认取文件名 */
+  name: string
+  /** 用于按岗位自动选择的关键词，逗号/顿号/空格分隔 */
+  keywords: string
+  enable: boolean
+}
+
 /** AI 匹配度配置 */
 export interface FormDataMatch extends FormDataAi {
   /** 低于该分数直接跳过，默认 65 */
@@ -68,6 +78,12 @@ export interface FormData {
   aiMatch: FormDataMatch
   aiReply: FormDataAi
   resume: ResumeData
+  resumeProfiles: ResumeProfile[]
+  activeResumeId: string
+  /** 按岗位关键词自动选择简历；关闭时只用默认简历 */
+  autoSelectResume: boolean
+  /** 简单模式：面板只显示开始/待发/日志 */
+  simpleMode: boolean
   workTime: WorkTime
   amap: {
     key: string

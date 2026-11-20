@@ -1,8 +1,9 @@
 import { shallowRef, ref, reactive } from 'vue'
 
 import { createFeishuSync, feishuJobRow } from '@/utils/feishuSync'
+import type { ResumeData } from '@/types/formData'
 
-import type { HelperContext } from '../useHelper'
+import type { HelperContext, JobData } from '../useHelper'
 import { DependencyMissingError } from './handles'
 import type {
   Handler,
@@ -285,6 +286,39 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
   }
 
+  /**
+   * 多份简历：优先按岗位关键词匹配，命中多个时取命中数最多的；
+   * 没有匹配或关闭自动选择时用默认简历；都没有则回退到旧的单份简历。
+   */
+  const pickResume = (jobData: JobData): ResumeData => {
+    const form = helper.conf.formData
+    const profiles = (form.resumeProfiles ?? []).filter(
+      (profile) => profile.enable && (profile.summary.trim() || profile.raw.trim()),
+    )
+    if (!profiles.length) return form.resume
+    const fallback = profiles.find((profile) => profile.id === form.activeResumeId) ?? profiles[0]!
+    if (!form.autoSelectResume) return fallback
+
+    const text = `${jobData.jobName} ${jobData.jobDescription} ${(jobData.skills ?? []).join(' ')}`.toLowerCase()
+    let best = fallback
+    let bestScore = 0
+    for (const profile of profiles) {
+      const keywords = profile.keywords
+        .split(/[,，、\s]+/)
+        .map((keyword) => keyword.trim().toLowerCase())
+        .filter(Boolean)
+      const score = keywords.reduce(
+        (sum, keyword) => (text.includes(keyword) ? sum + 1 : sum),
+        0,
+      )
+      if (score > bestScore) {
+        best = profile
+        bestScore = score
+      }
+    }
+    return best
+  }
+
   const runJob = async (data: WorkflowData<T, S>, mode: WorkflowMode, index = 0) => {
     const key = data.jobData.key
     if (isBlocked(key)) return
@@ -304,7 +338,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
     const wasReady = helper.jobResultMaps.get(key)?.status === 'ready'
     data.state = stateMaps.value.get(key) ?? data.state ?? {}
-    data.resume = helper.conf.formData.resume
+    data.resume = pickResume(data.jobData)
     stateMaps.value.set(key, data.state)
     helper.jobMaps.set(key, data)
     helper.currentJob.value = key
@@ -335,6 +369,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       }
       const handler = resolvedHandlers.get(t.id)
       if (handler) {
+        data.resume = pickResume(data.jobData)
         usedTasks.add(t.id)
         helper.jobResultMaps.set(key, {
           status: delivered ? 'success' : (t.state ?? 'running'),

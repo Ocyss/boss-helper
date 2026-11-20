@@ -357,7 +357,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         throw new HelperConfigError('aiMatch.model', 'AI匹配模型未配置')
       }
       return async (ctx, data) => {
-        if (!ctx.helper.conf.formData.resume.summary.trim()) {
+        const form = ctx.helper.conf.formData
+        const hasResume =
+          (form.resumeProfiles ?? []).some(
+            (profile) => profile.enable && (profile.summary.trim() || profile.raw.trim()),
+          ) || Boolean(form.resume.summary.trim())
+        if (!hasResume) {
           throw new HelperConfigError('resume.summary', '请先在配置中填写或上传简历')
         }
         delete data.state.aiMatch
@@ -467,7 +472,12 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
       ) {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
       }
-      if (!ctx.helper.conf.formData.resume.summary.trim()) {
+      const form = ctx.helper.conf.formData
+      const hasResume =
+        (form.resumeProfiles ?? []).some(
+          (profile) => profile.enable && (profile.summary.trim() || profile.raw.trim()),
+        ) || Boolean(form.resume.summary.trim())
+      if (!hasResume) {
         throw new HelperConfigError('resume.summary', '请先在配置中填写或上传简历')
       }
       return async (ctx, data) => {

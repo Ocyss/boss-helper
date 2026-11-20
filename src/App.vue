@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ChatBox from '@/components/ChatBox.vue'
 import DraftQueue from '@/components/DraftQueue.vue'
 import JobCards from '@/components/JobCards.vue'
+import SimpleStart from '@/components/SimpleStart.vue'
 import About from '@/components/Tabs/About.vue'
 import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
 import Filter from '@/components/Tabs/Filter.vue'
@@ -36,6 +37,17 @@ const protocolVal = '2026/10/21'
 async function onProtocol() {
   await counter.storageSet(protocol, protocolVal)
   protocolShow.value = false
+}
+function useSimpleMode() {
+  conf.formData.simpleMode = true
+  void conf.confSaving({ silent: true })
+}
+function openConfig() {
+  if (conf.formData.simpleMode) {
+    void counter.openOptionsPage()
+  } else {
+    window.open(chrome.runtime.getURL('advanced.html'), '_blank')
+  }
 }
 const presetOptions = ref<{ label: string; value: string }[]>([])
 const presetName = computed(() => {
@@ -80,6 +92,14 @@ async function switchAccount() {
 }
 
 const items = computed<TabsItem[]>(() => {
+  if (conf.formData.simpleMode) {
+    return [
+      { slot: 'start', label: '开始' },
+      { slot: 'drafts', label: '待发' },
+      { slot: 'logs', label: '日志' },
+      { slot: 'about', label: '关于&赞赏' },
+    ]
+  }
   const configs = [
     { slot: 'statistics', label: '统计' },
     { slot: 'drafts', label: '待发' },
@@ -185,6 +205,15 @@ function openStore() {
                 ({{ accounts.currentAccount.value?.label }})</template
               ><template v-if="presetName"> (预设: {{ presetName }})</template></span
             >
+            <UButton
+              v-if="!conf.formData.simpleMode"
+              size="xs"
+              color="neutral"
+              variant="subtle"
+              @click="useSimpleMode"
+            >
+              简单模式
+            </UButton>
             <UChip :show="isDot">
               <UButton color="primary" variant="subtle" @click="openStore" size="xs">
                 v{{ VITE_VERSION }} {{ isDot ? ' 有更新' : '' }}
@@ -214,6 +243,9 @@ function openStore() {
             :ui="{ list: 'items-center' }"
             :unmount-on-hide="false"
           >
+            <template #start>
+              <SimpleStart />
+            </template>
             <template #statistics>
               <Statistics />
             </template>
@@ -228,7 +260,7 @@ function openStore() {
             <template #logs><Logs /></template>
             <template #about><About /></template>
             <template #list-trailing>
-              <UButton class="ml-2" size="xs" @click="counter.openOptionsPage()"> 配置 </UButton>
+              <UButton class="ml-2" size="xs" @click="openConfig"> 配置 </UButton>
               <UButton
                 class="ml-2"
                 size="xs"

@@ -1,426 +1,369 @@
-<script setup lang="ts">
-import { useResizeObserver } from '@vueuse/core'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+<script lang="ts" setup>
+import { generateText } from 'ai'
+import { computed, onMounted, ref } from 'vue'
 
-import Alert from '@/components/Alert.vue'
 import { useConf } from '@/composables/conf'
-import { useConfigSections } from '@/composables/conf/sections'
-import { HelperKey } from '@/composables/useHelper'
-import type { HelperContext } from '@/composables/useHelper'
-import { useModel, ChatModel } from '@/composables/useModel'
-import { counter } from '@/message'
-import { exportJson } from '@/utils/jsonImportExport'
+import { useModel } from '@/composables/useModel'
+import { createModel } from '@/composables/useModel/providers'
+import type { ModelConf, ModelConfData } from '@/composables/useModel/type'
+import type { ResumeProfile } from '@/types/formData'
+import { structureResume } from '@/utils/resume'
 
-import AIPage from './pages/AIPage.vue'
-import CachePage from './pages/CachePage.vue'
-import FeishuPage from './pages/FeishuPage.vue'
-import GeneralPage from './pages/GeneralPage.vue'
-import ManagementPage from './pages/ManagementPage.vue'
-import ProvidersPage from './pages/ProvidersPage.vue'
-
-const formDataPresetsKey = 'local:FormDataPreses'
-
-const formDataPresets = ref([{ label: '默认配置', value: 'default' }])
-
-async function initPresets() {
-  formDataPresets.value = await counter.storageGet(formDataPresetsKey, [
-    { label: '默认配置', value: 'default' },
-  ])
-}
-
-const header = ref<HTMLElement>()
-const headerHeight = ref(0)
-useResizeObserver(header, () => {
-  headerHeight.value = header.value?.getBoundingClientRect().height ?? 0
-})
-
-const toast = useToast()
 const conf = useConf()
 const model = useModel()
-const schema = useConfigSections()
-const sections = computed(() => schema.value[1].filter((item) => item !== false))
-const helpText = ref('悬浮或聚焦配置项，即可在这里查看说明。')
-const hoveredHelp = ref('')
-const focusedHelp = ref('')
+const toast = useToast()
 
-function readHelp(target: EventTarget | null) {
-  if (!(target instanceof Element)) return ''
-  let element: Element | null = target
-  while (element) {
-    const text = element.getAttribute('data-help')?.trim()
-    if (text && text !== 'no-help') return text
-    element = element.parentElement
-  }
-  return ''
-}
+const apiKey = ref('')
+const baseUrl = ref('https://api.deepseek.com/v1')
+const modelId = ref('deepseek-chat')
+const showOther = ref(false)
+const testing = ref(false)
+const saving = ref(false)
+const uploading = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+const activeId = ref('')
+const autoSelect = ref(true)
+const refiningId = ref('')
 
-function updateHelp(event: Event) {
-  if (event.type === 'pointerover') hoveredHelp.value = readHelp(event.target)
-  if (event.type === 'pointerleave') hoveredHelp.value = ''
-  if (event.type === 'focusin') focusedHelp.value = readHelp(event.target)
-  if (event.type === 'focusout') focusedHelp.value = readHelp((event as FocusEvent).relatedTarget)
-  helpText.value =
-    hoveredHelp.value || focusedHelp.value || '悬浮或聚焦配置项，即可在这里查看说明。'
-}
-
-const page = ref('general')
-const activeSection = ref('basic')
-const ready = ref(false)
-const busy = ref(false)
-const error = ref('')
-const baseline = ref('')
-const modelBaseline = ref('')
-const aiEditor = ref<InstanceType<typeof AIPage>>()
-const revision = ref(0)
-const snapshot = () => JSON.stringify(conf.formData)
-const modelSnapshot = () => JSON.stringify(model.modelData.value)
-const dirty = computed(
-  () =>
-    ready.value &&
-    (snapshot() !== baseline.value ||
-      modelSnapshot() !== modelBaseline.value ||
-      aiEditor.value?.isDirty),
+const profiles = computed(() => conf.formData.resumeProfiles)
+const modelReady = computed(
+  () => Boolean(conf.formData.aiGreeting.enable && conf.formData.aiGreeting.model),
 )
 
-// Configuration components expect a helper, but options has no website session or jobs.
-const context = {
-  key: 'boss',
-  label: 'Boss直聘',
-  workflowRunning: ref(false),
-  statistics: { todayData: ref({ success: 0 }) },
-  jobList: ref([]),
-  jobMaps: new Map(),
-  models: model,
-  onJobCardClick: async () => {},
-} as unknown as HelperContext<any, unknown, unknown>
-context.chatModel = new ChatModel(context)
-provide(HelperKey, context)
+onMounted(async () => {
+  await conf.confInit()
+  await model.initModel()
+  const existing = model.modelData.value.find((item) => item.key === 'simple-default')
+  if (existing?.data) {
+    apiKey.value = existing.data.api_key
+    baseUrl.value = existing.data.base_url || baseUrl.value
+    modelId.value = existing.data.model || modelId.value
+  }
+  const storedId = conf.formData.activeResumeId
+  activeId.value = profiles.value.some((profile) => profile.id === storedId)
+    ? storedId
+    : profiles.value[0]?.id || ''
+  autoSelect.value = conf.formData.autoSelectResume !== false
+})
 
-function markClean() {
-  baseline.value = snapshot()
-  modelBaseline.value = modelSnapshot()
-}
-function allowDiscard() {
-  return (
-    !dirty.value || window.confirm('存在未保存的配置或编辑器草稿，继续将丢弃这些修改。是否继续？')
-  )
-}
-async function run(action: () => Promise<void> | void) {
-  if (busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    await action()
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    busy.value = false
+function buildModelData(): ModelConfData {
+  return {
+    base_url: baseUrl.value.trim(),
+    api_key: apiKey.value.trim(),
+    model: modelId.value.trim(),
+    protocol: 'openai-compatible',
+    advanced: {},
   }
 }
 
-async function initialize() {
-  await Promise.all([initPresets(), conf.confInit(), model.initModel()])
-  ready.value = true
-  markClean()
-}
-
-async function save() {
-  await run(async () => {
-    if ((await aiEditor.value?.save({ silent: true })) === false) return
-    const saved = snapshot()
-    const savedModels = modelSnapshot()
-    await conf.confSaving({ silent: true })
-    await model.saveModel({ silent: true })
-    baseline.value = saved
-    modelBaseline.value = savedModels
-    toast.add({
-      title: '配置与模型已保存',
-      color: 'success',
-      description: '回到投递页面记得手动刷新, 避免配置不同步',
+async function testConnection() {
+  if (!apiKey.value.trim() || !baseUrl.value.trim() || !modelId.value.trim()) {
+    toast.add({ title: '请先填写 API Key、API 地址和模型 ID', color: 'warning' })
+    return
+  }
+  testing.value = true
+  try {
+    const { text } = await generateText({
+      model: createModel(buildModelData()),
+      prompt: '只回复 OK',
     })
-  })
-}
-async function reload() {
-  if (!allowDiscard()) return
-  await run(async () => {
-    await initialize()
-    revision.value++
-  })
-}
-
-async function switchPreset(value: string) {
-  if (value === conf.formDataPreset.value || !allowDiscard()) return
-  await run(async () => {
-    await conf.switchPreset(value)
-    await model.initModel()
-    markClean()
-    revision.value++
-  })
+    toast.add({
+      title: '连接成功',
+      description: text.trim().slice(0, 40) || 'OK',
+      color: 'success',
+    })
+  } catch (error) {
+    toast.add({
+      title: '连接失败',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  } finally {
+    testing.value = false
+  }
 }
 
-async function manage(action: () => Promise<unknown> | unknown, reload = true) {
-  if (!allowDiscard()) return
-  await run(async () => {
-    if (reload) await initialize()
-    await action()
-    if (reload) await initialize()
-    else await model.initModel()
-    markClean()
-    revision.value++
-  })
+async function saveModel() {
+  if (!apiKey.value.trim()) {
+    toast.add({ title: '请先填写 API Key', color: 'warning' })
+    return
+  }
+  saving.value = true
+  try {
+    const data = buildModelData()
+    const existing = model.modelData.value.find((item) => item.key === 'simple-default')
+    if (existing) {
+      existing.name = 'DeepSeek'
+      existing.data = data
+    } else {
+      const confItem: ModelConf = {
+        key: 'simple-default',
+        name: 'DeepSeek',
+        color: '#0ea5e9',
+        data,
+      }
+      model.modelData.value.push(confItem)
+    }
+    await model.saveModel({ silent: true })
+
+    conf.formData.aiGreeting.enable = true
+    conf.formData.aiGreeting.model = 'simple-default'
+    conf.formData.aiMatch.enable = true
+    conf.formData.aiMatch.model = 'simple-default'
+    conf.formData.aiMatch.threshold = 65
+    conf.formData.aiFiltering.enable = false
+    await conf.confSaving({ silent: true })
+    toast.add({ title: '已保存，可以上传简历了', color: 'success' })
+  } finally {
+    saving.value = false
+  }
 }
-async function navigate(value: string | undefined) {
-  if (!value) return
-  page.value = 'general'
-  activeSection.value = value
-  await nextTick()
-  document
-    .getElementById(`section-${value}`)
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+function pickFiles() {
+  fileInput.value?.click()
 }
-function beforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value) return
-  event.preventDefault()
-  event.returnValue = ''
+
+async function onFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (!files.length) return
+  uploading.value = true
+  try {
+    for (const file of files) {
+      const text = (await file.text()).trim()
+      if (!text) continue
+      const name = file.name.replace(/\.(md|markdown|txt)$/i, '')
+      const plain = text
+        .replace(/^#{1,6}\s*/gm, '')
+        .replace(/[*_`>]/g, '')
+        .trim()
+      const profile: ResumeProfile = {
+        id: crypto.randomUUID(),
+        name,
+        keywords: name,
+        raw: text,
+        summary: plain.slice(0, 1500),
+        skills: '',
+        years: '',
+        projects: '',
+        updatedAt: Date.now(),
+        enable: true,
+      }
+      const modelConf = model.modelData.value.find((item) => item.key === 'simple-default')
+      if (modelConf?.data) {
+        try {
+          Object.assign(profile, await structureResume(text, modelConf))
+        } catch {
+          // 提炼失败时保留原文摘要，不阻塞上传
+        }
+      }
+      conf.formData.resumeProfiles.push(profile)
+      if (!activeId.value) activeId.value = profile.id
+    }
+    await saveProfiles()
+    toast.add({ title: `已添加 ${files.length} 份简历`, color: 'success' })
+  } catch (error) {
+    toast.add({
+      title: '简历解析失败',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  } finally {
+    uploading.value = false
+    input.value = ''
+  }
 }
-onMounted(() => {
-  window.addEventListener('beforeunload', beforeUnload)
-  void run(initialize)
-})
-onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
+
+async function saveProfiles() {
+  conf.formData.activeResumeId = activeId.value
+  conf.formData.autoSelectResume = autoSelect.value
+  const active = profiles.value.find((item) => item.id === activeId.value) ?? profiles.value[0]
+  if (active) {
+    conf.formData.resume = {
+      raw: active.raw,
+      summary: active.summary,
+      skills: active.skills,
+      years: active.years,
+      projects: active.projects,
+      updatedAt: active.updatedAt,
+    }
+  }
+  await conf.confSaving({ silent: true })
+}
+
+async function setDefault(profile: ResumeProfile) {
+  activeId.value = profile.id
+  await saveProfiles()
+  toast.add({ title: `默认简历：${profile.name}`, color: 'success' })
+}
+
+async function removeProfile(profile: ResumeProfile) {
+  const index = conf.formData.resumeProfiles.indexOf(profile)
+  if (index < 0) return
+  conf.formData.resumeProfiles.splice(index, 1)
+  if (activeId.value === profile.id) {
+    activeId.value = conf.formData.resumeProfiles[0]?.id ?? ''
+  }
+  await saveProfiles()
+}
+
+async function refine(profile: ResumeProfile) {
+  const modelConf = model.modelData.value.find((item) => item.key === 'simple-default')
+  if (!modelConf?.data) {
+    toast.add({ title: '请先保存 API Key', color: 'warning' })
+    return
+  }
+  refiningId.value = profile.id
+  try {
+    const source = profile.raw.trim() || profile.summary.trim()
+    Object.assign(profile, await structureResume(source, modelConf), { updatedAt: Date.now() })
+    await saveProfiles()
+    toast.add({ title: `已提炼：${profile.name}`, color: 'success' })
+  } catch (error) {
+    toast.add({
+      title: '提炼失败',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  } finally {
+    refiningId.value = ''
+  }
+}
+
+function openJobs() {
+  window.open('https://www.zhipin.com/web/geek/jobs', '_blank')
+}
+
+function openAdvanced() {
+  window.open(chrome.runtime.getURL('advanced.html'), '_blank')
+}
 </script>
 
 <template>
   <UApp>
-    <div
-      class="options-page min-h-screen bg-default text-default"
-      :style="{ '--options-header-height': `${headerHeight}px` }"
-      @pointerover="updateHelp"
-      @focusin="updateHelp"
-      @focusout="updateHelp"
-      @pointerleave="updateHelp"
-    >
-      <header ref="header" class="sticky top-0 z-20 border-b border-default bg-default px-4 py-3">
-        <div class="mx-auto max-w-240 flex items-center justify-between gap-4">
+    <div class="min-h-screen bg-default p-4 text-default sm:p-8">
+      <div class="mx-auto flex max-w-3xl flex-col gap-5">
+        <header class="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 class="text-lg font-semibold">BossHelper 设置</h1>
+            <h1 class="text-2xl font-semibold">Boss 求职助手</h1>
+            <p class="mt-1 text-sm text-muted">只需 3 步：填 API Key → 上传简历 → 去职位页生成招呼语。</p>
           </div>
-          <UBadge :color="dirty ? 'warning' : 'neutral'" variant="soft">{{
-            dirty ? '有未保存修改 / 草稿' : '已同步'
-          }}</UBadge>
-        </div>
-        <div
-          class="header-help mx-auto mt-2 max-w-240 text-sm text-muted"
-          role="note"
-          aria-label="配置帮助"
-        >
-          <span class="font-medium text-default">配置帮助：</span>
-          <span class="wrap-break-word text-wrap">{{ helpText }}</span>
-        </div>
-      </header>
-      <div class="options-layout">
-        <aside class="options-sidebar space-y-5">
-          <div class="space-y-2 flex flex-col">
-            <USelect
-              :model-value="conf.formDataPreset.value"
-              :items="formDataPresets"
-              :disabled="!ready || busy"
-              class="w-full"
-              @update:model-value="switchPreset"
-            />
-            <UButton
-              label="预设/账号管理"
-              icon="i-lucide-settings"
-              :variant="page === 'management' ? 'soft' : 'outline'"
-              block
-              :disabled="!ready || busy"
-              @click="page = 'management'"
-            />
+          <UBadge :color="modelReady ? 'success' : 'warning'" variant="subtle">
+            {{ modelReady ? '模型已配置' : '待配置模型' }}
+          </UBadge>
+        </header>
+
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-2">
+              <span class="flex size-6 items-center justify-center rounded-full bg-primary text-xs text-white">1</span>
+              <h2 class="font-semibold">填写 API Key</h2>
+            </div>
+          </template>
+          <div class="flex flex-col gap-4">
+            <UFormField label="DeepSeek API Key" description="默认使用 DeepSeek，保存后自动配置招呼语和匹配度模型。">
+              <UInput v-model="apiKey" type="password" placeholder="sk-..." class="w-full" />
+            </UFormField>
+
+            <UButton color="neutral" variant="ghost" size="xs" class="self-start" @click="showOther = !showOther">
+              {{ showOther ? '收起其他模型设置' : '使用其他模型（可选）' }}
+            </UButton>
+
+            <div v-if="showOther" class="grid gap-3 sm:grid-cols-2">
+              <UFormField label="API 地址">
+                <UInput v-model="baseUrl" placeholder="https://api.deepseek.com/v1" class="w-full" />
+              </UFormField>
+              <UFormField label="模型 ID">
+                <UInput v-model="modelId" placeholder="deepseek-chat" class="w-full" />
+              </UFormField>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <UButton :loading="saving" @click="saveModel">保存</UButton>
+              <UButton color="neutral" variant="outline" :loading="testing" @click="testConnection">
+                测试连接
+              </UButton>
+            </div>
           </div>
-          <nav aria-label="设置目录" class="flex flex-col gap-1">
-            <p class="px-2 py-1 text-xs text-muted">常规配置</p>
-            <UButton
-              label="基础设置"
-              :variant="page === 'general' && activeSection === 'basic' ? 'soft' : 'ghost'"
-              color="neutral"
-              @click="navigate('basic')"
-            />
-            <UButton
-              v-for="section in sections"
-              :key="section.value"
-              :label="section.label"
-              :variant="page === 'general' && activeSection === section.value ? 'soft' : 'ghost'"
-              color="neutral"
-              @click="navigate(section.value)"
-            />
-            <USeparator class="my-2" />
-            <UButton
-              label="缓存管理"
-              icon="i-lucide-database"
-              :variant="page === 'cache' ? 'soft' : 'ghost'"
-              @click="page = 'cache'"
-            />
-            <UButton
-              label="AI 配置"
-              icon="i-lucide-sparkles"
-              :variant="page === 'ai' ? 'soft' : 'ghost'"
-              @click="page = 'ai'"
-            />
-            <UButton
-              label="AI 模型配置"
-              icon="i-lucide-server"
-              :variant="page === 'providers' ? 'soft' : 'ghost'"
-              @click="page = 'providers'"
-            />
-            <UButton
-              label="飞书多维表格集成"
-              icon="i-lucide-table-properties"
-              :variant="page === 'feishu' ? 'soft' : 'ghost'"
-              @click="page = 'feishu'"
-            />
-          </nav>
-          <div class="space-y-2 border-t border-default pt-4 flex flex-col">
-            <UButton
-              label="导入配置"
-              icon="i-lucide-upload"
-              color="neutral"
-              variant="outline"
-              block
-              :disabled="!ready || busy"
-              @click="run(conf.confImport)"
-            />
-            <UButton
-              label="导出当前配置"
-              icon="i-lucide-download"
-              color="neutral"
-              variant="outline"
-              block
-              :disabled="!ready || busy"
-              @click="exportJson(JSON.parse(snapshot()), 'BossHelper配置')"
-            />
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-2">
+              <span class="flex size-6 items-center justify-center rounded-full bg-primary text-xs text-white">2</span>
+              <h2 class="font-semibold">上传简历（.md，可多份）</h2>
+            </div>
+          </template>
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-wrap items-center gap-3">
+              <UButton :loading="uploading" @click="pickFiles">
+                {{ uploading ? '解析并提炼中…' : '选择 .md 简历' }}
+              </UButton>
+              <input ref="fileInput" type="file" accept=".md,.markdown,.txt" multiple class="hidden" @change="onFiles" />
+              <span class="text-sm text-muted">文件名会作为简历名称，上传后自动提炼摘要</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <USwitch v-model="autoSelect" />
+              <span class="text-sm">按岗位关键词自动选择简历</span>
+            </div>
+
+            <div v-if="!profiles.length" class="rounded-lg border border-dashed border-default p-6 text-center text-sm text-muted">
+              还没有简历。上传一份「前端.md」或「AI 应用.md」开始。
+            </div>
+
+            <div v-for="profile in profiles" :key="profile.id" class="rounded-lg border border-default p-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <UInput v-model="profile.name" class="w-40" />
+                <UBadge v-if="profile.id === activeId" color="success" variant="subtle">默认</UBadge>
+                <div class="ml-auto flex gap-2">
+                  <UButton size="xs" color="neutral" variant="subtle" @click="setDefault(profile)">设为默认</UButton>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="subtle"
+                    :loading="refiningId === profile.id"
+                    @click="refine(profile)"
+                  >
+                    AI 提炼
+                  </UButton>
+                  <UButton size="xs" color="error" variant="subtle" @click="removeProfile(profile)">删除</UButton>
+                </div>
+              </div>
+              <UFormField label="岗位关键词（自动选择用）" class="mt-3">
+                <UInput v-model="profile.keywords" placeholder="前端,Vue,React" class="w-full" />
+              </UFormField>
+              <p class="mt-2 line-clamp-2 text-sm text-muted">{{ profile.summary }}</p>
+            </div>
+
+            <UButton v-if="profiles.length" color="neutral" variant="outline" @click="saveProfiles">
+              保存简历配置
+            </UButton>
           </div>
-        </aside>
-        <main class="options-main min-w-0 flex flex-col gap-5">
-          <Alert v-if="error" color="error" title="操作失败" :description="error" />
-          <p v-if="!ready" role="status">
-            {{ busy ? '正在加载配置…' : '配置未加载，请重试。' }}
-          </p>
-          <div v-if="ready" :key="revision" class="flex flex-col gap-5">
-            <ManagementPage
-              v-show="page === 'management'"
-              :busy="busy"
-              v-model="formDataPresets"
-              :manage="manage"
-            />
-            <GeneralPage v-show="page === 'general'" :busy="busy" />
-            <CachePage v-if="page === 'cache'" />
-            <AIPage v-show="page === 'ai'" ref="aiEditor" />
-            <ProvidersPage v-show="page === 'providers'" />
-            <FeishuPage v-show="page === 'feishu'" />
-          </div>
-        </main>
-        <aside class="options-help" aria-label="配置帮助">
-          <UCard>
-            <template #header><h2 class="text-sm font-semibold">配置帮助</h2></template>
-            <p class="text-sm text-muted whitespace-pre-line wrap-break-word text-wrap">
-              {{ helpText }}
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-2">
+              <span class="flex size-6 items-center justify-center rounded-full bg-primary text-xs text-white">3</span>
+              <h2 class="font-semibold">去职位页生成招呼语</h2>
+            </div>
+          </template>
+          <div class="flex flex-col gap-3">
+            <p class="text-sm text-muted">
+              打开 BOSS 职位页后，在右侧面板点「开始筛选并生成」。只会生成招呼语草稿，不会自动发送；生成后到「待发」逐条确认。
             </p>
-          </UCard>
-        </aside>
+            <div class="flex flex-wrap gap-2">
+              <UButton @click="openJobs">打开 BOSS 职位页</UButton>
+              <UButton color="neutral" variant="outline" @click="openAdvanced">高级设置</UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <footer class="pb-6 text-center text-xs text-muted">
+          简历和 API Key 只保存在本机浏览器；调用模型时会把简历与 JD 发给你配置的服务商。
+        </footer>
       </div>
-      <footer
-        class="options-footer fixed inset-x-0 bottom-0 z-10 border-t border-default bg-default/95 backdrop-blur px-4 py-3"
-      >
-        <div class="mx-auto max-w-240 flex flex-wrap items-center gap-3">
-          <UButton
-            label="保存配置与模型"
-            icon="i-lucide-save"
-            :loading="busy"
-            :disabled="!ready"
-            @click="save"
-          />
-          <UButton
-            label="重载"
-            color="neutral"
-            variant="outline"
-            :disabled="busy"
-            @click="reload"
-          />
-          <UButton
-            label="推荐配置"
-            color="neutral"
-            variant="outline"
-            :disabled="!ready || busy"
-            @click="conf.confRecommend"
-          />
-          <span class="text-xs text-muted md:ml-auto">{{
-            page === 'management' || page === 'cache'
-              ? '管理操作即时保存'
-              : page === 'feishu'
-                ? '飞书配置请在页面内单独保存'
-                : '修改后请点击保存'
-          }}</span>
-        </div>
-      </footer>
     </div>
   </UApp>
 </template>
-
-<style scoped>
-.options-page {
-  padding-bottom: 100px;
-}
-.options-layout {
-  display: grid;
-  align-items: start;
-  gap: 24px;
-  padding: 20px 16px;
-  max-width: 1504px;
-  margin-inline: auto;
-}
-.options-main :deep([id^='section-']) {
-  scroll-margin-top: calc(var(--options-header-height) + 20px);
-}
-.header-help {
-  max-height: 25dvh;
-  overflow-y: auto;
-}
-.options-main {
-  width: 100%;
-  max-width: 960px;
-}
-.options-help {
-  display: none;
-}
-@media (min-width: 768px) {
-  .options-layout {
-    grid-template-columns: 200px minmax(0, 960px);
-  }
-  .options-sidebar {
-    position: sticky;
-    top: calc(var(--options-header-height) + 20px);
-    max-height: calc(100dvh - var(--options-header-height) - 120px);
-    overflow-y: auto;
-  }
-}
-@media (min-width: 1440px) {
-  .options-layout {
-    grid-template-columns: 224px minmax(0, 960px) 224px;
-  }
-  .options-help {
-    display: block;
-    position: sticky;
-    top: calc(var(--options-header-height) + 20px);
-    max-height: calc(100dvh - var(--options-header-height) - 120px);
-    overflow-y: auto;
-  }
-  .header-help {
-    display: none;
-  }
-}
-@media (max-width: 767px) {
-  .options-page {
-    padding-bottom: 150px;
-  }
-}
-</style>

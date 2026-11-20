@@ -1,9 +1,11 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 
+import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
 
 const helper = useHelper()
+const conf = useConf()
 const toast = useToast()
 
 const drafts = computed(() => helper.workflow?.drafts)
@@ -67,14 +69,22 @@ function skip(key: string) {
       <div>
         <h3 class="font-semibold">待发队列</h3>
         <p class="text-sm text-muted">
-          先点「仅生成」生成招呼语，在这里逐条确认、编辑后发送。默认不会自动发送。
+          {{
+            conf.formData.simpleMode
+              ? '先点「开始筛选并生成」生成招呼语，在这里逐条确认、编辑后发送。默认不会自动发送。'
+              : '先点「仅生成」生成招呼语，在这里逐条确认、编辑后发送。默认不会自动发送。'
+          }}
         </p>
       </div>
       <UBadge color="neutral" variant="subtle">{{ rows.length }} 条</UBadge>
     </div>
 
     <div v-if="!rows.length" class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted">
-      暂无待发岗位。回到「统计」页点「开始仅生成」，生成完成后会出现在这里。
+      暂无待发岗位。{{
+        conf.formData.simpleMode
+          ? '回到「开始」页点「开始筛选并生成」'
+          : '回到「统计」页点「开始仅生成」'
+      }}，生成完成后会出现在这里。
     </div>
 
     <div v-for="row in rows" :key="row.key" class="rounded-lg border border-default p-3">

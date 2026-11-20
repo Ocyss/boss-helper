@@ -2,6 +2,7 @@ import ui from '@nuxt/ui/vue-plugin'
 import { createApp } from 'vue'
 
 import { initExtensionCounter } from '@/message'
+
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 function applySystemTheme() {
   document.documentElement.classList.toggle('dark', systemTheme.matches)
@@ -18,7 +19,7 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error('Options initialization failed', error)
+  console.error('Simple options initialization failed', error)
   const root = document.getElementById('app')
-  if (root) root.textContent = `设置页面启动失败：${String(error)}`
+  if (root) root.textContent = `配置页启动失败：${String(error)}`
 })

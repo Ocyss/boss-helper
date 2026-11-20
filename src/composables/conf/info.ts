@@ -10,6 +10,10 @@ export const defaultFormData: FormData = {
     projects: '',
     updatedAt: 0,
   },
+  resumeProfiles: [],
+  activeResumeId: '',
+  autoSelectResume: true,
+  simpleMode: true,
   workTime: {
     enable: true,
     start: '09:00',
