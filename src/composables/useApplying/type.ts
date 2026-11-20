@@ -55,16 +55,8 @@ export const jobStatusList = [
 
 export type JobStatus = (typeof jobStatusList)[number]
 
-export interface MatchResult {
-  score: number
-  matched: string[]
-  gaps: string[]
-  reason?: string
-}
-
 export interface WorkflowState {
   aiGreeting?: GreetingResult
-  aiMatch?: MatchResult
   amap?: {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>

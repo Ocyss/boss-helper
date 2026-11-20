@@ -91,37 +91,6 @@ export function parseGreeting(content: string, json = true): GreetingResult {
   }
 }
 
-export interface MatchResult {
-  score: number
-  matched: string[]
-  gaps: string[]
-  reason?: string
-}
-
-export function parseMatch(content: string): MatchResult {
-  const res = parseGptJson<{
-    score: number
-    matched: string[]
-    gaps: string[]
-    reason?: string
-  }>(content)
-  if (!res || typeof res !== 'object') {
-    throw new Error('AI 匹配度不是有效的 JSON')
-  }
-  const score = Number(res.score)
-  if (!Number.isFinite(score)) {
-    throw new Error('AI 匹配度缺少有效的 score')
-  }
-  const toList = (value: unknown): string[] =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-  return {
-    score: Math.max(0, Math.min(100, Math.round(score))),
-    matched: toList(res.matched),
-    gaps: toList(res.gaps),
-    ...(typeof res.reason === 'string' ? { reason: res.reason } : {}),
-  }
-}
-
 export function parseFiltering(content: string) {
   interface Item {
     reason: string

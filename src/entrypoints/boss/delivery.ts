@@ -70,8 +70,6 @@ export const bossWorkflow = defineTaskWorkflow<BossHelperCtx, BoosJobData>(
   ), // 金牌面试官过滤
 
   tasks.amap({ deps: ['岗位详情获取'] }), // 高德地图
-  tasks.aiFiltering({ deps: ['岗位详情获取'] }), // AI过滤
-  tasks.aiMatch(), // AI 简历匹配度
 
   tasks.aiGreetingGenerate({ phase: 'generate', deps: ['岗位详情获取'] }), // 投递前生成并校验AI招呼语
 

@@ -34,12 +34,6 @@ export interface ResumeProfile extends ResumeData {
   enable: boolean
 }
 
-/** AI 匹配度配置 */
-export interface FormDataMatch extends FormDataAi {
-  /** 低于该分数直接跳过，默认 65 */
-  threshold: number
-}
-
 /** 自动投递时段 */
 export interface WorkTime {
   enable: boolean
@@ -75,7 +69,6 @@ export interface FormData {
     afterImages?: string[]
   }
   aiFiltering: FormDataAi & { score: number }
-  aiMatch: FormDataMatch
   aiReply: FormDataAi
   resume: ResumeData
   resumeProfiles: ResumeProfile[]

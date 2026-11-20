@@ -18,7 +18,6 @@ const rows = computed(() => {
       key,
       text,
       job: data?.jobData,
-      match: data?.state.aiMatch,
     }
   })
 })
@@ -93,13 +92,9 @@ function skip(key: string) {
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-medium">{{ row.job?.jobName || '未知岗位' }}</span>
             <UBadge v-if="row.job?.salary" color="neutral" variant="subtle">{{ row.job.salary }}</UBadge>
-            <UBadge v-if="row.match" color="success" variant="subtle">
-              匹配 {{ row.match.score }}
-            </UBadge>
           </div>
           <p class="mt-1 text-sm text-muted">
             {{ row.job?.brand?.name || '未知公司' }}
-            <span v-if="row.match?.reason"> · {{ row.match.reason }}</span>
           </p>
         </div>
         <div class="flex items-center gap-2">

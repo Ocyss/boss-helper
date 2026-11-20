@@ -108,9 +108,6 @@ async function saveModel() {
 
     conf.formData.aiGreeting.enable = true
     conf.formData.aiGreeting.model = 'simple-default'
-    conf.formData.aiMatch.enable = true
-    conf.formData.aiMatch.model = 'simple-default'
-    conf.formData.aiMatch.threshold = 65
     conf.formData.aiFiltering.enable = false
     await conf.confSaving({ silent: true })
     toast.add({ title: '已保存，可以上传简历了', color: 'success' })
@@ -261,7 +258,7 @@ function openAdvanced() {
             </div>
           </template>
           <div class="flex flex-col gap-4">
-            <UFormField label="DeepSeek API Key" description="默认使用 DeepSeek，保存后自动配置招呼语和匹配度模型。">
+            <UFormField label="DeepSeek API Key" description="默认使用 DeepSeek，保存后自动配置招呼语模型。">
               <UInput v-model="apiKey" type="password" placeholder="sk-..." class="w-full" />
             </UFormField>
 

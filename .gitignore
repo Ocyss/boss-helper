@@ -37,3 +37,4 @@ logapi.zhipin.*.pem
 /temp
 
 /*.zip
+/*-chrome/

@@ -181,46 +181,6 @@ JD：
     ],
     score: 10,
   },
-  aiMatch: {
-    enable: false,
-    threshold: 65,
-    prompt: [
-      {
-        role: 'system',
-        content: `## 角色
-你是求职匹配评估器。
-
-## 任务
-根据求职者简历和岗位 JD，判断匹配程度。
-
-## 输出
-只输出 JSON，不要 Markdown 或解释：
-{"score": 0, "matched": ["匹配点"], "gaps": ["缺口"], "reason": "一句话结论"}
-
-## 评分规则
-- score 为 0-100 的整数。
-- 硬性要求（核心技能、年限、学历、行业）不满足要显著扣分。
-- 简历未写的能力不得视为具备。
-- 80 以上很匹配，60-79 可以投，40-59 勉强，40 以下不建议。`,
-      },
-      {
-        role: 'user',
-        content: `## 简历
-{{ resume.summary }}
-技能：{{ resume.skills }}
-年限：{{ resume.years }}
-项目：{{ resume.projects }}
-
-## 岗位
-岗位名：{{ jobData.jobName }}
-薪资：{{ jobData.salary }}
-学历：{{ jobData.degreeName }}
-经验：{{ jobData.experienceName }}
-JD：
-{{ jobData.jobDescription }}`,
-      },
-    ],
-  },
   aiReply: {
     enable: false,
     prompt: [{ role: 'user', content: '帮我写一个回复的提示' }],
