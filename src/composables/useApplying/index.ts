@@ -533,7 +533,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       lastMode.value = mode
       if (mode === 'generate' && !helper.conf.formData.aiGreeting.enable)
         throw new Error('仅生成需要先启用并配置 AI 招呼语')
-      if (mode !== 'delivery' && !isWithinWorkTime()) {
+      if (mode === 'auto' && !isWithinWorkTime()) {
         throw new Error(
           `当前不在投递时段（${helper.conf.formData.workTime.start}-${helper.conf.formData.workTime.end}），请在配置中调整或关闭时段限制`,
         )
@@ -570,7 +570,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       let repeatedJobs = 0
       let consecutiveErrors = 0
       while (!isStop()) {
-        if (!isWithinWorkTime()) {
+        if (mode === 'auto' && !isWithinWorkTime()) {
           log.info('已到投递时段结束时间，自动停止')
           return
         }
