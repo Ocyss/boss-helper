@@ -1,9 +1,9 @@
 {
   "name": "boss-job-assistant",
   "displayName": "Boss 求职助手",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
-  "description": "Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率,技术栈使用VIte + Vue3 + element-plus",
+  "description": "Boss直聘助手, 旨在减少投递简历的麻烦, 和提高投递简历的效率,技术栈使用Vite + Vue3 + element-plus",
   "type": "module",
   "scripts": {
     "version:check": "node scripts/check-version.mjs",
@@ -29,7 +29,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.85",
     "@ai-sdk/openai": "^4.0.99",
-    "@nuxt/ui": "^4.12.0",
+    "@nuxt/ui": "4.12.0",
     "@vueuse/integrations": "^15.0.0",
     "ai": "^7.0.148",
     "codejar": "^4.3.0",
