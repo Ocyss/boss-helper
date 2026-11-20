@@ -148,7 +148,7 @@ export default defineConfig({
   }),
   dev: {},
   manifest: ({ browser }) => ({
-    ...extKey(browser),
+    ...(browser === 'firefox' ? extKey(browser) : {}),
     default_locale: 'zh_CN',
     name: '__MSG_extName__',
     description: '__MSG_extDescription__',

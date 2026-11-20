@@ -4,7 +4,7 @@ import type { HelperContext } from '~/composables/useHelper'
 import { sameCompanyKey, sameHrKey } from '../../entrypoints/boss/requests'
 import type { JobStatus, TaskContext, TaskResult } from './type'
 import { defineTaskHandler } from './type'
-import { parseFiltering, parseGreeting, rangeMatch, rangeMatchFormat } from './utils'
+import { parseFiltering, parseGreeting, parseMatch, rangeMatch, rangeMatchFormat } from './utils'
 
 function normalizeFilterText(text: string) {
   return text.toLowerCase().replace(/\s/g, '')
@@ -343,6 +343,44 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
     },
   )
 
+  aiMatch = defineTaskHandler<C, T, S>(
+    'AI匹配度',
+    (ctx) => {
+      const conf = ctx.helper.conf.formData.aiMatch
+      if (!conf.enable) {
+        return
+      }
+      if (!conf.model) {
+        throw new HelperConfigError('aiMatch.model', 'AI匹配模型未配置')
+      }
+      if (!ctx.helper.chatModel.createAgent(conf, 'match', { json: true })) {
+        throw new HelperConfigError('aiMatch.model', 'AI匹配模型未配置')
+      }
+      return async (ctx, data) => {
+        if (!ctx.helper.conf.formData.resume.summary.trim()) {
+          throw new HelperConfigError('resume.summary', '请先在配置中填写或上传简历')
+        }
+        delete data.state.aiMatch
+        const content = await ctx.helper.chatModel
+          .chat('match', data, { disableMessages: true })
+          .then((r) => r.text)
+        const result = parseMatch(content)
+        data.state.aiMatch = result
+        if (result.score < conf.threshold) {
+          return taskResult.skip(
+            `匹配度 ${result.score} 低于阈值 ${conf.threshold}${result.reason ? `：${result.reason}` : ''}`,
+          )
+        }
+      }
+    },
+    {
+      label: 'AI匹配度',
+      state: 'ai',
+      stateMsg: '评估匹配度中',
+      deps: ['岗位详情获取'],
+    },
+  )
+
   activityFilter = defineTaskHandler<C, T, S>('活跃度过滤', (ctx) => {
     if (!ctx.helper.conf.formData.activityFilter.value) {
       return
@@ -428,6 +466,9 @@ export class TaskRegistry<C extends HelperContext<C, T, S>, T, S = {}> {
         })
       ) {
         throw new HelperConfigError('aiGreeting.model', 'AI招呼模型未配置')
+      }
+      if (!ctx.helper.conf.formData.resume.summary.trim()) {
+        throw new HelperConfigError('resume.summary', '请先在配置中填写或上传简历')
       }
       return async (ctx, data) => {
         delete data.state.aiGreeting

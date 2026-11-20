@@ -51,6 +51,22 @@ const configLevelOptions = [
               :step="10"
             />
           </UFormField>
+
+          <span data-help="开启后只在下面的时段内自动筛选/生成/投递；手动单条发送不受限制。">
+            <UCheckbox v-model="conf.formData.workTime.enable" label="仅在工作时段投递" />
+          </span>
+
+          <UFormField
+            v-if="conf.formData.workTime.enable"
+            label="投递时段"
+            data-help="建议工作日 9:00-18:00，避免深夜或凌晨操作。"
+          >
+            <div class="flex items-center gap-2">
+              <UInput v-model="conf.formData.workTime.start" type="time" class="w-28" />
+              <span class="text-sm text-muted">至</span>
+              <UInput v-model="conf.formData.workTime.end" type="time" class="w-28" />
+            </div>
+          </UFormField>
         </div>
       </UCard>
       <UCard

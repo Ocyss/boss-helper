@@ -5,6 +5,8 @@ import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
 
 import LLMPromptEdit from './AI/LLMPromptEdit.vue'
+import MatchConfig from './AI/MatchConfig.vue'
+import ResumeConfig from './AI/ResumeConfig.vue'
 
 const conf = useConf()
 const helper = useHelper()
@@ -24,14 +26,24 @@ async function save(options?: { silent?: boolean }): Promise<boolean> {
 
 defineExpose({ save, isDirty })
 const running = computed(() => helper.workflow?.status.value === 'running')
+const greetingEnabled = computed({
+  get: () => conf.formData.aiGreeting.enable,
+  set: (value: boolean) => {
+    conf.formData.aiGreeting.enable = value
+  },
+})
+const filteringEnabled = computed({
+  get: () => conf.formData.aiFiltering.enable,
+  set: (value: boolean) => {
+    conf.formData.aiFiltering.enable = value
+  },
+})
 const items = [
   { label: '招呼语', value: 'aiGreeting', slot: 'greeting' as const },
   { label: '筛选', value: 'aiFiltering', slot: 'filtering' as const },
+  { label: '匹配', value: 'aiMatch', slot: 'match' as const },
+  { label: '简历', value: 'resume', slot: 'resume' as const },
 ]
-
-async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
-  conf.formData[data].enable = enabled
-}
 </script>
 
 <template>
@@ -52,10 +64,9 @@ async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
       <template #greeting>
         <div class="flex flex-col gap-4 pt-4">
           <USwitch
-            :model-value="conf.formData.aiGreeting.enable"
+            v-model="greetingEnabled"
             :disabled="running"
             label="启用 AI 招呼语"
-            @update:model-value="toggle('aiGreeting', $event)"
           />
           <LLMPromptEdit ref="greetingEditor" data="aiGreeting" />
         </div>
@@ -63,12 +74,21 @@ async function toggle(data: 'aiGreeting' | 'aiFiltering', enabled: boolean) {
       <template #filtering>
         <div class="flex flex-col gap-4 pt-4">
           <USwitch
-            :model-value="conf.formData.aiFiltering.enable"
+            v-model="filteringEnabled"
             :disabled="running"
             label="启用 AI 岗位筛选"
-            @update:model-value="toggle('aiFiltering', $event)"
           />
           <LLMPromptEdit ref="filteringEditor" data="aiFiltering" />
+        </div>
+      </template>
+      <template #match>
+        <div class="pt-4">
+          <MatchConfig />
+        </div>
+      </template>
+      <template #resume>
+        <div class="pt-4">
+          <ResumeConfig />
         </div>
       </template>
     </UTabs>

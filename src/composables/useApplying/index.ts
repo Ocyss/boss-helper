@@ -304,6 +304,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     }
     const wasReady = helper.jobResultMaps.get(key)?.status === 'ready'
     data.state = stateMaps.value.get(key) ?? data.state ?? {}
+    data.resume = helper.conf.formData.resume
     stateMaps.value.set(key, data.state)
     helper.jobMaps.set(key, data)
     helper.currentJob.value = key
@@ -508,15 +509,40 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
     withRun(() => runJob(data, mode))
   const execute = (data: WorkflowData<T, S>, index = 0) =>
     withRun(() => runJob(data, 'auto', index))
+  const isWithinWorkTime = () => {
+    const { enable, start, end } = helper.conf.formData.workTime
+    if (!enable) return true
+    const toMinutes = (value: string) => {
+      const [h, m] = value.split(':').map(Number)
+      return (h ?? 0) * 60 + (m ?? 0)
+    }
+    const now = new Date()
+    const current = now.getHours() * 60 + now.getMinutes()
+    const from = toMinutes(start)
+    const to = toMinutes(end)
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) return true
+    return from < to ? current >= from && current <= to : current >= from || current <= to
+  }
+
+  /** 在配置间隔上加入 ±25% 抖动，避免固定节奏 */
+  const jitter = (seconds: number) => Math.max(1, seconds * (0.75 + Math.random() * 0.5))
+
   const executeAll = (rawDataMap: Map<string, T>, mode: WorkflowMode = 'auto') =>
     withRun(async () => {
+      const log = logger.withContext({ id: 'workflow-execute-all' })
       lastMode.value = mode
       if (mode === 'generate' && !helper.conf.formData.aiGreeting.enable)
         throw new Error('仅生成需要先启用并配置 AI 招呼语')
+      if (mode !== 'delivery' && !isWithinWorkTime()) {
+        throw new Error(
+          `当前不在投递时段（${helper.conf.formData.workTime.start}-${helper.conf.formData.workTime.end}），请在配置中调整或关闭时段限制`,
+        )
+      }
       if (mode === 'delivery') {
         const queue = helper.jobList.value.filter(
           (job) => helper.jobResultMaps.get(job.key)?.status === 'ready' && !drafts.has(job.key),
         )
+        let consecutiveErrors = 0
         for (const job of queue) {
           if (
             status.value === 'stop' ||
@@ -525,15 +551,29 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             break
           const data = helper.jobMaps.get(job.key)
           if (data) await runJob(data, 'delivery')
-          await delay(helper.conf.formData.delayDeliveryInterval, () => status.value === 'stop')
+          if (helper.jobResultMaps.get(job.key)?.status === 'error') {
+            consecutiveErrors++
+            if (consecutiveErrors >= 3) {
+              log.error('连续 3 个岗位投递失败，已自动停止，请检查账号或页面状态')
+              return
+            }
+          } else {
+            consecutiveErrors = 0
+          }
+          await delay(jitter(helper.conf.formData.delayDeliveryInterval), () => status.value === 'stop')
         }
         return
       }
       const isStop = () => status.value === 'stop'
-      await delay(helper.conf.formData.delayDeliveryStarts, isStop)
+      await delay(jitter(helper.conf.formData.delayDeliveryStarts), isStop)
       const seenJobs = new Set<string>()
       let repeatedJobs = 0
+      let consecutiveErrors = 0
       while (!isStop()) {
+        if (!isWithinWorkTime()) {
+          log.info('已到投递时段结束时间，自动停止')
+          return
+        }
         const jobs = helper.jobList.value.slice()
         if (!jobs.length) break
         const hasNewJobs = jobs.some((job) => !seenJobs.has(job.key))
@@ -568,7 +608,16 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
             index,
           )
           if (isStop()) break
-          await delay(helper.conf.formData.delayDeliveryInterval, isStop)
+          if (helper.jobResultMaps.get(jobData.key)?.status === 'error') {
+            consecutiveErrors++
+            if (consecutiveErrors >= 3) {
+              log.error('连续 3 个岗位处理失败，已自动停止，请检查账号、网络或页面状态')
+              return
+            }
+          } else {
+            consecutiveErrors = 0
+          }
+          await delay(jitter(helper.conf.formData.delayDeliveryInterval), isStop)
         }
         if (isStop()) break
         if (
@@ -578,7 +627,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
           break
         void feishuSync.flush()
         const hasMore = await helper.loadMoreJob(
-          delay(helper.conf.formData.delayDeliveryPageNext, isStop),
+          delay(jitter(helper.conf.formData.delayDeliveryPageNext), isStop),
         )
         if (!hasMore) break
       }

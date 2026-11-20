@@ -1,3 +1,7 @@
+# Boss 求职助手（定制版）
+
+> 本仓库是基于 [Ocyss/boss-helper](https://github.com/Ocyss/boss-helper) 的定制分支，新增简历解析、AI 匹配度、待发队列等能力。构建与使用见 [CUSTOM.md](./CUSTOM.md)。
+
 > [!CAUTION]
 > 本项目仅供学习交流，禁止用于商业用途
 >

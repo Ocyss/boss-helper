@@ -1,8 +1,8 @@
 {
   "extName": {
-    "message": "boss-helper"
+    "message": "Boss Job Assistant"
   },
   "extDescription": {
-    "message": "BOSS Direct Assistant, Supports rich filtering rules and AI integration, enabling both screening and automatic greetings."
+    "message": "AI job assistant for BOSS Zhipin: resume parsing, job matching score, personalized greetings, and human-confirmed sending."
   }
 }

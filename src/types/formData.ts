@@ -12,6 +12,33 @@ export interface Statistics {
 const ConfigLevels = ['beginner', 'intermediate', 'advanced', 'expert'] as const
 export type ConfigLevel = (typeof ConfigLevels)[number]
 
+/** 简历信息：raw 保存原文，其余字段用于提示词注入与匹配 */
+export interface ResumeData {
+  raw: string
+  summary: string
+  skills: string
+  years: string
+  projects: string
+  updatedAt: number
+}
+
+export type ResumeStructured = Omit<ResumeData, 'raw' | 'updatedAt'>
+
+/** AI 匹配度配置 */
+export interface FormDataMatch extends FormDataAi {
+  /** 低于该分数直接跳过，默认 65 */
+  threshold: number
+}
+
+/** 自动投递时段 */
+export interface WorkTime {
+  enable: boolean
+  /** HH:mm */
+  start: string
+  /** HH:mm */
+  end: string
+}
+
 export interface FormData {
   configLevel: ConfigLevel
   company: FormDataSelect
@@ -38,7 +65,10 @@ export interface FormData {
     afterImages?: string[]
   }
   aiFiltering: FormDataAi & { score: number }
+  aiMatch: FormDataMatch
   aiReply: FormDataAi
+  resume: ResumeData
+  workTime: WorkTime
   amap: {
     key: string
     origins: string

@@ -78,24 +78,11 @@ export async function sendPublishReq(
       const content = String(
         res?.zpData?.bizData?.chatRemindDialog?.content || res.message || '未知错误',
       )
-      // 命中限额弹窗 → 立刻发送确认请求
-      if (content.includes('您今天已与120位BOSS沟通')) {
-        try {
-          const url = new URL('https://www.zhipin.com/wapi/zpCommon/actionLog/geek/chatremind.json')
-          url.searchParams.set('ba', res.zpData.bizData.chatRemindDialog.ba)
-          url.searchParams.set('action', 'addf-limit-popup-c')
-          await fetch(url, {
-            method: 'POST',
-            headers: { Zp_token: token },
-            signal: AbortSignal.timeout(10_000),
-          })
-
-          return sendPublishReq(data, undefined, retries, { cid: 1 })
-        } catch (e) {
-          logger.error('尝试确认投递限制失败', e)
-          throw new PublishError(`投递限制确认失败]${content}`)
-        }
-      } else if (content.includes('您今天已与150位BOSS沟通')) {
+      // 达到平台沟通上限时直接停止，不再尝试确认弹窗绕过限制
+      if (
+        content.includes('您今天已与120位BOSS沟通') ||
+        content.includes('您今天已与150位BOSS沟通')
+      ) {
         throw new LimitError(content)
       } else if (content.includes('操作过于频繁')) {
         throw new RateLimitError(content)

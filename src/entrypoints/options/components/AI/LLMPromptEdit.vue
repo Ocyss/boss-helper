@@ -300,6 +300,7 @@ async function testJob() {
               jobData: item.job,
               rawData: null,
               state: {},
+              resume: conf.formData.resume,
             },
             {
               disableMessages: true,

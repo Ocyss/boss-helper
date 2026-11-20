@@ -1,6 +1,7 @@
 import type { ContextLogger } from 'devlog-ui'
 
 import type { HelperContext, JobData } from '@/composables/useHelper'
+import type { ResumeData } from '@/types/formData'
 
 import type { DeliveryWorkflow } from '.'
 import { useDeliveryWorkflow } from '.'
@@ -54,8 +55,16 @@ export const jobStatusList = [
 
 export type JobStatus = (typeof jobStatusList)[number]
 
+export interface MatchResult {
+  score: number
+  matched: string[]
+  gaps: string[]
+  reason?: string
+}
+
 export interface WorkflowState {
   aiGreeting?: GreetingResult
+  aiMatch?: MatchResult
   amap?: {
     geocode?: Awaited<ReturnType<typeof amapGeocode>>
     distance?: Awaited<ReturnType<typeof amapDistance>>
@@ -66,6 +75,8 @@ export interface WorkflowData<T, S> {
   jobData: JobData
   rawData: T
   state: WorkflowState & Partial<S>
+  /** 当前简历快照，供提示词模板 {{ resume.* }} 使用 */
+  resume?: ResumeData
 }
 
 export type TaskResult = {

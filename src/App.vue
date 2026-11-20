@@ -3,6 +3,7 @@ import type { TabsItem } from '@nuxt/ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ChatBox from '@/components/ChatBox.vue'
+import DraftQueue from '@/components/DraftQueue.vue'
 import JobCards from '@/components/JobCards.vue'
 import About from '@/components/Tabs/About.vue'
 import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
@@ -81,6 +82,7 @@ async function switchAccount() {
 const items = computed<TabsItem[]>(() => {
   const configs = [
     { slot: 'statistics', label: '统计' },
+    { slot: 'drafts', label: '待发' },
     { slot: 'filter', label: '筛选' },
     { slot: 'appearance', label: '外观' },
 
@@ -178,7 +180,7 @@ function openStore() {
         <div class="pt-3 pb-6 px-4 flex flex-col">
           <div class="flex gap-2 items-center">
             <span class="text-xl"
-              >{{ !appearanceConf.hideHeader ? 'Boss-Helper' : 'Helper'
+              >{{ !appearanceConf.hideHeader ? 'Boss 求职助手' : '求职助手'
               }}<template v-if="accounts.activeAccount.value !== 'default'">
                 ({{ accounts.currentAccount.value?.label }})</template
               ><template v-if="presetName"> (预设: {{ presetName }})</template></span
@@ -214,6 +216,9 @@ function openStore() {
           >
             <template #statistics>
               <Statistics />
+            </template>
+            <template #drafts>
+              <DraftQueue />
             </template>
             <template #filter>
               <Filter />
@@ -279,44 +284,23 @@ function openStore() {
       <ChatBox v-model:open="chatOpen" />
       <UModal
         v-model:open="protocolShow"
-        title="Boss-Helper协议"
+        title="Boss 求职助手 · 使用须知"
         :close="false"
         :dismissible="false"
       >
         <template #body>
-          1. 本插件完全免费且100%开源, 如果你是付费购买则是被骗了, 请投诉并举报商家
+          1. 本定制版基于开源项目 boss-helper（MIT）修改，原项目版权归其作者所有。
           <br />
-          2. 暂时不维护文档(维护了也不会有多少人看), 所以配置会添加帮助信息, 足够理解用途,
-          不理解可反馈进行文案优化
+          2. 仅供个人求职使用，请遵守 BOSS 直聘用户协议；自动化操作存在限流、封号等风险，需自行承担。
           <br />
-          3. 非常欢迎大家来提优化意见, pr提交(需参考CONTRIBUTING), tg交流群交流
-          <ULink to="https://t.me/ocyss_boss_helper" target="_blank">
-            https://t.me/ocyss_boss_helper
-          </ULink>
+          3. 简历只保存在本机浏览器存储；调用第三方大模型时，简历与 JD 会发送给你配置的模型服务商。
           <br />
-          4. 遇到bug反馈之前一定需要分清是不是插件问题, 插件是否更新到最新版.
+          4. 默认只生成招呼语草稿，需人工确认后发送；请勿用于批量骚扰、代运营或其他滥用场景。
           <br />
-          原生筛选并不严格, 其次无法下一页请手动滚到底部看看能否加载, 80%反馈均跟插件无关
-          <br />
-          如果还是有大量无用算命反馈, 插件将不再公开维护, 仅小范围自用更新
-          <br />
-          5. 投递在达到上限，或者页面无法滚动时会结束投递.
-          <br />
-          6. 不再维护暗黑模式, 可改用
-          <ULink to="https://darkreader.org" target="_blank"> darkreader 扩展 </ULink>
-          实现(会帮忙兼容)
-          <br />
-          7. 不再维护多账号模式的ck保存跟切换, 自行退出或使用其他插件/浏览器容器来实现
+          5. 商业使用前请自行确认上游 LICENSE、README 及平台规则。
           <br />
           <br />
-          如果不同意该协议, 请手动卸载本插件
-          <br />
-          <br />
-          本项目仅供学习交流，禁止用于商业用途
-          <br />
-          使用该脚本有一定风险(如黑号,封号,权重降低等)，本项目不承担任何责任
-          <br />
-          Github开源地址:
+          Github 原项目地址：
           <ULink to="https://github.com/ocyss/boss-helper" target="_blank">
             https://github.com/ocyss/boss-helper
           </ULink>

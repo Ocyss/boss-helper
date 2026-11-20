@@ -18,7 +18,7 @@ import type { HelperContext } from '../useHelper'
 import { createModel } from './providers'
 import type { ModelConf } from './type'
 
-const role = ['system', 'user', 'assistant', 'boss', 'jd', 'filtering', 'greetings'] as const
+const role = ['system', 'user', 'assistant', 'boss', 'jd', 'filtering', 'greetings', 'match'] as const
 type MessageRole = (typeof role)[number]
 
 export interface Message extends ChatMessageProps {
