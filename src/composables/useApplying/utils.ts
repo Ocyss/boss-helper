@@ -49,10 +49,41 @@ export interface GreetingResult {
   error?: string
 }
 
+const GREETING_END = '岗位方向与我的经历较为匹配，希望进一步沟通！'
+
+/** 强制统一开头「你好」和结尾，去掉模型额外加的感谢/期待回复 */
+function normalizeGreeting(content: string): string {
+  let value = content
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, '')
+    .replace(/\s+/g, ' ')
+  value = value.replace(/^您好[，,]?/, '你好，')
+
+  const endIndex = value.indexOf(GREETING_END)
+  if (endIndex >= 0) {
+    value = value.slice(0, endIndex + GREETING_END.length)
+  } else {
+    value = value
+      .replace(
+        /(谢谢|感谢|期待(?:您的)?回复|希望(?:能)?(?:有机会)?(?:进一步)?沟通)[^。！!]*[。！!]?$/g,
+        '',
+      )
+      .trim()
+      .replace(/[。！!]+$/, '')
+    value = `${value}。${GREETING_END}`
+  }
+
+  if (!value.startsWith('你好')) {
+    value = value.replace(/^您好[，,]?/, '')
+    value = `你好，${value}`
+  }
+  return value
+}
+
 export function parseGreeting(content: string, json = true): GreetingResult {
   if (!json) {
     if (!content.trim()) throw new Error('AI招呼语为空')
-    return { greeting: content }
+    return { greeting: normalizeGreeting(content) }
   }
 
   const text = content.trim()
@@ -84,7 +115,10 @@ export function parseGreeting(content: string, json = true): GreetingResult {
     throw new Error('AI招呼语字段 greeting 必须为非空字符串')
   }
   return {
-    greeting: typeof data.greeting === 'string' ? data.greeting : '',
+    greeting:
+      !rejected && typeof data.greeting === 'string'
+        ? normalizeGreeting(data.greeting)
+        : '',
     ...(typeof data.reason === 'string' ? { reason: data.reason } : {}),
     ...(Array.isArray(data.abilities) ? { abilities: data.abilities as string[] } : {}),
     ...(typeof data.error === 'string' ? { error: data.error } : {}),

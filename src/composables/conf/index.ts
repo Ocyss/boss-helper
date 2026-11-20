@@ -136,6 +136,18 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
       return from
     },
   ],
+  [
+    '20261121',
+    (from) => {
+      // 本次强制更新招呼语提示词：固定以「你好」开头、以指定句子结尾，突出技术栈
+      from.aiGreeting = {
+        ...defaultFormData.aiGreeting,
+        ...from.aiGreeting,
+        prompt: jsonClone(defaultFormData.aiGreeting.prompt),
+      }
+      return from
+    },
+  ],
 ]
 
 export const useConf = () => {
@@ -143,10 +155,9 @@ export const useConf = () => {
 
   async function formDataHandler(from: Partial<FormData>) {
     try {
-      for (let i = FROM_VERSION.length - 1; i >= 0; i--) {
-        const [version, fn] = FROM_VERSION[i]!
+      for (const [version, fn] of FROM_VERSION) {
         if ((from?.version ?? '20240401') >= version) {
-          break
+          continue
         }
         from = fn(from)
         from.version = version
