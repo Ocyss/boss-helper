@@ -13,7 +13,7 @@ const toast = useToast()
 const fileInput = ref<HTMLInputElement | null>(null)
 const parsing = ref(false)
 const structuring = ref(false)
-const selectedModel = ref(conf.formData.aiMatch.model ?? '')
+const selectedModel = ref(conf.formData.aiGreeting.model ?? '')
 
 const modelItems = computed(() => model.modelData.value as SelectMenuItem[])
 const hasRaw = computed(() => Boolean(conf.formData.resume.raw.trim()))
