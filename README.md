@@ -1,109 +1,105 @@
 # Boss 求职助手（定制版）
 
-> 本仓库是基于 [Ocyss/boss-helper](https://github.com/Ocyss/boss-helper) 的定制分支，新增简历解析、AI 匹配度、待发队列等能力。构建与使用见 [CUSTOM.md](./CUSTOM.md)。
+基于 [Ocyss/boss-helper](https://github.com/Ocyss/boss-helper) 的定制分支，面向**个人求职**的浏览器扩展（Chrome / Edge，Manifest V3）。
 
-> [!CAUTION]
-> 本项目仅供学习交流，禁止用于商业用途
->
-> 使用该脚本有一定风险(如黑号,封号,权重降低等)，本项目不承担任何责任
+当前版本：`0.6.7`
 
-| Chrome                                                                                                                                                                                             | Crx搜搜                                                                                                                                           | Edge                                                                                                                                                                                                                                                                                                                           | FireFox                                                                                                                                   | Github                                                                                                                                |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/ogkmgjbagackkdlcibcailacnncgonbn?label=Chrome插件商店)](https://chrome.google.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn) | [![Crx 搜搜](https://img.shields.io/badge/Crx搜索-v%3F.%3F.%3F-EF7C3D)](https://www.crxsoso.com/webstore/detail/ogkmgjbagackkdlcibcailacnncgonbn) | [![Edge Web Store](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fjcllnbjfeamhihjpfjlclhdnjmggbgal&query=version&prefix=v&label=Edge插件商店&color=EF7C3D)](https://microsoftedge.microsoft.com/addons/detail/jcllnbjfeamhihjpfjlclhdnjmggbgal) | [![Firefox](https://img.shields.io/amo/v/boss-helper?label=Mozilla插件商店)](https://addons.mozilla.org/zh-TW/firefox/addon/boss-helper/) | [![GitHub Release](https://img.shields.io/github/v/release/Ocyss/boss-helper)](https://github.com/Ocyss/boss-helper/releases/latest/) |
+> 本项目不是 BOSS 直聘官方产品，与平台无隶属或合作关系。自动化操作存在限流、封号等风险，请自行评估并遵守平台协议。
 
-> **国内**: 如果无法访问 `Chrome插件商店` , 请使用 `Crx搜搜` 或 `Edge插件商店` 安装
+## 它做什么
 
-## 项目介绍
+- **简单模式 3 步**：填 API Key → 上传 `.md` 简历 → 在职位页点「开始筛选并生成招呼语」。
+- **多份简历**：可上传多份不同岗位方向的 `.md`，按岗位关键词自动选择最匹配的一份。
+- **规则筛选**：岗位筛选使用 BOSS 原生筛选 + 插件「筛选配置」里的规则；**AI 不参与筛选**。
+- **AI 只写招呼语**：根据选中的简历和岗位 JD 生成个性化开场白，不自动发送。
+- **待发队列**：生成后逐条编辑、发送、跳过；生成过程中也可以直接发送已生成的草稿。
+- **保守节奏**：默认 30/天、90 秒左右一条（±25% 抖动）、工作时段限制、连续失败熔断。
 
-Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率, 技术栈使用WXT + Vue3 + NuxtUI@4 + TailwindCSS@4, 开源在 Github 欢迎前来Pr
+## 和上游的区别
 
-> 本项目处于积极维护状态, 一直很忙所以拖了比较久才开源，抱歉了~
+- 删除 AI 岗位筛选与 AI 匹配度，筛选只走规则。
+- 新增多份 `.md` 简历、按关键词自动选择、简单模式。
+- 招呼语固定「你好」开头、指定句子结尾，突出技术栈，不写「正在学习」。
+- 新增待发队列、生成中并行发送、停止生成。
+- 默认投递节奏更保守，移除 120 人限额弹窗的绕过逻辑。
 
-## 相关链接
+更完整的功能与构建说明见 [CUSTOM.md](./CUSTOM.md)。
 
-唯一交流群:
-微信麻烦, 飞书人数限制, 所以只开tg一个~
+## 安装
 
-https://t.me/ocyss_boss_helper
+扩展没有上架应用商店，需要自行构建或加载已构建目录。
 
-<img alt="交流群" src="./docs/img/tg.png" height="200" />
+### 构建
 
-Github开源地址: <https://github.com/ocyss/boss-helper>
+```bash
+# Node 20+，pnpm
+pnpm install --config.node-linker=hoisted
+pnpm build:chrome
+```
 
-飞书反馈问卷(匿名): <https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g>
+产物在 `.output/chrome-mv3`。
 
-> 每个提交都会给我发通知，我看见就会评论的形式回复 一般 1-2天
+### 加载
 
-飞书问卷结果: <https://gai06vrtbc0.feishu.cn/share/base/view/shrcnrg8D0cbLQc89d7Jj7AZgMc>
+1. 打开 `chrome://extensions`（Edge 为 `edge://extensions`）。
+2. 开启「开发者模式」。
+3. 「加载已解压的扩展程序」，选择 `.output/chrome-mv3`。
+4. 打开 `https://www.zhipin.com/web/geek/jobs`，页面右侧会出现「Boss 求职助手」面板。
 
-greasyfork地址(0.2旧版本): <https://greasyfork.org/zh-CN/scripts/491340>
+> 商店里的 `boss-helper` 是上游版本，不是本仓库的定制版。
 
-## 项目预览
+## 快速开始
 
-[![卡片状态](docs/img/shot_2024-04-14_23-08-03.png)](docs/img/shot_2024-04-14_23-08-03.png)
-[![账户配置](docs/img/shot_2024-04-14_23-09-05.png)](docs/img/shot_2024-04-14_23-09-05.png)
-[![统计界面](docs/img/shot_2024-04-02_22-25-25.png)](docs/img/shot_2024-04-02_22-25-25.png)
-[![配置界面](docs/img/shot_2024-04-02_22-26-54.png)](docs/img/shot_2024-04-02_22-26-54.png)
-[![日志界面](docs/img/shot_2024-04-02_22-32-25.png)](docs/img/shot_2024-04-02_22-32-25.png)
+1. **配置 API Key**  
+   点扩展的「扩展程序选项」，填 DeepSeek API Key 并保存。默认模型 `deepseek-chat`；需要其他模型时展开「使用其他模型」。
 
-## TODO
+2. **上传简历**  
+   选择一份或多份 `.md` 简历。文件名作为简历名称；可填岗位关键词，用于按岗位自动选择。需要更结构化的摘要时点「AI 提炼」。
 
-- [x] 优化UI去除广告
-- [x] 批量投递简历
-- 高级筛选
-  - [x] 薪资,公司名,工作名,人数,内容简单筛选
-  - 公司地址相关
-    > 使用高德api，需要自行申请，或者使用关键字筛选, 暂时只有驾车和步行
-    - [x] 驾车/步行距离
-    - [x] 驾车/步行时间
-  - [ ] 公司风险评控
-  - [x] AI筛选
-- 自动打招呼
-  - [x] 模板语言
-  - [x] 支持chatGPT
-- AI赋能
-  - [x] 多模型管理
-- 额外功能(有时间会写)
-  - [x] 自适应UI适配手机
-  - [ ] 黑名单
-  - [x] 多账号管理 (废弃, 改为多配置切换)
-  - [ ] 聊天阻止发送已读
-  - [ ] boss消息弹窗
+3. **生成招呼语**  
+   在职位页点「开始筛选并生成招呼语」。插件会按规则筛选当前列表，给通过的岗位生成草稿，放进「待发」。
 
-## 参与贡献
+4. **确认发送**  
+   到「待发」逐条编辑/发送/跳过。发送才会真正「立即沟通」并发出招呼语。
 
-自动发布与商店凭据配置见 [发布版本](docs/releasing.md)。
+![简单模式配置页](docs/img/simple-options.png)
 
-1. Fork 本仓库并克隆到本地。
-2. 在新分支上进行您的更改：`git checkout -b 您的分支名称`
-3. 提交更改：`git commit -am '描述您的更改'`
-4. 推送更改到您的 Fork：`git push origin 您的分支名称`
-5. 提交 Pull 请求。
+## 招呼语格式
 
-## 鸣谢
+默认提示词会强制：
 
-- <https://github.com/yangfeng20/boss_batch_push>
-- <https://github.com/lisonge/vite-plugin-monkey>
-- <https://github.com/chatanywhere/GPT_API_free>
+- 以「你好」开头，不是「您好」；
+- 以「岗位方向与我的经历较为匹配，希望进一步沟通！」结尾；
+- 第一句写身份和岗位，第二句用实习/项目证明能力，第三句突出技术栈；
+- 只写掌握/具备/能熟练使用，不写「正在学习/还在学习」；
+- 不编造简历里没有的学校、公司、项目或数字。
 
-- <https://uiverse.io/>
-- <https://www.runoob.com/manual/mqtt/protocol/MQTT-3.1.1-CN.pdf>
+生成后仍建议抽检几条。
 
-## 类似项目
+## 使用边界
 
-- <https://github.com/Frrrrrrrrank/auto_job__find__chatgpt__rpa>
-- <https://github.com/noBaldAaa/find-job>
+- 默认只生成草稿，不自动发送；「开始投递」是全自动模式，建议先用待发队列。
+- 生成和发送共用同一个 BOSS 页面，生成中发送虽然支持，但仍会增加访问频率，注意控制节奏。
+- 简历和 API Key 只保存在本机浏览器；调用模型时，简历和 JD 会发送给你配置的模型服务商。
+- 遇到验证码、限额、频繁失败时请立即停止，不要尝试绕过。
+- 生成中的草稿保存在当前页面内存里，刷新页面会丢失。
 
-## 最后
+## 项目结构
 
-嗯...
+```text
+src/
+├─ entrypoints/
+│  ├─ boss/        # 页面注入、筛选/生成工作流、BOSS 接口
+│  ├─ options/     # 简单模式 3 步配置
+│  └─ advanced/    # 完整配置页
+├─ components/     # 面板、待发队列、任务卡片
+├─ composables/    # 配置、模型、工作流
+└─ utils/          # 简历解析、提示词、请求
+```
 
-## Star 趋势
+## 许可证与致谢
 
-<a href="https://star-history.dera.page/#ocyss/boss-helper&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=ocyss/boss-helper&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=ocyss/boss-helper&type=Date" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=ocyss/boss-helper&type=Date" />
- </picture>
-</a>
+代码基于上游 [Ocyss/boss-helper](https://github.com/Ocyss/boss-helper)，遵循 MIT License（见 [LICENSE](./LICENSE)）。上游 README 另有「仅供学习交流，禁止商业用途」的声明；如需商业使用，请先与上游作者确认。
+
+- 上游项目：<https://github.com/Ocyss/boss-helper>
+- WXT / Vue 3 / Nuxt UI / Tailwind CSS
