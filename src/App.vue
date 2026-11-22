@@ -96,6 +96,7 @@ const items = computed<TabsItem[]>(() => {
     return [
       { slot: 'start', label: '开始' },
       { slot: 'drafts', label: '待发' },
+      { slot: 'filter', label: '筛选' },
       { slot: 'logs', label: '日志' },
       { slot: 'about', label: '关于&赞赏' },
     ]
