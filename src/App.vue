@@ -262,6 +262,7 @@ function openStore() {
             <template #list-trailing>
               <UButton class="ml-2" size="xs" @click="openConfig"> 配置 </UButton>
               <UButton
+                v-if="!conf.formData.simpleMode"
                 class="ml-2"
                 size="xs"
                 color="primary"
@@ -300,7 +301,7 @@ function openStore() {
                 </UButton>
               </UDropdownMenu>
               <UButton
-                v-if="helper.netConf.value?.feedback"
+                v-if="!conf.formData.simpleMode && helper.netConf.value?.feedback"
                 class="ml-2"
                 size="xs"
                 color="info"
