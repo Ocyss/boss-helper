@@ -9,6 +9,9 @@ const conf = useConf()
 const toast = useToast()
 
 const drafts = computed(() => helper.workflow?.drafts)
+const running = computed(
+  () => helper.workflow?.status.value === 'running' || Boolean(helper.workflow?.busy.value),
+)
 const rows = computed(() => {
   const map = drafts.value
   if (!map) return []
@@ -78,6 +81,10 @@ function skip(key: string) {
       <UBadge color="neutral" variant="subtle">{{ rows.length }} 条</UBadge>
     </div>
 
+    <div v-if="running" class="rounded-md bg-warning/10 p-2 text-sm text-warning">
+      生成仍在进行，停止后才能发送或跳过；已生成的草稿会保留。
+    </div>
+
     <div v-if="!rows.length" class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted">
       暂无待发岗位。{{
         conf.formData.simpleMode
@@ -105,12 +112,18 @@ function skip(key: string) {
             size="xs"
             color="primary"
             :loading="busyKey === row.key"
-            :disabled="!!busyKey"
+            :disabled="running || !!busyKey"
             @click="send(row.key)"
           >
             发送
           </UButton>
-          <UButton size="xs" color="error" variant="subtle" :disabled="!!busyKey" @click="skip(row.key)">
+          <UButton
+            size="xs"
+            color="error"
+            variant="subtle"
+            :disabled="running || !!busyKey"
+            @click="skip(row.key)"
+          >
             跳过
           </UButton>
         </div>

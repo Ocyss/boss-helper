@@ -11,7 +11,9 @@ const helper = useHelper()
 const actions = useJobActions()
 const toast = useToast()
 
-const running = computed(() => helper.workflow?.status.value === 'running')
+const running = computed(
+  () => helper.workflow?.status.value === 'running' || Boolean(helper.workflow?.busy.value),
+)
 const profiles = computed(() => conf.formData.resumeProfiles ?? [])
 const resumeCount = computed(() => {
   const count = profiles.value.filter(
@@ -44,6 +46,10 @@ function openOptions() {
   void counter.openOptionsPage()
 }
 
+function stop() {
+  helper.stop()
+}
+
 function openAdvanced() {
   conf.formData.simpleMode = false
   void conf.confSaving({ silent: true })
@@ -72,6 +78,14 @@ function openAdvanced() {
     <UButton block size="lg" :loading="running" :disabled="running" @click="start">
       {{ running ? '正在筛选并生成…' : '开始筛选并生成招呼语' }}
     </UButton>
+
+    <UButton v-if="running" block color="error" variant="outline" @click="stop">
+      停止生成（已生成的草稿会保留）
+    </UButton>
+
+    <p v-if="running" class="text-center text-sm text-warning">
+      生成过程中不能发送；停止后到「待发」逐条发送。
+    </p>
 
     <p class="text-center text-sm text-muted">
       只生成草稿，不会自动发送；生成后到「待发」逐条确认。

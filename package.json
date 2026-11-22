@@ -1,7 +1,7 @@
 {
   "name": "boss-job-assistant",
   "displayName": "Boss 求职助手",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "description": "Boss直聘助手, 旨在减少投递简历的麻烦, 和提高投递简历的效率,技术栈使用Vite + Vue3 + element-plus",
   "type": "module",
