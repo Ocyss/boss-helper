@@ -20,15 +20,10 @@ const deliveryLabel = computed(() =>
     ? '继续投递'
     : '开始投递',
 )
-const filterLabel = computed(() =>
-  helper.workflow?.status.value === 'stop' && helper.workflow?.lastMode.value === 'filter'
-    ? '继续仅筛选'
-    : '开始仅筛选',
-)
 const generateLabel = computed(() =>
   helper.workflow?.status.value === 'stop' && helper.workflow?.lastMode.value === 'generate'
-    ? '继续仅生成'
-    : '开始仅生成',
+    ? '继续筛选并生成招呼语'
+    : '开始筛选并生成招呼语',
 )
 
 const { todayData, statisticsData } = helper.statistics
@@ -84,7 +79,7 @@ onMounted(() => {
   <div class="flex gap-2 flex-col">
     <Alert
       id="config-statistics"
-      description="默认 30/天、75 秒左右一条，已加入随机抖动与工作时段限制；数据并不完全准确，请根据账号情况再下调，boss 限制最高 150"
+      description="默认 30/天、90 秒左右一条，已加入随机抖动与工作时段限制；数据并不完全准确，请根据账号情况再下调，boss 限制最高 150"
       color="warning"
       show-icon
     />
@@ -157,15 +152,7 @@ onMounted(() => {
         <UButton
           color="neutral"
           :disabled="startDisabled"
-          data-help="仅筛选岗位，不自动投递"
-          @click="actions.run(filterLabel, () => helper.start('filter'))"
-        >
-          {{ filterLabel }}
-        </UButton>
-        <UButton
-          color="neutral"
-          :disabled="startDisabled"
-          data-help="仅生成招呼语草稿，不自动投递"
+          data-help="先按筛选配置筛岗位，再生成招呼语草稿，不自动投递"
           @click="actions.run(generateLabel, () => helper.start('generate'))"
         >
           {{ generateLabel }}

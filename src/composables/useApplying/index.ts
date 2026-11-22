@@ -463,7 +463,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       if (isBlocked(key)) return
       if (mode === 'generate') {
         const greeting = data.state.aiGreeting?.greeting
-        if (!greeting?.trim()) throw new Error('仅生成需要启用并配置 AI 招呼语')
+        if (!greeting?.trim()) throw new Error('生成招呼语需要启用并配置 AI 招呼语')
         drafts.set(key, greeting)
         helper.jobResultMaps.set(key, { status: 'ready', msg: '待确认发送' })
         return
@@ -567,7 +567,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
       const log = logger.withContext({ id: 'workflow-execute-all' })
       lastMode.value = mode
       if (mode === 'generate' && !helper.conf.formData.aiGreeting.enable)
-        throw new Error('仅生成需要先启用并配置 AI 招呼语')
+        throw new Error('生成招呼语需要先启用并配置 AI 招呼语')
       if (mode === 'auto' && !isWithinWorkTime()) {
         throw new Error(
           `当前不在投递时段（${helper.conf.formData.workTime.start}-${helper.conf.formData.workTime.end}），请在配置中调整或关闭时段限制`,
