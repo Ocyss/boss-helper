@@ -168,6 +168,8 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
     }
   }
   abstract sendMessage(data: WorkflowData<T, S>, msg: FormDataInput['value']): Promise<void>
+  /** 生成过程中直接发送已生成的待发草稿，不经过全局工作流 */
+  abstract deliverDraft(key: string): Promise<void>
   abstract get uid(): string
   abstract get userInfo(): {
     id: string

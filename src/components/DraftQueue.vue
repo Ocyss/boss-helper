@@ -45,7 +45,7 @@ async function send(key: string) {
   if (!text?.trim()) return
   busyKey.value = key
   try {
-    await helper.deliverJob(key)
+    await helper.deliverDraft(key)
     toast.add({ title: '已发送并投递', color: 'success' })
   } catch (error) {
     toast.add({
@@ -82,7 +82,7 @@ function skip(key: string) {
     </div>
 
     <div v-if="running" class="rounded-md bg-warning/10 p-2 text-sm text-warning">
-      生成仍在进行，停止后才能发送或跳过；已生成的草稿会保留。
+      生成中也可以发送已生成的草稿；发送会立即联系 HR，请先确认话术。
     </div>
 
     <div v-if="!rows.length" class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted">
@@ -112,7 +112,7 @@ function skip(key: string) {
             size="xs"
             color="primary"
             :loading="busyKey === row.key"
-            :disabled="running || !!busyKey"
+            :disabled="!!busyKey"
             @click="send(row.key)"
           >
             发送
@@ -121,7 +121,7 @@ function skip(key: string) {
             size="xs"
             color="error"
             variant="subtle"
-            :disabled="running || !!busyKey"
+            :disabled="!!busyKey"
             @click="skip(row.key)"
           >
             跳过

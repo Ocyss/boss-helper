@@ -84,7 +84,7 @@ function openAdvanced() {
     </UButton>
 
     <p v-if="running" class="text-center text-sm text-warning">
-      生成过程中不能发送；停止后到「待发」逐条发送。
+      生成中也可以到「待发」发送已生成的草稿；发送会立即联系 HR。
     </p>
 
     <p class="text-center text-sm text-muted">

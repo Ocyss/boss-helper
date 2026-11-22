@@ -17,7 +17,7 @@ import { logger } from '@/utils/logger'
 import { GeekChatClientManager } from './chat'
 import type { BoosJobData } from './delivery'
 import { bossWorkflow } from './delivery'
-import { uploadImage } from './requests'
+import { getBossData, sendPublishReq, uploadImage } from './requests'
 import type { BossZpDetailData, BossZpJobItemData } from './types'
 
 function removeAd() {
@@ -133,6 +133,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   key = 'boss'
 
   geek!: GeekChatClientManager
+  private draftSending = new Set<string>()
 
   _page = ref({ page: 1, pageSize: 15 })
   _pageHasMore = ref(true)
@@ -218,6 +219,36 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
       this.workflow = await bossWorkflow(this)
     }
     await this.workflow.executeAll(this._jobDataMap, mode)
+  }
+
+  async deliverDraft(key: string): Promise<void> {
+    if (this.draftSending.has(key)) return
+    const data = this.jobMaps.get(key)
+    const text = this.workflow?.drafts.get(key)
+    if (!data || !text?.trim()) throw new Error('待发草稿不存在')
+    if (this.jobActionBusy.value) throw new Error('正在处理其他岗位操作，请稍后再试')
+
+    this.draftSending.add(key)
+    this.jobActionBusy.value = true
+    try {
+      await sendPublishReq({
+        securityId: data.rawData.jobitem.securityId,
+        encryptJobId: data.rawData.jobitem.encryptJobId,
+      })
+      const bossData = await getBossData({
+        securityId: data.rawData.jobitem.securityId,
+        encryptUserId: this.uid,
+      })
+      data.rawData.boss = bossData
+      data.state.aiGreeting = { ...(data.state.aiGreeting ?? {}), greeting: text }
+      await this.sendMessage(data, text)
+      this.workflow?.drafts.delete(key)
+      this.jobResultMaps.set(key, { status: 'success', msg: '投递成功' })
+      this.statistics.todayData.value.success++
+    } finally {
+      this.jobActionBusy.value = false
+      this.draftSending.delete(key)
+    }
   }
 
   async sendMessage(data: WorkflowData<BoosJobData, {}>, msgs: FormDataInput['value']) {
