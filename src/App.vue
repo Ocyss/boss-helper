@@ -43,11 +43,7 @@ function useSimpleMode() {
   void conf.confSaving({ silent: true })
 }
 function openConfig() {
-  if (conf.formData.simpleMode) {
-    void counter.openOptionsPage()
-  } else {
-    window.open(chrome.runtime.getURL('advanced.html'), '_blank')
-  }
+  void counter.openOptionsPage(conf.formData.simpleMode ? undefined : 'advanced.html')
 }
 const presetOptions = ref<{ label: string; value: string }[]>([])
 const presetName = computed(() => {
@@ -261,12 +257,21 @@ function openStore() {
             <template #logs><Logs /></template>
             <template #about><About /></template>
             <template #list-trailing>
-              <UButton class="ml-2" size="xs" @click="openConfig"> 配置 </UButton>
+              <UButton
+                class="ml-1"
+                size="sm"
+                color="neutral"
+                variant="ghost"
+                @click="openConfig"
+              >
+                配置
+              </UButton>
               <UButton
                 v-if="!conf.formData.simpleMode"
-                class="ml-2"
-                size="xs"
-                color="primary"
+                class="ml-1"
+                size="sm"
+                color="neutral"
+                variant="ghost"
                 @click.stop="
                   () => {
                     chatOpen = !chatOpen
@@ -277,8 +282,10 @@ function openStore() {
               </UButton>
               <UButton
                 v-if="accounts.accounts.value.length > 1"
-                class="ml-2"
-                size="xs"
+                class="ml-1"
+                size="sm"
+                color="neutral"
+                variant="ghost"
                 :disabled="helper.workflowRunning.value"
                 :loading="switchingAccount"
                 @click="switchAccount"
@@ -294,8 +301,10 @@ function openStore() {
                 @update:open="(open) => open && loadPresetOptions()"
               >
                 <UButton
-                  class="ml-2"
-                  size="xs"
+                  class="ml-1"
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
                   :disabled="helper.workflowRunning.value"
                   :loading="switchingAccount"
                   >切换预设
@@ -303,9 +312,10 @@ function openStore() {
               </UDropdownMenu>
               <UButton
                 v-if="!conf.formData.simpleMode && helper.netConf.value?.feedback"
-                class="ml-2"
-                size="xs"
-                color="info"
+                class="ml-1"
+                size="sm"
+                color="neutral"
+                variant="ghost"
                 @click.stop="feedback"
               >
                 反馈

@@ -30,8 +30,14 @@ export class BackgroundCounter {
   createTableBoss = createTableBoss
   feishuUpsert = feishuUpsert
 
-  async openOptionsPage() {
-    await browser.runtime.openOptionsPage()
+  async openOptionsPage(path?: string) {
+    if (path) {
+      const createTab: any = (browser as any).tabs.create
+      const url: string = (browser as any).runtime.getURL(path)
+      await createTab({ url })
+    } else {
+      await browser.runtime.openOptionsPage()
+    }
     return true
   }
   async request(args: {

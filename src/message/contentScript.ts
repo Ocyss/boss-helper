@@ -31,8 +31,8 @@ export class ContentCounter implements BackgroundCounter {
     }
   }
 
-  async openOptionsPage() {
-    return this.background.openOptionsPage()
+  async openOptionsPage(path?: string) {
+    return this.background.openOptionsPage(path)
   }
 
   async request(...args: Parameters<BackgroundCounter['request']>) {
